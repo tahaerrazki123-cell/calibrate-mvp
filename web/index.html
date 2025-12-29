@@ -74,7 +74,6 @@
     .btn:disabled { opacity: 0.55; cursor:not-allowed; }
     .status { color: var(--muted); font-size: 13px; }
     .hidden { display:none !important; }
-    .link { color: #93c5fd; text-decoration: none; font-weight: 800; }
     .pill {
       font-size: 12px;
       padding: 4px 8px;
@@ -165,14 +164,37 @@
     .mono { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: var(--muted); margin-top: 10px; }
     .footerNote { color: var(--muted); font-size: 12px; margin-top: 10px; }
 
-    .table { width:100%; border-collapse: collapse; }
-    .table th, .table td { padding: 10px 8px; border-top: 1px solid var(--line); font-size: 13.5px; text-align:left; }
+    /* Table stability */
+    .table { width:100%; border-collapse: collapse; table-layout: fixed; }
+    .table th, .table td {
+      padding: 10px 8px;
+      border-top: 1px solid var(--line);
+      font-size: 13.5px;
+      text-align:left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .table th { color: var(--muted); font-weight: 900; }
     .table tr:hover td { background: rgba(255,255,255,0.03); cursor:pointer; }
 
-    /* Placeholder row shouldn't look clickable */
+    /* Skeleton placeholder row (not clickable) */
     .table tr.placeholder:hover td { background: transparent; cursor: default; }
-    .table tr.placeholder td { color: var(--muted); }
+    .skel {
+      display: block;
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+    }
+    .placeholder td:nth-child(1) .skel { width: 70%; }
+    .placeholder td:nth-child(2) .skel { width: 85%; }
+    .placeholder td:nth-child(3) .skel { width: 55%; }
+    .placeholder td:nth-child(4) .skel { width: 78%; }
+    .placeholder td:nth-child(5) .skel { width: 35%; }
+
+    /* Message row (still keeps 5 cells so columns don't jump) */
+    .table tr.msg:hover td { background: transparent; cursor: default; }
+    .table tr.msg td { color: var(--muted); }
   </style>
 </head>
 
@@ -241,6 +263,13 @@
       <div id="homeStatus" class="status" style="margin: 8px 0;">&nbsp;</div>
       <div style="overflow:auto;">
         <table class="table">
+          <colgroup>
+            <col style="width:26%">
+            <col style="width:28%">
+            <col style="width:14%">
+            <col style="width:22%">
+            <col style="width:10%">
+          </colgroup>
           <thead>
             <tr>
               <th>When</th>
@@ -646,14 +675,6 @@
       addKV("Call Outcome", callOutcome || "(unknown)");
     }
 
-    function showRunsPlaceholderRow(text) {
-      runsTbody.innerHTML = "";
-      const tr = document.createElement("tr");
-      tr.className = "placeholder";
-      tr.innerHTML = `<td colspan="5">${escapeHtml(text || "")}</td>`;
-      runsTbody.appendChild(tr);
-    }
-
     // ---- DOM ----
     const viewLanding = document.getElementById("viewLanding");
     const viewLogin = document.getElementById("viewLogin");
@@ -710,12 +731,37 @@
     fillSelect(categoryEl, scenarioTemplates);
     fillSelect(legacyEl, legacyScenarios);
 
+    function showRunsSkeletonRow() {
+      runsTbody.innerHTML = "";
+      const tr = document.createElement("tr");
+      tr.className = "placeholder";
+      tr.innerHTML = `
+        <td><span class="skel"></span></td>
+        <td><span class="skel"></span></td>
+        <td><span class="skel"></span></td>
+        <td><span class="skel"></span></td>
+        <td><span class="skel"></span></td>
+      `;
+      runsTbody.appendChild(tr);
+    }
+
+    function showRunsMessageRow(msg) {
+      runsTbody.innerHTML = "";
+      const tr = document.createElement("tr");
+      tr.className = "msg";
+      tr.innerHTML = `
+        <td>${escapeHtml(msg || "")}</td>
+        <td></td><td></td><td></td><td></td>
+      `;
+      runsTbody.appendChild(tr);
+    }
+
     // ---- Supabase init ----
     let sb = null;
     let session = null;
     let config = null;
 
-    // ---- Auth hydration + token cache (prevents history flicker) ----
+    // ---- Auth hydration + token cache ----
     let ACCESS_TOKEN = "";
     let _authReadyDone = false;
     let _authReadyResolve;
@@ -789,12 +835,6 @@
       else who.textContent = "";
     }
 
-    function authHeader() {
-      const token = ACCESS_TOKEN || session?.access_token || "";
-      if (!token) return {};
-      return { Authorization: "Bearer " + token };
-    }
-
     // ---- Nav buttons ----
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
@@ -862,9 +902,9 @@
       homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
 
-      // If there are no rows yet (initial page load), show a stable placeholder row.
+      // Skeleton row only (no duplicate "Loading" inside the table)
       if (runsTbody.children.length === 0) {
-        showRunsPlaceholderRow("Loading…");
+        showRunsSkeletonRow();
       }
 
       try {
@@ -873,7 +913,7 @@
 
         if (!token) {
           homeStatus.textContent = "Sign in to view your history.";
-          if (runsTbody.children.length === 0) showRunsPlaceholderRow("Sign in to view your history.");
+          showRunsMessageRow("Sign in to view your history.");
           return;
         }
 
@@ -886,13 +926,14 @@
         if (!r.ok) {
           homeBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load runs."));
           homeStatus.textContent = "\u00A0";
+          if (runsTbody.children.length === 0) showRunsMessageRow("Failed to load runs.");
           return;
         }
 
         const runs = j.runs || [];
         if (!runs.length) {
           homeStatus.textContent = "No runs yet.";
-          showRunsPlaceholderRow("No runs yet.");
+          showRunsMessageRow("No runs yet.");
           return;
         }
 
@@ -925,6 +966,7 @@
         if (reqId !== _runsReqId) return;
         homeBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
         homeStatus.textContent = "\u00A0";
+        if (runsTbody.children.length === 0) showRunsMessageRow("Failed to load runs.");
       }
     }
 
@@ -1047,7 +1089,8 @@
       fd.append("legacyScenario", legacyEl.value || "");
 
       try {
-        const headers = authHeader();
+        const token = await getAccessToken();
+        const headers = token ? { Authorization: "Bearer " + token } : {};
         const r = await fetch("/api/run", { method: "POST", headers, body: fd });
         const resp = await r.json();
 
