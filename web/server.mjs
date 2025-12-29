@@ -14,9 +14,16 @@ const app = express();
 app.set("trust proxy", 1); // Render/proxies
 app.use(express.json());
 
+// -------------------- Limits (SERVER ENFORCED) --------------------
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB hard cap
+const MAX_RUNS_PER_24H = 10; // per user hard cap (rolling 24 hours)
+const ALLOWED_EXT = new Set(["mp3", "m4a", "wav", "ogg"]);
+const ACTIVE_LOCK_TTL_MS = 20 * 60 * 1000; // safety TTL (20 min)
+
+// Multer memory upload with size limit
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
 // serve static files (index.html, etc.)
@@ -33,18 +40,25 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-// Supabase clients
+// -------------------- Supabase clients (cached) --------------------
+let _sbAnon = null;
+let _sbService = null;
+
 function supabaseAnon() {
+  if (_sbAnon) return _sbAnon;
   const url = process.env.SUPABASE_URL;
   const anon = process.env.SUPABASE_ANON_KEY;
   if (!url || !anon) throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY");
-  return createClient(url, anon, { auth: { persistSession: false } });
+  _sbAnon = createClient(url, anon, { auth: { persistSession: false } });
+  return _sbAnon;
 }
 function supabaseService() {
+  if (_sbService) return _sbService;
   const url = process.env.SUPABASE_URL;
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !service) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(url, service, { auth: { persistSession: false } });
+  _sbService = createClient(url, service, { auth: { persistSession: false } });
+  return _sbService;
 }
 
 async function requireUserId(req) {
@@ -58,14 +72,37 @@ async function requireUserId(req) {
   return data?.user?.id || null;
 }
 
+async function requireUserOr401(req, res) {
+  const userId = await requireUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  return userId;
+}
+
+// -------------------- Helpers --------------------
+function getFileExt(name) {
+  const s = String(name || "");
+  const i = s.lastIndexOf(".");
+  return i >= 0 ? s.slice(i + 1).toLowerCase() : "";
+}
+
+function isAllowedAudioUpload(file) {
+  if (!file) return false;
+  const mime = String(file.mimetype || "").toLowerCase();
+  const ext = getFileExt(file.originalname);
+  const mimeOk = mime.startsWith("audio/");
+  const extOk = ALLOWED_EXT.has(ext);
+  // allow if browser provided audio/* OR extension looks right
+  return mimeOk || extOk;
+}
+
 // Normalize mismatch even if your DB column name changes or doesn't exist
 function normalizeScenarioMismatch(row) {
   if (!row || typeof row !== "object") return null;
 
-  // If the column exists, use it
   if ("scenario_mismatch" in row) return row.scenario_mismatch;
-
-  // Common alternates / legacy shapes (optional)
   if ("scenarioMismatch" in row) return row.scenarioMismatch;
   if ("scenario_mismatch_flag" in row) return row.scenario_mismatch_flag;
   if ("scenario_mismatch_text" in row) return Boolean(row.scenario_mismatch_text);
@@ -74,17 +111,57 @@ function normalizeScenarioMismatch(row) {
   return null;
 }
 
+function normalizeMismatchReason(row) {
+  if (!row || typeof row !== "object") return null;
+  return (
+    row.mismatch_reason ??
+    row.scenario_mismatch_reason ??
+    row.mismatchReason ??
+    row.scenarioMismatchReason ??
+    null
+  );
+}
+
+// Rolling 24h cap
+async function countRunsLast24h(userId) {
+  const sb = supabaseService();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  // head:true means no row data returned; count:exact gives total
+  const { count, error } = await sb
+    .from("runs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", since);
+
+  if (error) throw new Error(error.message);
+  return count || 0;
+}
+
+// In-memory "one active run per user" lock
+const activeRuns = new Map(); // userId -> startedAtMs
+function tryAcquireActiveLock(userId) {
+  const now = Date.now();
+  const existing = activeRuns.get(userId);
+  if (existing && now - existing < ACTIVE_LOCK_TTL_MS) return false;
+  activeRuns.set(userId, now);
+  return true;
+}
+function releaseActiveLock(userId) {
+  activeRuns.delete(userId);
+}
+
 // -------------------- Runs API (history + details) --------------------
 
 // List recent runs for signed-in user
 app.get("/api/runs", async (req, res) => {
   try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const userId = await requireUserOr401(req, res);
+    if (!userId) return;
 
     const sb = supabaseService();
 
-    // IMPORTANT: select("*") so missing columns (like scenario_mismatch) can't crash the query
+    // IMPORTANT: select("*") so missing columns can't crash the query
     const { data, error } = await sb
       .from("runs")
       .select("*")
@@ -95,14 +172,22 @@ app.get("/api/runs", async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
 
     // Shape the response to what the frontend expects
-    const runs = (data || []).map((r) => ({
-      id: r.id,
-      created_at: r.created_at,
-      scenario_template: r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null,
-      call_outcome: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
-      enforcer: r.enforcer ?? r.enforcer_version ?? r.enforcerVersion ?? ENFORCER_VERSION,
-      scenario_mismatch: normalizeScenarioMismatch(r),
-    }));
+    const runs = (data || []).map((r) => {
+      const mismatchVal = normalizeScenarioMismatch(r);
+      const mismatch = Boolean(mismatchVal);
+      return {
+        id: r.id,
+        created_at: r.created_at,
+        scenario_template: r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null,
+        call_outcome: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
+        enforcer: r.enforcer ?? r.enforcer_version ?? r.enforcerVersion ?? ENFORCER_VERSION,
+
+        // Compatibility: frontend may use run.mismatch OR run.scenario_mismatch
+        mismatch,
+        mismatch_reason: normalizeMismatchReason(r),
+        scenario_mismatch: mismatchVal,
+      };
+    });
 
     return res.json({ runs });
   } catch (err) {
@@ -113,8 +198,8 @@ app.get("/api/runs", async (req, res) => {
 // Get one run (details page)
 app.get("/api/runs/:id", async (req, res) => {
   try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const userId = await requireUserOr401(req, res);
+    if (!userId) return;
 
     const runId = req.params.id;
     const sb = supabaseService();
@@ -128,8 +213,13 @@ app.get("/api/runs/:id", async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: "Run not found" });
 
-    // (Optional) add normalized field for UI convenience
-    const run = { ...data, scenario_mismatch: normalizeScenarioMismatch(data) };
+    const mismatchVal = normalizeScenarioMismatch(data);
+    const run = {
+      ...data,
+      mismatch: Boolean(mismatchVal),
+      mismatch_reason: normalizeMismatchReason(data),
+      scenario_mismatch: mismatchVal,
+    };
 
     return res.json({ run });
   } catch (err) {
@@ -267,25 +357,79 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   }
 }
 
-app.post("/api/run", upload.single("audio"), async (req, res) => {
+// Wrap multer so we can return clean JSON on size limit errors
+function uploadSingleAudio(req, res) {
+  return new Promise((resolve) => {
+    upload.single("audio")(req, res, (err) => resolve(err));
+  });
+}
+
+app.post("/api/run", async (req, res) => {
+  // Auth required (keeps DB + limits sane)
+  const userId = await requireUserOr401(req, res);
+  if (!userId) return;
+
+  // One active run per user
+  if (!tryAcquireActiveLock(userId)) {
+    return res.status(429).json({ error: "A calibration is already running for your account. Please wait and try again." });
+  }
+
   try {
+    // Multer (file upload)
+    const upErr = await uploadSingleAudio(req, res);
+
+    if (upErr) {
+      if (upErr.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          error: `File too large. Max upload size is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB.`,
+        });
+      }
+      return res.status(400).json({ error: upErr.message || "Upload error." });
+    }
+
     const file = req.file;
-    if (!file?.buffer) return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
+    if (!file?.buffer) {
+      return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
+    }
+
+    // Defensive server-side checks (type + size)
+    if (!isAllowedAudioUpload(file)) {
+      return res.status(400).json({ error: "Unsupported audio format. Please upload mp3/m4a/wav/ogg." });
+    }
+    if (typeof file.size === "number" && file.size > MAX_UPLOAD_BYTES) {
+      return res.status(413).json({
+        error: `File too large. Max upload size is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB.`,
+      });
+    }
 
     const userContext = (req.body?.context || "").trim();
     const category = (req.body?.category || "").trim();
     const legacyScenario = (req.body?.legacyScenario || "").trim();
 
-    if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
+    if (userContext.length < 10) {
+      return res.status(400).json({ error: "Context is required (10+ characters)." });
+    }
+
+    // Per-user rolling 24h cap
+    const used = await countRunsLast24h(userId);
+    if (used >= MAX_RUNS_PER_24H) {
+      return res.status(429).json({
+        error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Please try again later.`,
+      });
+    }
 
     const transcriptRaw = await transcribeWithAssemblyAI(file.buffer);
     const transcript = prettifyTranscript(transcriptRaw);
 
     const result = await runCalibrate({ transcript, userContext, category, legacyScenario });
+
+    // IMPORTANT: keep response shape unchanged; runCalibrate may already be inserting & returning run_id
     return res.json({ transcript, ...result });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err?.message || String(err) });
+  } finally {
+    releaseActiveLock(userId);
   }
 });
 
