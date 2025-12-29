@@ -14,13 +14,26 @@ const app = express();
 app.set("trust proxy", 1); // Render/proxies
 app.use(express.json());
 
-// -------------------- Limits (SERVER ENFORCED) --------------------
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB hard cap
-const MAX_RUNS_PER_24H = 10; // per user hard cap (rolling 24 hours)
-const ALLOWED_EXT = new Set(["mp3", "m4a", "wav", "ogg"]);
-const ACTIVE_LOCK_TTL_MS = 20 * 60 * 1000; // safety TTL (20 min)
+// ---- Limits (server truth) ----
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
+const MAX_RUNS_PER_24H = 10;
 
-// Multer memory upload with size limit
+const ALLOWED_MIME = new Set([
+  "audio/mpeg", // mp3
+  "audio/mp3",
+  "audio/mp4", // m4a (often audio/mp4)
+  "audio/x-m4a",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/ogg",
+  "application/ogg",
+]);
+
+const ALLOWED_EXT = new Set([".mp3", ".m4a", ".wav", ".ogg"]);
+
+// simple per-user in-flight lock (Render WEB_CONCURRENCY=1 but still useful)
+const activeRunByUser = new Map(); // userId -> startedAtMs
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_UPLOAD_BYTES },
@@ -37,7 +50,6 @@ app.get("/health", (req, res) =>
   })
 );
 
-
 // Expose anon config for frontend (SAFE: anon key is meant for browser use)
 app.get("/api/config", (req, res) => {
   res.json({
@@ -47,7 +59,7 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-// -------------------- Supabase clients (cached) --------------------
+// ---- Supabase clients (lazy) ----
 let _sbAnon = null;
 let _sbService = null;
 
@@ -59,6 +71,7 @@ function supabaseAnon() {
   _sbAnon = createClient(url, anon, { auth: { persistSession: false } });
   return _sbAnon;
 }
+
 function supabaseService() {
   if (_sbService) return _sbService;
   const url = process.env.SUPABASE_URL;
@@ -79,83 +92,55 @@ async function requireUserId(req) {
   return data?.user?.id || null;
 }
 
-async function requireUserOr401(req, res) {
-  const userId = await requireUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return null;
+function pick(obj, keys, fallback = null) {
+  for (const k of keys) {
+    if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
   }
-  return userId;
-}
-
-// -------------------- Helpers --------------------
-function getFileExt(name) {
-  const s = String(name || "");
-  const i = s.lastIndexOf(".");
-  return i >= 0 ? s.slice(i + 1).toLowerCase() : "";
-}
-
-function isAllowedAudioUpload(file) {
-  if (!file) return false;
-  const mime = String(file.mimetype || "").toLowerCase();
-  const ext = getFileExt(file.originalname);
-  const mimeOk = mime.startsWith("audio/");
-  const extOk = ALLOWED_EXT.has(ext);
-  // allow if browser provided audio/* OR extension looks right
-  return mimeOk || extOk;
+  return fallback;
 }
 
 // Normalize mismatch even if your DB column name changes or doesn't exist
 function normalizeScenarioMismatch(row) {
   if (!row || typeof row !== "object") return null;
-
   if ("scenario_mismatch" in row) return row.scenario_mismatch;
+  if ("mismatch" in row) return row.mismatch; // keep compatibility
   if ("scenarioMismatch" in row) return row.scenarioMismatch;
   if ("scenario_mismatch_flag" in row) return row.scenario_mismatch_flag;
   if ("scenario_mismatch_text" in row) return Boolean(row.scenario_mismatch_text);
   if ("context_conflict_banner" in row) return Boolean(row.context_conflict_banner);
-
   return null;
 }
 
-function normalizeMismatchReason(row) {
-  if (!row || typeof row !== "object") return null;
-  return (
-    row.mismatch_reason ??
-    row.scenario_mismatch_reason ??
-    row.mismatchReason ??
-    row.scenarioMismatchReason ??
-    null
-  );
+function transcriptToLines(transcript) {
+  const lines = String(transcript || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return lines.map((line) => {
+    const m = line.match(/^([^:]{1,30}):\s*(.*)$/);
+    if (!m) return { speaker: "Other", text: line };
+    return { speaker: (m[1] || "Other").trim(), text: (m[2] || "").trim() };
+  });
 }
 
-// Rolling 24h cap
-async function countRunsLast24h(userId) {
-  const sb = supabaseService();
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+async function insertRunResilient(sb, payload) {
+  // tries to insert, and if schema is missing a column, removes it and retries
+  let p = { ...payload };
+  for (let i = 0; i < 12; i++) {
+    const { data, error } = await sb.from("runs").insert([p]).select("id").maybeSingle();
+    if (!error) return data;
 
-  // head:true means no row data returned; count:exact gives total
-  const { count, error } = await sb
-    .from("runs")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .gte("created_at", since);
-
-  if (error) throw new Error(error.message);
-  return count || 0;
-}
-
-// In-memory "one active run per user" lock
-const activeRuns = new Map(); // userId -> startedAtMs
-function tryAcquireActiveLock(userId) {
-  const now = Date.now();
-  const existing = activeRuns.get(userId);
-  if (existing && now - existing < ACTIVE_LOCK_TTL_MS) return false;
-  activeRuns.set(userId, now);
-  return true;
-}
-function releaseActiveLock(userId) {
-  activeRuns.delete(userId);
+    const msg = String(error.message || "");
+    const m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
+    if (m && m[1]) {
+      delete p[m[1]];
+      continue;
+    }
+    throw new Error(msg);
+  }
+  throw new Error("Insert failed after retries (schema mismatch).");
 }
 
 // -------------------- Runs API (history + details) --------------------
@@ -163,12 +148,11 @@ function releaseActiveLock(userId) {
 // List recent runs for signed-in user
 app.get("/api/runs", async (req, res) => {
   try {
-    const userId = await requireUserOr401(req, res);
-    if (!userId) return;
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const sb = supabaseService();
 
-    // IMPORTANT: select("*") so missing columns can't crash the query
     const { data, error } = await sb
       .from("runs")
       .select("*")
@@ -178,21 +162,17 @@ app.get("/api/runs", async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
 
-    // Shape the response to what the frontend expects
     const runs = (data || []).map((r) => {
-      const mismatchVal = normalizeScenarioMismatch(r);
-      const mismatch = Boolean(mismatchVal);
+      const mismatch = Boolean(normalizeScenarioMismatch(r));
       return {
         id: r.id,
         created_at: r.created_at,
         scenario_template: r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null,
         call_outcome: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
         enforcer: r.enforcer ?? r.enforcer_version ?? r.enforcerVersion ?? ENFORCER_VERSION,
-
-        // Compatibility: frontend may use run.mismatch OR run.scenario_mismatch
+        // return BOTH names so the frontend never breaks
         mismatch,
-        mismatch_reason: normalizeMismatchReason(r),
-        scenario_mismatch: mismatchVal,
+        scenario_mismatch: mismatch,
       };
     });
 
@@ -205,11 +185,12 @@ app.get("/api/runs", async (req, res) => {
 // Get one run (details page)
 app.get("/api/runs/:id", async (req, res) => {
   try {
-    const userId = await requireUserOr401(req, res);
-    if (!userId) return;
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const runId = req.params.id;
     const sb = supabaseService();
+
     const { data, error } = await sb
       .from("runs")
       .select("*")
@@ -220,19 +201,14 @@ app.get("/api/runs/:id", async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: "Run not found" });
 
-    const mismatchVal = normalizeScenarioMismatch(data);
-    const run = {
-      ...data,
-      mismatch: Boolean(mismatchVal),
-      mismatch_reason: normalizeMismatchReason(data),
-      scenario_mismatch: mismatchVal,
-    };
+    const mismatch = Boolean(normalizeScenarioMismatch(data));
+    const run = { ...data, mismatch, scenario_mismatch: mismatch };
 
     return res.json({ run });
   } catch (err) {
     return res.status(500).json({ error: err?.message || String(err) });
   }
-});
+};
 
 // -------------------- Existing Calibrate endpoint --------------------
 
@@ -267,10 +243,12 @@ function prettifyTranscript(raw) {
     return `You: ${text}`;
   });
 
+  // NOTE: if AssemblyAI only gave one speaker, everything will be Speaker A.
+  // We leave it as-is (You/Prospect mapping only happens when both speakers are present).
   const speakerALines = lines.filter((l) => /^Speaker\s*A\s*:/i.test(l));
   const speakerBLines = lines.filter((l) => /^Speaker\s*B\s*:/i.test(l));
 
-  if (speakerALines.length || speakerBLines.length) {
+  if (speakerALines.length && speakerBLines.length) {
     const aText = speakerALines.map((l) => l.replace(/^Speaker\s*A\s*:\s*/i, "")).join(" ");
     const bText = speakerBLines.map((l) => l.replace(/^Speaker\s*B\s*:\s*/i, "")).join(" ");
 
@@ -295,14 +273,7 @@ function prettifyTranscript(raw) {
     const a = score(aText);
     const b = score(bText);
 
-    let aIsYou = null;
-    if (a.net !== b.net) aIsYou = a.net > b.net;
-    else {
-      const firstSpeakerLine = lines.find((l) => /^Speaker\s*[AB]\s*:/i.test(l)) || "";
-      if (/^Speaker\s*[AB]\s*:\s*(hey|hi)\b/i.test(firstSpeakerLine)) {
-        aIsYou = /^Speaker\s*A\s*:/i.test(firstSpeakerLine);
-      }
-    }
+    let aIsYou = a.net !== b.net ? a.net > b.net : null;
 
     if (aIsYou !== null) {
       lines = lines.map((l) => {
@@ -364,65 +335,47 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   }
 }
 
-// Wrap multer so we can return clean JSON on size limit errors
-function uploadSingleAudio(req, res) {
-  return new Promise((resolve) => {
-    upload.single("audio")(req, res, (err) => resolve(err));
-  });
-}
+app.post("/api/run", upload.single("audio"), async (req, res) => {
+  const userId = await requireUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-app.post("/api/run", async (req, res) => {
-  // Auth required (keeps DB + limits sane)
-  const userId = await requireUserOr401(req, res);
-  if (!userId) return;
-
-  // One active run per user
-  if (!tryAcquireActiveLock(userId)) {
-    return res.status(429).json({ error: "A calibration is already running for your account. Please wait and try again." });
+  // one-run-at-a-time per user
+  if (activeRunByUser.has(userId)) {
+    return res.status(429).json({ error: "A run is already in progress for this account. Please wait." });
   }
 
   try {
-    // Multer (file upload)
-    const upErr = await uploadSingleAudio(req, res);
-
-    if (upErr) {
-      if (upErr.code === "LIMIT_FILE_SIZE") {
-        return res.status(413).json({
-          error: `File too large. Max upload size is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB.`,
-        });
-      }
-      return res.status(400).json({ error: upErr.message || "Upload error." });
-    }
+    activeRunByUser.set(userId, Date.now());
 
     const file = req.file;
-    if (!file?.buffer) {
-      return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
-    }
+    if (!file?.buffer) return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
 
-    // Defensive server-side checks (type + size)
-    if (!isAllowedAudioUpload(file)) {
-      return res.status(400).json({ error: "Unsupported audio format. Please upload mp3/m4a/wav/ogg." });
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    if (ext && !ALLOWED_EXT.has(ext)) {
+      return res.status(400).json({ error: "Unsupported audio format. Use mp3, m4a, wav, or ogg." });
     }
-    if (typeof file.size === "number" && file.size > MAX_UPLOAD_BYTES) {
-      return res.status(413).json({
-        error: `File too large. Max upload size is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB.`,
-      });
+    if (file.mimetype && !ALLOWED_MIME.has(file.mimetype)) {
+      // some browsers send weird mimetypes; extension check above helps
+      return res.status(400).json({ error: "Unsupported audio format. Use mp3, m4a, wav, or ogg." });
     }
 
     const userContext = (req.body?.context || "").trim();
     const category = (req.body?.category || "").trim();
     const legacyScenario = (req.body?.legacyScenario || "").trim();
+    if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
-    if (userContext.length < 10) {
-      return res.status(400).json({ error: "Context is required (10+ characters)." });
-    }
+    // per-24h limit
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const sb = supabaseService();
+    const { count, error: countErr } = await sb
+      .from("runs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("created_at", cutoff);
 
-    // Per-user rolling 24h cap
-    const used = await countRunsLast24h(userId);
-    if (used >= MAX_RUNS_PER_24H) {
-      return res.status(429).json({
-        error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Please try again later.`,
-      });
+    if (countErr) return res.status(500).json({ error: countErr.message });
+    if ((count || 0) >= MAX_RUNS_PER_24H) {
+      return res.status(429).json({ error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Try again later.` });
     }
 
     const transcriptRaw = await transcribeWithAssemblyAI(file.buffer);
@@ -430,13 +383,38 @@ app.post("/api/run", async (req, res) => {
 
     const result = await runCalibrate({ transcript, userContext, category, legacyScenario });
 
-    // IMPORTANT: keep response shape unchanged; runCalibrate may already be inserting & returning run_id
-    return res.json({ transcript, ...result });
+    const reportText = pick(result, ["report", "coachingReport", "report_md", "reportMarkdown"], "") || "";
+    const callOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], null);
+
+    const mismatchReason =
+      pick(result, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "") || "";
+    const mismatch = Boolean(mismatchReason);
+
+    const row = {
+      user_id: userId,
+      user_context: userContext,
+      scenario_template: category || null,
+      legacy_scenario: legacyScenario || null,
+      transcript_lines: transcriptToLines(transcript),
+      report_text: reportText,
+      diagnostics: result,
+      call_outcome: callOutcome,
+      enforcer: ENFORCER_VERSION,
+      scenario_mismatch: mismatch,
+      mismatch_reason: mismatchReason || null,
+      // optional future-proof fields (safe-removed if schema doesn't have them)
+      transcript_text: transcript,
+    };
+
+    const inserted = await insertRunResilient(sb, row);
+    const runId = inserted?.id;
+
+    return res.json({ run_id: runId });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err?.message || String(err) });
   } finally {
-    releaseActiveLock(userId);
+    activeRunByUser.delete(userId);
   }
 });
 
