@@ -700,6 +700,34 @@
     let session = null;
     let config = null;
 
+    // ---- Auth hydration + token cache (prevents history flicker) ----
+    let ACCESS_TOKEN = "";
+    let _authReadyDone = false;
+    let _authReadyResolve;
+    const AUTH_READY = new Promise((res) => (_authReadyResolve = res));
+
+    function _setAuth(newSession) {
+      session = newSession || null;
+      ACCESS_TOKEN = newSession?.access_token || "";
+      if (!_authReadyDone) {
+        _authReadyDone = true;
+        _authReadyResolve(true);
+      }
+    }
+
+    async function getAccessToken() {
+      // Wait until we've at least attempted to hydrate auth once
+      await AUTH_READY;
+      if (ACCESS_TOKEN) return ACCESS_TOKEN;
+
+      // Fallback: ask Supabase again
+      try {
+        const { data } = await sb.auth.getSession();
+        _setAuth(data?.session || null);
+      } catch (_) {}
+      return ACCESS_TOKEN || "";
+    }
+
     async function initSupabase() {
       const r = await fetch("/api/config");
       config = await r.json();
@@ -711,12 +739,22 @@
       sb = createClient(config.supabaseUrl, config.supabaseAnonKey);
 
       const { data } = await sb.auth.getSession();
-      session = data.session;
+      _setAuth(data.session);
 
-      sb.auth.onAuthStateChange((_event, newSession) => {
-        session = newSession;
-        renderRoute();
+      sb.auth.onAuthStateChange((event, newSession) => {
+        _setAuth(newSession);
+
+        // IMPORTANT: don't rerender on TOKEN_REFRESHED (prevents /home refetch flicker)
+        if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+          renderRoute();
+        }
       });
+
+      // Make sure AUTH_READY resolves even if getSession throws or returns null quickly
+      if (!_authReadyDone) {
+        _authReadyDone = true;
+        _authReadyResolve(true);
+      }
     }
 
     function hideAllViews() {
@@ -743,8 +781,9 @@
     }
 
     function authHeader() {
-      if (!session?.access_token) return {};
-      return { Authorization: "Bearer " + session.access_token };
+      const token = ACCESS_TOKEN || session?.access_token || "";
+      if (!token) return {};
+      return { Authorization: "Bearer " + token };
     }
 
     // ---- Nav buttons ----
@@ -806,16 +845,36 @@
     });
 
     // ---- History ----
+    let _runsReqId = 0;
+
     async function loadRuns() {
+      const reqId = ++_runsReqId;
+
       homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
-      runsTbody.innerHTML = "";
+      // IMPORTANT: do NOT clear runsTbody here (prevents flicker)
 
       try {
-        const r = await fetch("/api/runs", { headers: authHeader() });
-        const j = await r.json();
+        const token = await getAccessToken();
+        if (reqId !== _runsReqId) return;
+
+        if (!token) {
+          homeStatus.textContent = "Sign in to view your history.";
+          return;
+        }
+
+        const r = await fetch("/api/runs", {
+          headers: { Authorization: "Bearer " + token },
+        });
+
+        // Try to parse JSON, but don't crash if server returns non-JSON
+        let j = {};
+        try { j = await r.json(); } catch (_) { j = {}; }
+
+        if (reqId !== _runsReqId) return;
 
         if (!r.ok) {
+          // Keep existing rows on screen; just show error banner
           homeBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load runs."));
           homeStatus.textContent = "";
           return;
@@ -824,10 +883,14 @@
         const runs = j.runs || [];
         if (!runs.length) {
           homeStatus.textContent = "No runs yet.";
+          runsTbody.innerHTML = ""; // ok to clear when we know the truth
           return;
         }
 
         homeStatus.textContent = "";
+
+        // Build rows off-DOM, then swap in one go (minimizes UI thrash)
+        const frag = document.createDocumentFragment();
 
         for (const run of runs) {
           const tr = document.createElement("tr");
@@ -846,24 +909,47 @@
           `;
 
           tr.addEventListener("click", () => goto("/runs/" + run.id));
-          runsTbody.appendChild(tr);
+          frag.appendChild(tr);
         }
+
+        if (reqId !== _runsReqId) return;
+        runsTbody.innerHTML = "";
+        runsTbody.appendChild(frag);
       } catch (e) {
+        if (reqId !== _runsReqId) return;
         homeBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
         homeStatus.textContent = "";
       }
     }
 
     // ---- Run viewer ----
+    let _runReqId = 0;
+
     async function loadRun(runId) {
+      const reqId = ++_runReqId;
+
       runBanners.innerHTML = "";
       summaryKVEl2.innerHTML = "";
       transcriptBoxEl2.innerHTML = "";
       reportGridEl2.innerHTML = "";
 
       try {
-        const r = await fetch("/api/runs/" + encodeURIComponent(runId), { headers: authHeader() });
-        const j = await r.json();
+        const token = await getAccessToken();
+        if (reqId !== _runReqId) return;
+
+        if (!token) {
+          runBanners.appendChild(banner("bad", "Error:", "Missing session. Please sign in again."));
+          return;
+        }
+
+        const r = await fetch("/api/runs/" + encodeURIComponent(runId), {
+          headers: { Authorization: "Bearer " + token },
+        });
+
+        let j = {};
+        try { j = await r.json(); } catch (_) { j = {}; }
+
+        if (reqId !== _runReqId) return;
 
         if (!r.ok) {
           runBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load run."));
@@ -890,6 +976,7 @@
 
         if (run.mismatch) runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
       } catch (e) {
+        if (reqId !== _runReqId) return;
         runBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
       }
     }
