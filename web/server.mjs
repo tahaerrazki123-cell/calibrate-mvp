@@ -10,24 +10,32 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.disable("x-powered-by");
+app.set("trust proxy", true);
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files from /web (index.html, css, etc.)
+// Serve static files from /web (index.html lives here)
 app.use(express.static(__dirname, { extensions: ["html"] }));
 
-app.get("/health", (req, res) => res.json({ ok: true, enforcer: ENFORCER_VERSION }));
+app.get("/health", (req, res) =>
+  res.json({ ok: true, enforcer: ENFORCER_VERSION })
+);
 
-// Frontend config for Supabase client init
+// Public config for frontend (SAFE: anon key is meant to be public)
+// NEVER include SUPABASE_SERVICE_ROLE_KEY here.
 app.get("/api/config", (req, res) => {
-  const supabaseUrl = process.env.SUPABASE_URL || "";
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
-  res.json({ supabaseUrl, supabaseAnonKey, enforcer: ENFORCER_VERSION });
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL || "",
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "",
+    enforcer: ENFORCER_VERSION,
+  });
 });
 
 function prettifyTranscript(raw) {
@@ -44,8 +52,14 @@ function prettifyTranscript(raw) {
   t = t.replace(/\s*(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "\n$1: ");
 
   // Also split when a label appears mid-line after punctuation: "... ? Prospect ..."
-  t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s+(?=[A-Za-z0-9])/gi, "$1\n$2: ");
-  t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "$1\n$2: ");
+  t = t.replace(
+    /([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s+(?=[A-Za-z0-9])/gi,
+    "$1\n$2: "
+  );
+  t = t.replace(
+    /([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi,
+    "$1\n$2: "
+  );
 
   // Clean spaces WITHOUT destroying newlines
   t = t
@@ -54,7 +68,10 @@ function prettifyTranscript(raw) {
     .replace(/\n{2,}/g, "\n")
     .trim();
 
-  let lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
+  let lines = t
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   // Convert Rep/Agent/Caller -> You, Prospect/Customer -> Prospect, keep Speaker A/B for now
   const labelRe = /^(Speaker\s*[AB]|Prospect|Rep|Caller|Agent|Customer)\s*:\s*(.*)$/i;
@@ -76,8 +93,12 @@ function prettifyTranscript(raw) {
   const speakerBLines = lines.filter((l) => /^Speaker\s*B\s*:/i.test(l));
 
   if (speakerALines.length || speakerBLines.length) {
-    const aText = speakerALines.map((l) => l.replace(/^Speaker\s*A\s*:\s*/i, "")).join(" ");
-    const bText = speakerBLines.map((l) => l.replace(/^Speaker\s*B\s*:\s*/i, "")).join(" ");
+    const aText = speakerALines
+      .map((l) => l.replace(/^Speaker\s*A\s*:\s*/i, ""))
+      .join(" ");
+    const bText = speakerBLines
+      .map((l) => l.replace(/^Speaker\s*B\s*:\s*/i, ""))
+      .join(" ");
 
     const repSignals = [
       /\bhey\b/i,
@@ -122,7 +143,8 @@ function prettifyTranscript(raw) {
       aIsYou = a.net > b.net;
     } else {
       // tie-breaker: if the very first speaker line starts with "Hey/Hi", it's likely the rep
-      const firstSpeakerLine = lines.find((l) => /^Speaker\s*[AB]\s*:/i.test(l)) || "";
+      const firstSpeakerLine =
+        lines.find((l) => /^Speaker\s*[AB]\s*:/i.test(l)) || "";
       if (/^Speaker\s*[AB]\s*:\s*(hey|hi)\b/i.test(firstSpeakerLine)) {
         aIsYou = /^Speaker\s*A\s*:/i.test(firstSpeakerLine);
       }
@@ -141,7 +163,9 @@ function prettifyTranscript(raw) {
 
   // Final cleanup for rare double-label artifacts
   lines = lines.map((l) =>
-    l.replace(/^You:\s*Prospect:\s*/i, "Prospect: ").replace(/^Prospect:\s*You:\s*/i, "You: ")
+    l
+      .replace(/^You:\s*Prospect:\s*/i, "Prospect: ")
+      .replace(/^Prospect:\s*You:\s*/i, "You: ")
   );
 
   return lines.join("\n");
@@ -186,9 +210,10 @@ async function transcribeWithAssemblyAI(audioBuffer) {
 
   const started = Date.now();
   while (true) {
-    const pollRes = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
-      headers: { authorization: apiKey },
-    });
+    const pollRes = await fetch(
+      `https://api.assemblyai.com/v2/transcript/${id}`,
+      { headers: { authorization: apiKey } }
+    );
     if (!pollRes.ok) {
       const t = await pollRes.text().catch(() => "");
       throw new Error("AssemblyAI transcript poll failed: " + t);
@@ -208,7 +233,9 @@ async function transcribeWithAssemblyAI(audioBuffer) {
     }
 
     if (pollJson.status === "error") {
-      throw new Error("AssemblyAI transcription error: " + (pollJson.error || "unknown"));
+      throw new Error(
+        "AssemblyAI transcription error: " + (pollJson.error || "unknown")
+      );
     }
 
     if (Date.now() - started > 4 * 60 * 1000) {
@@ -223,7 +250,9 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
   try {
     const file = req.file;
     if (!file?.buffer) {
-      return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
+      return res
+        .status(400)
+        .json({ error: "No audio file uploaded (field name must be 'audio')." });
     }
 
     const userContext = (req.body?.context || "").trim();
@@ -251,17 +280,14 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
   }
 });
 
-/**
- * SPA fallback:
- * Render/Express will 404 on /login and /home unless we serve index.html for those paths.
- * IMPORTANT: this must be AFTER /api routes.
- */
-const INDEX = path.join(__dirname, "index.html");
-app.get(["/", "/login", "/home", "/run/:id"], (req, res) => res.sendFile(INDEX));
-app.get("*", (req, res) => res.sendFile(INDEX));
+// SPA fallback for Render/Express 5: serve index.html for any NON-API route.
+// IMPORTANT: Do NOT use app.get("*", ...) on Express 5.
+app.get(/^\/(?!api\/).*/, (req, res) => {
+  return res.sendFile(path.join(__dirname, "index.html"));
+});
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-app.listen(PORT, () => {
-  console.log(`Calibrate MVP running at http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Calibrate MVP running on port ${PORT}`);
   console.log(`Enforcer loaded: ${ENFORCER_VERSION}`);
 });
