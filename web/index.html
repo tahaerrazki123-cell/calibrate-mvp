@@ -229,6 +229,18 @@
       </div>
     </div>
 
+    <!-- Session expired -->
+    <div id="viewSessionExpired" class="card hidden">
+      <h3 class="sectionTitle">Session expired</h3>
+      <p style="margin:0 0 10px; color:var(--muted); line-height:1.4;">
+        Your sign-in session ended. Please sign in again to continue.
+      </p>
+      <div class="row" style="margin-top:12px;">
+        <button id="btnExpiredToLogin" class="btn">Sign in</button>
+        <button id="btnExpiredHome" class="btn secondary">Back to landing</button>
+      </div>
+    </div>
+
     <!-- Login -->
     <div id="viewLogin" class="card hidden">
       <h3 class="sectionTitle">Sign in</h3>
@@ -476,7 +488,6 @@
 
       for (let raw of lines) {
         const line = raw.trimEnd();
-
         if (!line.trim()) { flushLists(); continue; }
 
         const ulMatch = line.match(/^\s*[-*]\s+(.*)$/);
@@ -677,6 +688,7 @@
 
     // ---- DOM ----
     const viewLanding = document.getElementById("viewLanding");
+    const viewSessionExpired = document.getElementById("viewSessionExpired");
     const viewLogin = document.getElementById("viewLogin");
     const viewHome = document.getElementById("viewHome");
     const viewCalibrate = document.getElementById("viewCalibrate");
@@ -690,6 +702,9 @@
 
     const btnGetStarted = document.getElementById("btnGetStarted");
     const landingStatus = document.getElementById("landingStatus");
+
+    const btnExpiredToLogin = document.getElementById("btnExpiredToLogin");
+    const btnExpiredHome = document.getElementById("btnExpiredHome");
 
     const loginBanners = document.getElementById("loginBanners");
     const loginStatus = document.getElementById("loginStatus");
@@ -776,17 +791,6 @@
       }
     }
 
-    async function getAccessToken() {
-      await AUTH_READY;
-      if (ACCESS_TOKEN) return ACCESS_TOKEN;
-
-      try {
-        const { data } = await sb.auth.getSession();
-        _setAuth(data?.session || null);
-      } catch (_) {}
-      return ACCESS_TOKEN || "";
-    }
-
     async function initSupabase() {
       const r = await fetch("/api/config");
       config = await r.json();
@@ -803,7 +807,7 @@
       sb.auth.onAuthStateChange((event, newSession) => {
         _setAuth(newSession);
 
-        // Don't rerender on TOKEN_REFRESHED (prevents /home refetch flicker)
+        // Don't rerender on TOKEN_REFRESHED (prevents UI jitter)
         if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
           renderRoute();
         }
@@ -815,8 +819,75 @@
       }
     }
 
+    async function getAccessToken() {
+      await AUTH_READY;
+      return ACCESS_TOKEN || "";
+    }
+
+    // ---- 401 handling (silent refresh retry, then session-expired page) ----
+    let _refreshInFlight = null;
+
+    async function silentRefreshOnce() {
+      if (_refreshInFlight) return _refreshInFlight;
+
+      _refreshInFlight = (async () => {
+        try {
+          if (!sb) return null;
+          const { data, error } = await sb.auth.refreshSession();
+          if (error) return null;
+          const newSession = data?.session || null;
+          _setAuth(newSession);
+          return newSession;
+        } catch (_) {
+          return null;
+        } finally {
+          _refreshInFlight = null;
+        }
+      })();
+
+      return _refreshInFlight;
+    }
+
+    async function forceSessionExpired() {
+      // Clear any stale tokens locally
+      try { if (sb) await sb.auth.signOut(); } catch (_) {}
+      _setAuth(null);
+      goto("/session-expired");
+    }
+
+    async function authedFetch(url, opts, allowNoAuth = false) {
+      const token = await getAccessToken();
+      const headers = new Headers((opts && opts.headers) || {});
+      if (token) headers.set("Authorization", "Bearer " + token);
+
+      const first = await fetch(url, Object.assign({}, opts || {}, { headers }));
+
+      if (first.status !== 401) return first;
+
+      // If no auth and this endpoint allows it, don't force redirect
+      if (!token && allowNoAuth) return first;
+
+      // One silent refresh retry
+      await silentRefreshOnce();
+      const token2 = await getAccessToken();
+      if (!token2) {
+        await forceSessionExpired();
+        return first;
+      }
+
+      const headers2 = new Headers((opts && opts.headers) || {});
+      headers2.set("Authorization", "Bearer " + token2);
+      const second = await fetch(url, Object.assign({}, opts || {}, { headers: headers2 }));
+
+      if (second.status === 401) {
+        await forceSessionExpired();
+      }
+      return second;
+    }
+
     function hideAllViews() {
       viewLanding.classList.add("hidden");
+      viewSessionExpired.classList.add("hidden");
       viewLogin.classList.add("hidden");
       viewHome.classList.add("hidden");
       viewCalibrate.classList.add("hidden");
@@ -852,6 +923,9 @@
 
     btnHomeNew.addEventListener("click", () => goto("/calibrate"));
     btnBackHome.addEventListener("click", () => goto("/home"));
+
+    btnExpiredToLogin.addEventListener("click", () => goto("/login"));
+    btnExpiredHome.addEventListener("click", () => goto("/"));
 
     // ---- Login actions ----
     btnMagicLink.addEventListener("click", async () => {
@@ -901,29 +975,19 @@
 
       homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
-
-      // Skeleton row only (no duplicate "Loading" inside the table)
-      if (runsTbody.children.length === 0) {
-        showRunsSkeletonRow();
-      }
+      if (runsTbody.children.length === 0) showRunsSkeletonRow();
 
       try {
-        const token = await getAccessToken();
+        const r = await authedFetch("/api/runs", { headers: {} });
         if (reqId !== _runsReqId) return;
-
-        if (!token) {
-          homeStatus.textContent = "Sign in to view your history.";
-          showRunsMessageRow("Sign in to view your history.");
-          return;
-        }
-
-        const r = await fetch("/api/runs", { headers: { Authorization: "Bearer " + token } });
 
         let j = {};
         try { j = await r.json(); } catch (_) { j = {}; }
         if (reqId !== _runsReqId) return;
 
         if (!r.ok) {
+          // If we got redirected to /session-expired, renderRoute will handle it
+          if (r.status === 401) return;
           homeBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load runs."));
           homeStatus.textContent = "\u00A0";
           if (runsTbody.children.length === 0) showRunsMessageRow("Failed to load runs.");
@@ -982,27 +1046,20 @@
       reportGridEl2.innerHTML = "";
 
       try {
-        const token = await getAccessToken();
+        const r = await authedFetch("/api/runs/" + encodeURIComponent(runId), { headers: {} });
         if (reqId !== _runReqId) return;
-
-        if (!token) {
-          runBanners.appendChild(banner("bad", "Error:", "Missing session. Please sign in again."));
-          return;
-        }
-
-        const r = await fetch("/api/runs/" + encodeURIComponent(runId), { headers: { Authorization: "Bearer " + token } });
 
         let j = {};
         try { j = await r.json(); } catch (_) { j = {}; }
         if (reqId !== _runReqId) return;
 
         if (!r.ok) {
+          if (r.status === 401) return;
           runBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load run."));
           return;
         }
 
         const run = j.run;
-
         const diag = run.diagnostics || {};
         const transcript = (run.transcript_lines || []).map(x => `${x.speaker}: ${x.text}`).join("\n");
         const reportMd = run.report_text || "";
@@ -1026,25 +1083,6 @@
     }
 
     // ---- Calibrate (new run) ----
-    function renderBanners(resp) {
-      bannersEl.innerHTML = "";
-
-      const conflict = pick(resp, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "");
-      const outcomeBanner = pick(resp, ["call_outcome_banner", "callOutcomeBanner"], "");
-      const warn = pick(resp, ["warning", "warnings", "banner", "bannerText"], null);
-
-      if (conflict) bannersEl.appendChild(banner("warn", "Scenario mismatch:", String(conflict)));
-      if (outcomeBanner) bannersEl.appendChild(banner("warn", "Outcome:", String(outcomeBanner)));
-
-      if (warn) {
-        if (Array.isArray(warn)) warn.forEach((w) => bannersEl.appendChild(banner("warn", "Note:", String(w))));
-        else bannersEl.appendChild(banner("warn", "Note:", String(warn)));
-      }
-
-      const err = pick(resp, ["error"], "");
-      if (err) bannersEl.appendChild(banner("bad", "Error:", String(err)));
-    }
-
     function renderDiagnostics(resp) {
       const section5Raw = pick(resp, ["section5", "section_5", "section5Pass", "section_5_pass"], "");
       const section5 =
@@ -1089,12 +1127,14 @@
       fd.append("legacyScenario", legacyEl.value || "");
 
       try {
-        const token = await getAccessToken();
-        const headers = token ? { Authorization: "Bearer " + token } : {};
-        const r = await fetch("/api/run", { method: "POST", headers, body: fd });
-        const resp = await r.json();
+        const r = await authedFetch("/api/run", { method: "POST", body: fd }, false);
+        let resp = {};
+        try { resp = await r.json(); } catch (_) { resp = {}; }
 
         if (!r.ok || resp?.error) {
+          // If auth died mid-upload and we redirected, stop
+          if (r.status === 401) return;
+
           resultsEl.classList.remove("hidden");
           bannersEl.appendChild(banner("bad", "Error:", resp?.error || "Request failed."));
           if (isDevMode()) {
@@ -1110,16 +1150,12 @@
         }
 
         resultsEl.classList.remove("hidden");
-        renderBanners(resp);
 
-        renderSummaryInto(resp, {
-          summaryKVEl,
-          scenarioValue: categoryEl.value || "",
-          userContext: ctx,
-        });
-
+        // minimal rendering
+        const reportMd = pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], "");
+        renderSummaryInto(resp, { summaryKVEl, scenarioValue: categoryEl.value || "", userContext: ctx });
         renderTranscriptInto(resp.transcript, transcriptBoxEl);
-        renderReportInto(pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl);
+        renderReportInto(reportMd, reportGridEl);
 
         if (isDevMode()) {
           diagnosticsDetailsEl.classList.remove("hidden");
@@ -1150,6 +1186,7 @@
       const path = window.location.pathname || "/";
       const loggedIn = !!session;
 
+      // protected routes
       const needsAuth =
         path === "/home" ||
         path === "/calibrate" ||
@@ -1164,6 +1201,11 @@
         if (loggedIn) { goto("/home"); return; }
         viewLanding.classList.remove("hidden");
         landingStatus.textContent = "";
+        return;
+      }
+
+      if (path === "/session-expired") {
+        viewSessionExpired.classList.remove("hidden");
         return;
       }
 
