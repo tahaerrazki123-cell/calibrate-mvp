@@ -29,7 +29,14 @@ const upload = multer({
 // serve static files (index.html, etc.)
 app.use(express.static(__dirname, { extensions: ["html"] }));
 
-app.get("/health", (req, res) => res.json({ ok: true, enforcer: ENFORCER_VERSION }));
+app.get("/health", (req, res) =>
+  res.json({
+    ok: true,
+    enforcer: ENFORCER_VERSION,
+    commit: process.env.RENDER_GIT_COMMIT || null,
+  })
+);
+
 
 // Expose anon config for frontend (SAFE: anon key is meant for browser use)
 app.get("/api/config", (req, res) => {
