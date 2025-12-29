@@ -85,6 +85,9 @@
       font-weight: 800;
     }
 
+    /* Prevent layout shift when status text appears/disappears */
+    #homeStatus { min-height: 18px; }
+
     .banner {
       border-radius: 14px;
       padding: 10px 12px;
@@ -166,6 +169,10 @@
     .table th, .table td { padding: 10px 8px; border-top: 1px solid var(--line); font-size: 13.5px; text-align:left; }
     .table th { color: var(--muted); font-weight: 900; }
     .table tr:hover td { background: rgba(255,255,255,0.03); cursor:pointer; }
+
+    /* Placeholder row shouldn't look clickable */
+    .table tr.placeholder:hover td { background: transparent; cursor: default; }
+    .table tr.placeholder td { color: var(--muted); }
   </style>
 </head>
 
@@ -231,7 +238,7 @@
         <button id="btnHomeNew" class="btn">New call</button>
       </div>
       <div id="homeBanners" style="margin-top:12px;"></div>
-      <div id="homeStatus" class="status" style="margin: 8px 0;"></div>
+      <div id="homeStatus" class="status" style="margin: 8px 0;">&nbsp;</div>
       <div style="overflow:auto;">
         <table class="table">
           <thead>
@@ -639,6 +646,14 @@
       addKV("Call Outcome", callOutcome || "(unknown)");
     }
 
+    function showRunsPlaceholderRow(text) {
+      runsTbody.innerHTML = "";
+      const tr = document.createElement("tr");
+      tr.className = "placeholder";
+      tr.innerHTML = `<td colspan="5">${escapeHtml(text || "")}</td>`;
+      runsTbody.appendChild(tr);
+    }
+
     // ---- DOM ----
     const viewLanding = document.getElementById("viewLanding");
     const viewLogin = document.getElementById("viewLogin");
@@ -716,11 +731,9 @@
     }
 
     async function getAccessToken() {
-      // Wait until we've at least attempted to hydrate auth once
       await AUTH_READY;
       if (ACCESS_TOKEN) return ACCESS_TOKEN;
 
-      // Fallback: ask Supabase again
       try {
         const { data } = await sb.auth.getSession();
         _setAuth(data?.session || null);
@@ -744,13 +757,12 @@
       sb.auth.onAuthStateChange((event, newSession) => {
         _setAuth(newSession);
 
-        // IMPORTANT: don't rerender on TOKEN_REFRESHED (prevents /home refetch flicker)
+        // Don't rerender on TOKEN_REFRESHED (prevents /home refetch flicker)
         if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
           renderRoute();
         }
       });
 
-      // Make sure AUTH_READY resolves even if getSession throws or returns null quickly
       if (!_authReadyDone) {
         _authReadyDone = true;
         _authReadyResolve(true);
@@ -773,11 +785,8 @@
       btnNew.classList.toggle("hidden", !loggedIn);
       who.classList.toggle("hidden", !loggedIn);
 
-      if (loggedIn) {
-        who.textContent = session.user?.email || "Signed in";
-      } else {
-        who.textContent = "";
-      }
+      if (loggedIn) who.textContent = session.user?.email || "Signed in";
+      else who.textContent = "";
     }
 
     function authHeader() {
@@ -852,7 +861,11 @@
 
       homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
-      // IMPORTANT: do NOT clear runsTbody here (prevents flicker)
+
+      // If there are no rows yet (initial page load), show a stable placeholder row.
+      if (runsTbody.children.length === 0) {
+        showRunsPlaceholderRow("Loading…");
+      }
 
       try {
         const token = await getAccessToken();
@@ -860,38 +873,32 @@
 
         if (!token) {
           homeStatus.textContent = "Sign in to view your history.";
+          if (runsTbody.children.length === 0) showRunsPlaceholderRow("Sign in to view your history.");
           return;
         }
 
-        const r = await fetch("/api/runs", {
-          headers: { Authorization: "Bearer " + token },
-        });
+        const r = await fetch("/api/runs", { headers: { Authorization: "Bearer " + token } });
 
-        // Try to parse JSON, but don't crash if server returns non-JSON
         let j = {};
         try { j = await r.json(); } catch (_) { j = {}; }
-
         if (reqId !== _runsReqId) return;
 
         if (!r.ok) {
-          // Keep existing rows on screen; just show error banner
           homeBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load runs."));
-          homeStatus.textContent = "";
+          homeStatus.textContent = "\u00A0";
           return;
         }
 
         const runs = j.runs || [];
         if (!runs.length) {
           homeStatus.textContent = "No runs yet.";
-          runsTbody.innerHTML = ""; // ok to clear when we know the truth
+          showRunsPlaceholderRow("No runs yet.");
           return;
         }
 
-        homeStatus.textContent = "";
+        homeStatus.textContent = "\u00A0";
 
-        // Build rows off-DOM, then swap in one go (minimizes UI thrash)
         const frag = document.createDocumentFragment();
-
         for (const run of runs) {
           const tr = document.createElement("tr");
           const when = new Date(run.created_at).toLocaleString();
@@ -907,7 +914,6 @@
             <td>${escapeHtml(enforcer)}</td>
             <td>${escapeHtml(mismatch)}</td>
           `;
-
           tr.addEventListener("click", () => goto("/runs/" + run.id));
           frag.appendChild(tr);
         }
@@ -918,7 +924,7 @@
       } catch (e) {
         if (reqId !== _runsReqId) return;
         homeBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
-        homeStatus.textContent = "";
+        homeStatus.textContent = "\u00A0";
       }
     }
 
@@ -942,13 +948,10 @@
           return;
         }
 
-        const r = await fetch("/api/runs/" + encodeURIComponent(runId), {
-          headers: { Authorization: "Bearer " + token },
-        });
+        const r = await fetch("/api/runs/" + encodeURIComponent(runId), { headers: { Authorization: "Bearer " + token } });
 
         let j = {};
         try { j = await r.json(); } catch (_) { j = {}; }
-
         if (reqId !== _runReqId) return;
 
         if (!r.ok) {
@@ -958,7 +961,6 @@
 
         const run = j.run;
 
-        // Build a "resp-like" object from stored DB
         const diag = run.diagnostics || {};
         const transcript = (run.transcript_lines || []).map(x => `${x.speaker}: ${x.text}`).join("\n");
         const reportMd = run.report_text || "";
@@ -1059,13 +1061,11 @@
           return;
         }
 
-        // If logged in, backend returns run_id. Go to viewer so it appears in history.
         if (resp.run_id) {
           goto("/runs/" + resp.run_id);
           return;
         }
 
-        // Otherwise (not logged in), show inline results
         resultsEl.classList.remove("hidden");
         renderBanners(resp);
 
@@ -1107,7 +1107,6 @@
       const path = window.location.pathname || "/";
       const loggedIn = !!session;
 
-      // protected routes
       const needsAuth =
         path === "/home" ||
         path === "/calibrate" ||
@@ -1133,13 +1132,13 @@
 
       if (path === "/home") {
         viewHome.classList.remove("hidden");
+        if (!homeStatus.textContent) homeStatus.textContent = "\u00A0";
         await loadRuns();
         return;
       }
 
       if (path === "/calibrate") {
         viewCalibrate.classList.remove("hidden");
-        // reset inline results
         resultsEl.classList.add("hidden");
         bannersEl.innerHTML = "";
         statusEl.textContent = "";
@@ -1159,7 +1158,6 @@
         return;
       }
 
-      // fallback
       goto("/");
     }
 
