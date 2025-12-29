@@ -4,7 +4,6 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { createClient } from "@supabase/supabase-js";
 import { runCalibrate, ENFORCER_VERSION } from "../calibrate.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,96 +15,39 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from /web (index.html, css, etc.)
 app.use(express.static(__dirname, { extensions: ["html"] }));
 
 app.get("/health", (req, res) => res.json({ ok: true, enforcer: ENFORCER_VERSION }));
 
-// ---- Supabase env ----
-const SUPABASE_URL = process.env.SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
-if (!SUPABASE_URL) console.warn("⚠ Missing SUPABASE_URL in env");
-if (!SUPABASE_ANON_KEY) console.warn("⚠ Missing SUPABASE_ANON_KEY in env");
-if (!SUPABASE_SERVICE_ROLE_KEY) console.warn("⚠ Missing SUPABASE_SERVICE_ROLE_KEY in env");
-
-const supabaseAdmin =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      })
-    : null;
-
-// SAFE public config (browser needs this)
+// Frontend config for Supabase client init
 app.get("/api/config", (req, res) => {
-  res.json({
-    supabaseUrl: SUPABASE_URL,
-    supabaseAnonKey: SUPABASE_ANON_KEY,
-    enforcer: ENFORCER_VERSION,
-  });
+  const supabaseUrl = process.env.SUPABASE_URL || "";
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
+  res.json({ supabaseUrl, supabaseAnonKey, enforcer: ENFORCER_VERSION });
 });
-
-function getBearerToken(req) {
-  const h = req.headers.authorization || "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1].trim() : "";
-}
-
-async function getUserFromRequest(req) {
-  if (!supabaseAdmin) return null;
-  const token = getBearerToken(req);
-  if (!token) return null;
-
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !data?.user) return null;
-  return data.user;
-}
-
-async function requireUser(req, res) {
-  const user = await getUserFromRequest(req);
-  if (!user) {
-    res.status(401).json({ error: "Not signed in (missing/invalid Authorization bearer token)." });
-    return null;
-  }
-  return user;
-}
-
-function transcriptToLines(transcript) {
-  const lines = (transcript || "")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  return lines.map((line, i) => {
-    const m = line.match(/^(You|Prospect)\s*:\s*(.*)$/i);
-    if (m) {
-      return {
-        n: i + 1,
-        speaker: m[1][0].toUpperCase() + m[1].slice(1).toLowerCase(),
-        text: (m[2] || "").trim(),
-      };
-    }
-    return { n: i + 1, speaker: "Unknown", text: line };
-  });
-}
-
-function pick(obj, keys, fallback = null) {
-  for (const k of keys) {
-    if (obj && obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== "") return obj[k];
-  }
-  return fallback;
-}
 
 function prettifyTranscript(raw) {
   let t = (raw ?? "").toString().trim();
   if (!t) return "";
 
+  // Normalize newlines
   t = t.replace(/\r\n/g, "\n");
+
+  // Put labels on their own lines (Speaker A/B)
   t = t.replace(/\s*(Speaker\s*[AB]\s*:)\s*/gi, "\n$1 ");
+
+  // Put common labels on their own lines when they appear as "Prospect." or "Prospect:"
   t = t.replace(/\s*(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "\n$1: ");
+
+  // Also split when a label appears mid-line after punctuation: "... ? Prospect ..."
   t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s+(?=[A-Za-z0-9])/gi, "$1\n$2: ");
   t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "$1\n$2: ");
 
+  // Clean spaces WITHOUT destroying newlines
   t = t
     .replace(/[ \t]+/g, " ")
     .replace(/\n[ \t]+/g, "\n")
@@ -114,6 +56,7 @@ function prettifyTranscript(raw) {
 
   let lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
 
+  // Convert Rep/Agent/Caller -> You, Prospect/Customer -> Prospect, keep Speaker A/B for now
   const labelRe = /^(Speaker\s*[AB]|Prospect|Rep|Caller|Agent|Customer)\s*:\s*(.*)$/i;
 
   lines = lines.map((line) => {
@@ -128,6 +71,7 @@ function prettifyTranscript(raw) {
     return `You: ${text}`;
   });
 
+  // Map Speaker A/B -> You/Prospect (heuristic scoring)
   const speakerALines = lines.filter((l) => /^Speaker\s*A\s*:/i.test(l));
   const speakerBLines = lines.filter((l) => /^Speaker\s*B\s*:/i.test(l));
 
@@ -177,6 +121,7 @@ function prettifyTranscript(raw) {
     if (a.net !== b.net) {
       aIsYou = a.net > b.net;
     } else {
+      // tie-breaker: if the very first speaker line starts with "Hey/Hi", it's likely the rep
       const firstSpeakerLine = lines.find((l) => /^Speaker\s*[AB]\s*:/i.test(l)) || "";
       if (/^Speaker\s*[AB]\s*:\s*(hey|hi)\b/i.test(firstSpeakerLine)) {
         aIsYou = /^Speaker\s*A\s*:/i.test(firstSpeakerLine);
@@ -194,6 +139,7 @@ function prettifyTranscript(raw) {
     }
   }
 
+  // Final cleanup for rare double-label artifacts
   lines = lines.map((l) =>
     l.replace(/^You:\s*Prospect:\s*/i, "Prospect: ").replace(/^Prospect:\s*You:\s*/i, "You: ")
   );
@@ -201,6 +147,10 @@ function prettifyTranscript(raw) {
   return lines.join("\n");
 }
 
+/**
+ * AssemblyAI transcription (polling).
+ * Requires: ASSEMBLYAI_API_KEY in env.
+ */
 async function transcribeWithAssemblyAI(audioBuffer) {
   const apiKey = process.env.ASSEMBLYAI_API_KEY;
   if (!apiKey) throw new Error("Missing ASSEMBLYAI_API_KEY in environment.");
@@ -269,49 +219,6 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   }
 }
 
-// ---- Auth + history APIs ----
-app.get("/api/me", async (req, res) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  res.json({ user: { id: user.id, email: user.email } });
-});
-
-app.get("/api/runs", async (req, res) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  if (!supabaseAdmin) return res.status(500).json({ error: "Supabase not configured." });
-
-  const { data, error } = await supabaseAdmin
-    .from("runs")
-    .select("id, created_at, scenario_template, call_outcome, enforcer, mismatch")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  if (error) return res.status(500).json({ error: error.message });
-  return res.json({ runs: data || [] });
-});
-
-app.get("/api/runs/:id", async (req, res) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  if (!supabaseAdmin) return res.status(500).json({ error: "Supabase not configured." });
-
-  const runId = (req.params.id || "").trim();
-  const { data, error } = await supabaseAdmin
-    .from("runs")
-    .select("*")
-    .eq("id", runId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (error) return res.status(500).json({ error: error.message });
-  if (!data) return res.status(404).json({ error: "Run not found." });
-
-  return res.json({ run: data });
-});
-
-// ---- Main pipeline (saves if logged in) ----
 app.post("/api/run", upload.single("audio"), async (req, res) => {
   try {
     const file = req.file;
@@ -337,71 +244,21 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       legacyScenario,
     });
 
-    let run_id = null;
-
-    // Save to DB only if logged in
-    const user = await getUserFromRequest(req);
-    if (user && supabaseAdmin) {
-      try {
-        const callOutcome = pick(result, ["callOutcome", "call_outcome", "outcome"], null);
-        const outcomeReason = pick(result, ["outcomeReason", "outcome_reason"], null);
-        const reportText = pick(result, ["reportText", "report", "coachingReport"], "");
-        const bestScript = pick(result, ["bestScript", "best_script", "script"], "");
-        const section5Pass = pick(result, ["section5Pass", "section5_pass"], null);
-        const scriptWords = pick(result, ["scriptWords", "script_words"], null);
-        const mismatch = !!pick(result, ["mismatch", "scenarioMismatch"], false);
-        const mismatchReason = pick(result, ["mismatchReason", "mismatch_reason"], null);
-
-        const transcript_lines = transcriptToLines(transcript);
-
-        const row = {
-          user_id: user.id,
-          scenario_template: category || null,
-          legacy_scenario: legacyScenario || null,
-          user_context: userContext,
-
-          call_outcome: callOutcome,
-          outcome_reason: outcomeReason,
-
-          transcript_lines,
-          report_text: reportText || "",
-          best_script: bestScript || "",
-          section5_pass: section5Pass,
-          script_words: typeof scriptWords === "number" ? scriptWords : null,
-
-          enforcer: ENFORCER_VERSION,
-          mismatch,
-          mismatch_reason: mismatchReason,
-
-          diagnostics: result,
-        };
-
-        const { data: insData, error: insErr } = await supabaseAdmin
-          .from("runs")
-          .insert(row)
-          .select("id")
-          .single();
-
-        if (insErr) console.warn("⚠ Failed to insert run:", insErr.message);
-        run_id = insData?.id || null;
-      } catch (e) {
-        console.warn("⚠ Save run failed (non-fatal):", e?.message || String(e));
-      }
-    }
-
-    return res.json({ transcript, run_id, ...result });
+    return res.json({ transcript, ...result });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err?.message || String(err) });
   }
 });
 
-// SPA routes
-app.get("/login", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get("/home", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get("/calibrate", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get("/runs/:id", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+/**
+ * SPA fallback:
+ * Render/Express will 404 on /login and /home unless we serve index.html for those paths.
+ * IMPORTANT: this must be AFTER /api routes.
+ */
+const INDEX = path.join(__dirname, "index.html");
+app.get(["/", "/login", "/home", "/run/:id"], (req, res) => res.sendFile(INDEX));
+app.get("*", (req, res) => res.sendFile(INDEX));
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(PORT, () => {
