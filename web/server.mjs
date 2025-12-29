@@ -11,6 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set("trust proxy", 1); // Render/proxies
 app.use(express.json());
 
 const upload = multer({
@@ -57,6 +58,22 @@ async function requireUserId(req) {
   return data?.user?.id || null;
 }
 
+// Normalize mismatch even if your DB column name changes or doesn't exist
+function normalizeScenarioMismatch(row) {
+  if (!row || typeof row !== "object") return null;
+
+  // If the column exists, use it
+  if ("scenario_mismatch" in row) return row.scenario_mismatch;
+
+  // Common alternates / legacy shapes (optional)
+  if ("scenarioMismatch" in row) return row.scenarioMismatch;
+  if ("scenario_mismatch_flag" in row) return row.scenario_mismatch_flag;
+  if ("scenario_mismatch_text" in row) return Boolean(row.scenario_mismatch_text);
+  if ("context_conflict_banner" in row) return Boolean(row.context_conflict_banner);
+
+  return null;
+}
+
 // -------------------- Runs API (history + details) --------------------
 
 // List recent runs for signed-in user
@@ -66,15 +83,28 @@ app.get("/api/runs", async (req, res) => {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const sb = supabaseService();
+
+    // IMPORTANT: select("*") so missing columns (like scenario_mismatch) can't crash the query
     const { data, error } = await sb
       .from("runs")
-      .select("id, created_at, scenario_template, call_outcome, enforcer, scenario_mismatch")
+      .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50);
 
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ runs: data || [] });
+
+    // Shape the response to what the frontend expects
+    const runs = (data || []).map((r) => ({
+      id: r.id,
+      created_at: r.created_at,
+      scenario_template: r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null,
+      call_outcome: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
+      enforcer: r.enforcer ?? r.enforcer_version ?? r.enforcerVersion ?? ENFORCER_VERSION,
+      scenario_mismatch: normalizeScenarioMismatch(r),
+    }));
+
+    return res.json({ runs });
   } catch (err) {
     return res.status(500).json({ error: err?.message || String(err) });
   }
@@ -97,7 +127,11 @@ app.get("/api/runs/:id", async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: "Run not found" });
-    return res.json({ run: data });
+
+    // (Optional) add normalized field for UI convenience
+    const run = { ...data, scenario_mismatch: normalizeScenarioMismatch(data) };
+
+    return res.json({ run });
   } catch (err) {
     return res.status(500).json({ error: err?.message || String(err) });
   }
