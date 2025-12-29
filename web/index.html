@@ -303,6 +303,7 @@
         <div>
           <label for="audio">Audio file</label>
           <input id="audio" type="file" accept="audio/*" />
+          <div class="help">Limits: audio only • max 25MB • max 30 minutes • formats: mp3/m4a/wav/ogg.</div>
         </div>
 
         <div>
@@ -384,25 +385,16 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
-    // ---- Router helpers ----
-    function goto(path) {
-      history.pushState({}, "", path);
-      renderRoute();
-    }
+    function goto(path) { history.pushState({}, "", path); renderRoute(); }
     window.addEventListener("popstate", renderRoute);
 
-    // ---- Dev mode ----
     function isDevMode() {
       const url = new URL(window.location.href);
       const qp = url.searchParams.get("dev");
-      if (qp === "1" || qp === "true") {
-        localStorage.setItem("calibrate_dev", "1");
-        return true;
-      }
+      if (qp === "1" || qp === "true") { localStorage.setItem("calibrate_dev", "1"); return true; }
       return localStorage.getItem("calibrate_dev") === "1";
     }
 
-    // ---- Scenario data ----
     const scenarioTemplates = [
       ["", "None"],
       ["b2b_service_software", "B2B service / software"],
@@ -518,7 +510,6 @@
     function splitReportIntoSections(reportMd) {
       const text = String(reportMd || "").trim();
       if (!text) return [];
-
       const cleaned = text.replace(/^\uFEFF/, "").trim();
 
       if (cleaned.startsWith("##")) {
@@ -560,10 +551,7 @@
         let text = line;
 
         const m = line.match(/^([^:]{1,20}):\s*(.*)$/);
-        if (m) {
-          speaker = m[1].trim();
-          text = (m[2] || "").trim();
-        }
+        if (m) { speaker = m[1].trim(); text = (m[2] || "").trim(); }
 
         const chipClass =
           /^you$/i.test(speaker) ? "you" :
@@ -607,10 +595,7 @@
 
         let open = (i < 2);
         body.style.display = open ? "block" : "none";
-        head.addEventListener("click", () => {
-          open = !open;
-          body.style.display = open ? "block" : "none";
-        });
+        head.addEventListener("click", () => { open = !open; body.style.display = open ? "block" : "none"; });
 
         card.appendChild(head);
         card.appendChild(body);
@@ -622,7 +607,6 @@
       const summaryKVEl = opts.summaryKVEl;
       const scenarioValue = opts.scenarioValue || "";
       const userContext = opts.userContext || "";
-
       summaryKVEl.innerHTML = "";
 
       const scenarioLabel = (() => {
@@ -657,7 +641,6 @@
 
         const vEl = document.createElement("div");
         vEl.className = "v";
-
         if (vNodeOrText instanceof Node) vEl.appendChild(vNodeOrText);
         else vEl.textContent = String(vNodeOrText || "");
 
@@ -672,11 +655,7 @@
       if (inferredItems.length) {
         const ul = document.createElement("ul");
         ul.className = "bullets";
-        inferredItems.forEach((x) => {
-          const li = document.createElement("li");
-          li.textContent = x;
-          ul.appendChild(li);
-        });
+        inferredItems.forEach((x) => { const li = document.createElement("li"); li.textContent = x; ul.appendChild(li); });
         addKV("Inferred from Transcript", ul);
       } else {
         addKV("Inferred from Transcript", "(none)");
@@ -686,7 +665,6 @@
       addKV("Call Outcome", callOutcome || "(unknown)");
     }
 
-    // ---- DOM ----
     const viewLanding = document.getElementById("viewLanding");
     const viewSessionExpired = document.getElementById("viewSessionExpired");
     const viewLogin = document.getElementById("viewLogin");
@@ -720,7 +698,6 @@
     const btnBackHome = document.getElementById("btnBackHome");
     const runBanners = document.getElementById("runBanners");
 
-    // calibrate DOM
     const categoryEl = document.getElementById("category");
     const legacyEl = document.getElementById("legacyScenario");
     const audioEl = document.getElementById("audio");
@@ -738,7 +715,6 @@
     const diagnosticsMonoEl = document.getElementById("diagnosticsMono");
     const rawJsonEl = document.getElementById("rawJson");
 
-    // run viewer DOM
     const summaryKVEl2 = document.getElementById("summaryKV2");
     const transcriptBoxEl2 = document.getElementById("transcriptBox2");
     const reportGridEl2 = document.getElementById("reportGrid2");
@@ -764,19 +740,102 @@
       runsTbody.innerHTML = "";
       const tr = document.createElement("tr");
       tr.className = "msg";
-      tr.innerHTML = `
-        <td>${escapeHtml(msg || "")}</td>
-        <td></td><td></td><td></td><td></td>
-      `;
+      tr.innerHTML = `<td>${escapeHtml(msg || "")}</td><td></td><td></td><td></td><td></td>`;
       runsTbody.appendChild(tr);
     }
 
-    // ---- Supabase init ----
+    // ---- Limits ----
+    const LIMITS = {
+      MAX_BYTES: 25 * 1024 * 1024,
+      MAX_DURATION_SEC: 30 * 60,
+      MAX_RUNS_PER_DAY_SOFT: 10,
+      ALLOWED_EXT: ["mp3", "m4a", "wav", "ogg"],
+    };
+
+    function formatBytes(n) {
+      const units = ["B", "KB", "MB", "GB"];
+      let x = Number(n) || 0;
+      let i = 0;
+      while (x >= 1024 && i < units.length - 1) { x /= 1024; i++; }
+      return `${x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function getFileExt(name) {
+      const s = String(name || "").trim();
+      const idx = s.lastIndexOf(".");
+      if (idx < 0) return "";
+      return s.slice(idx + 1).toLowerCase();
+    }
+
+    function isAllowedAudioFile(file) {
+      const ext = getFileExt(file?.name || "");
+      const mime = String(file?.type || "").toLowerCase();
+      const mimeOk = mime.startsWith("audio/");
+      const extOk = LIMITS.ALLOWED_EXT.includes(ext);
+      return { mimeOk, extOk, ext, mime };
+    }
+
+    async function getAudioDurationSeconds(file, timeoutMs = 3500) {
+      return new Promise((resolve, reject) => {
+        let done = false;
+        const url = URL.createObjectURL(file);
+        const audio = new Audio();
+        const cleanup = () => {
+          if (done) return;
+          done = true;
+          try { audio.src = ""; } catch (_) {}
+          try { URL.revokeObjectURL(url); } catch (_) {}
+        };
+
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("duration_timeout"));
+        }, timeoutMs);
+
+        audio.preload = "metadata";
+        audio.onloadedmetadata = () => {
+          clearTimeout(timer);
+          const d = Number(audio.duration);
+          cleanup();
+          if (!isFinite(d) || d <= 0) reject(new Error("duration_unknown"));
+          else resolve(d);
+        };
+        audio.onerror = () => {
+          clearTimeout(timer);
+          cleanup();
+          reject(new Error("duration_error"));
+        };
+
+        audio.src = url;
+      });
+    }
+
+    function todayKey() {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+
+    function getSoftRunCount() {
+      const key = "calibrate_runs_" + todayKey();
+      const n = parseInt(localStorage.getItem(key) || "0", 10);
+      return isFinite(n) && n >= 0 ? n : 0;
+    }
+
+    function incSoftRunCount() {
+      const key = "calibrate_runs_" + todayKey();
+      const n = getSoftRunCount() + 1;
+      localStorage.setItem(key, String(n));
+      return n;
+    }
+
+    // ---- Supabase init + auth wrapper ----
     let sb = null;
     let session = null;
     let config = null;
 
-    // ---- Auth hydration + token cache ----
     let ACCESS_TOKEN = "";
     let _authReadyDone = false;
     let _authReadyResolve;
@@ -785,20 +844,15 @@
     function _setAuth(newSession) {
       session = newSession || null;
       ACCESS_TOKEN = newSession?.access_token || "";
-      if (!_authReadyDone) {
-        _authReadyDone = true;
-        _authReadyResolve(true);
-      }
+      if (!_authReadyDone) { _authReadyDone = true; _authReadyResolve(true); }
     }
 
     async function initSupabase() {
       const r = await fetch("/api/config");
       config = await r.json();
       if (!config?.supabaseUrl || !config?.supabaseAnonKey) throw new Error("Missing Supabase config from /api/config");
-
       const createClient = window.supabase?.createClient;
       if (!createClient) throw new Error("Supabase JS not loaded");
-
       sb = createClient(config.supabaseUrl, config.supabaseAnonKey);
 
       const { data } = await sb.auth.getSession();
@@ -806,30 +860,17 @@
 
       sb.auth.onAuthStateChange((event, newSession) => {
         _setAuth(newSession);
-
-        // Don't rerender on TOKEN_REFRESHED (prevents UI jitter)
-        if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
-          renderRoute();
-        }
+        if (event === "SIGNED_IN" || event === "SIGNED_OUT") renderRoute();
       });
 
-      if (!_authReadyDone) {
-        _authReadyDone = true;
-        _authReadyResolve(true);
-      }
+      if (!_authReadyDone) { _authReadyDone = true; _authReadyResolve(true); }
     }
 
-    async function getAccessToken() {
-      await AUTH_READY;
-      return ACCESS_TOKEN || "";
-    }
+    async function getAccessToken() { await AUTH_READY; return ACCESS_TOKEN || ""; }
 
-    // ---- 401 handling (silent refresh retry, then session-expired page) ----
     let _refreshInFlight = null;
-
     async function silentRefreshOnce() {
       if (_refreshInFlight) return _refreshInFlight;
-
       _refreshInFlight = (async () => {
         try {
           if (!sb) return null;
@@ -844,12 +885,10 @@
           _refreshInFlight = null;
         }
       })();
-
       return _refreshInFlight;
     }
 
     async function forceSessionExpired() {
-      // Clear any stale tokens locally
       try { if (sb) await sb.auth.signOut(); } catch (_) {}
       _setAuth(null);
       goto("/session-expired");
@@ -861,27 +900,18 @@
       if (token) headers.set("Authorization", "Bearer " + token);
 
       const first = await fetch(url, Object.assign({}, opts || {}, { headers }));
-
       if (first.status !== 401) return first;
-
-      // If no auth and this endpoint allows it, don't force redirect
       if (!token && allowNoAuth) return first;
 
-      // One silent refresh retry
       await silentRefreshOnce();
       const token2 = await getAccessToken();
-      if (!token2) {
-        await forceSessionExpired();
-        return first;
-      }
+      if (!token2) { await forceSessionExpired(); return first; }
 
       const headers2 = new Headers((opts && opts.headers) || {});
       headers2.set("Authorization", "Bearer " + token2);
-      const second = await fetch(url, Object.assign({}, opts || {}, { headers: headers2 }));
 
-      if (second.status === 401) {
-        await forceSessionExpired();
-      }
+      const second = await fetch(url, Object.assign({}, opts || {}, { headers: headers2 }));
+      if (second.status === 401) await forceSessionExpired();
       return second;
     }
 
@@ -901,49 +931,29 @@
       btnHome.classList.toggle("hidden", !loggedIn);
       btnNew.classList.toggle("hidden", !loggedIn);
       who.classList.toggle("hidden", !loggedIn);
-
-      if (loggedIn) who.textContent = session.user?.email || "Signed in";
-      else who.textContent = "";
+      who.textContent = loggedIn ? (session.user?.email || "Signed in") : "";
     }
 
-    // ---- Nav buttons ----
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
     btnSignIn.addEventListener("click", () => goto("/login"));
-    btnSignOut.addEventListener("click", async () => {
-      if (!sb) return;
-      await sb.auth.signOut();
-      goto("/");
-    });
+    btnSignOut.addEventListener("click", async () => { if (!sb) return; await sb.auth.signOut(); goto("/"); });
 
-    btnGetStarted.addEventListener("click", () => {
-      if (session) goto("/home");
-      else goto("/login");
-    });
-
+    btnGetStarted.addEventListener("click", () => { if (session) goto("/home"); else goto("/login"); });
     btnHomeNew.addEventListener("click", () => goto("/calibrate"));
     btnBackHome.addEventListener("click", () => goto("/home"));
-
     btnExpiredToLogin.addEventListener("click", () => goto("/login"));
     btnExpiredHome.addEventListener("click", () => goto("/"));
 
-    // ---- Login actions ----
     btnMagicLink.addEventListener("click", async () => {
-      loginBanners.innerHTML = "";
-      loginStatus.textContent = "";
-
+      loginBanners.innerHTML = ""; loginStatus.textContent = "";
       const email = (emailEl.value || "").trim();
       if (!email) { loginBanners.appendChild(banner("bad", "Error:", "Enter an email.")); return; }
 
       try {
         btnMagicLink.disabled = true;
         loginStatus.textContent = "Sending magic link…";
-
-        await sb.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: window.location.origin + "/home" },
-        });
-
+        await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin + "/home" } });
         loginBanners.appendChild(banner("good", "Sent:", "Check your email for the magic link."));
         loginStatus.textContent = "";
       } catch (e) {
@@ -955,24 +965,18 @@
     });
 
     btnGoogle.addEventListener("click", async () => {
-      loginBanners.innerHTML = "";
-      loginStatus.textContent = "";
+      loginBanners.innerHTML = ""; loginStatus.textContent = "";
       try {
-        await sb.auth.signInWithOAuth({
-          provider: "google",
-          options: { redirectTo: window.location.origin + "/home" },
-        });
+        await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/home" } });
       } catch (e) {
         loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
       }
     });
 
-    // ---- History ----
     let _runsReqId = 0;
 
     async function loadRuns() {
       const reqId = ++_runsReqId;
-
       homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
       if (runsTbody.children.length === 0) showRunsSkeletonRow();
@@ -986,7 +990,6 @@
         if (reqId !== _runsReqId) return;
 
         if (!r.ok) {
-          // If we got redirected to /session-expired, renderRoute will handle it
           if (r.status === 401) return;
           homeBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load runs."));
           homeStatus.textContent = "\u00A0";
@@ -1034,12 +1037,10 @@
       }
     }
 
-    // ---- Run viewer ----
     let _runReqId = 0;
 
     async function loadRun(runId) {
       const reqId = ++_runReqId;
-
       runBanners.innerHTML = "";
       summaryKVEl2.innerHTML = "";
       transcriptBoxEl2.innerHTML = "";
@@ -1082,7 +1083,6 @@
       }
     }
 
-    // ---- Calibrate (new run) ----
     function renderDiagnostics(resp) {
       const section5Raw = pick(resp, ["section5", "section_5", "section5Pass", "section_5_pass"], "");
       const section5 =
@@ -1105,6 +1105,9 @@
       rawJsonEl.textContent = "\nRaw JSON:\n" + JSON.stringify(resp, null, 2);
     }
 
+    // ---- Calibrate submit lock ----
+    let RUN_IN_FLIGHT = false;
+
     async function onRun() {
       const file = audioEl.files?.[0];
       const ctx = contextEl.value.trim();
@@ -1113,9 +1116,55 @@
       bannersEl.innerHTML = "";
       resultsEl.classList.add("hidden");
 
+      if (RUN_IN_FLIGHT) {
+        bannersEl.innerHTML = "";
+        resultsEl.classList.remove("hidden");
+        bannersEl.appendChild(banner("warn", "Already running:", "Please wait for the current calibration to finish."));
+        return;
+      }
+
       if (!file) { statusEl.textContent = "Choose an audio file first."; return; }
       if (ctx.length < 10) { statusEl.textContent = "Context is required (10+ characters)."; return; }
 
+      // soft daily cap (client-only)
+      const softCount = getSoftRunCount();
+      if (softCount >= LIMITS.MAX_RUNS_PER_DAY_SOFT) {
+        resultsEl.classList.remove("hidden");
+        bannersEl.appendChild(banner("bad", "Daily limit reached:", `You’ve hit ${LIMITS.MAX_RUNS_PER_DAY_SOFT} calibrations today. Try again tomorrow.`));
+        return;
+      }
+
+      // file size + type checks
+      if (file.size > LIMITS.MAX_BYTES) {
+        resultsEl.classList.remove("hidden");
+        bannersEl.appendChild(banner("bad", "File too large:", `Max is ${formatBytes(LIMITS.MAX_BYTES)}. Your file is ${formatBytes(file.size)}.`));
+        return;
+      }
+
+      const { mimeOk, extOk, ext, mime } = isAllowedAudioFile(file);
+      if (!mimeOk && !extOk) {
+        resultsEl.classList.remove("hidden");
+        bannersEl.appendChild(banner("bad", "Unsupported file:", `Please upload mp3/m4a/wav/ogg. (Got ${ext || "unknown"} / ${mime || "unknown"})`));
+        return;
+      }
+
+      // duration check (best-effort)
+      try {
+        statusEl.textContent = "Checking audio…";
+        const dur = await getAudioDurationSeconds(file);
+        if (dur > LIMITS.MAX_DURATION_SEC) {
+          resultsEl.classList.remove("hidden");
+          bannersEl.appendChild(banner("bad", "Audio too long:", `Max is 30 minutes. Your file is ~${Math.round(dur/60)} minutes.`));
+          statusEl.textContent = "";
+          return;
+        }
+      } catch (e) {
+        // If we can't read duration, allow (size cap is still enforced)
+        resultsEl.classList.remove("hidden");
+        bannersEl.appendChild(banner("warn", "Note:", "Couldn’t verify audio duration in your browser. Uploading anyway (size limits still apply)."));
+      }
+
+      RUN_IN_FLIGHT = true;
       runBtn.disabled = true;
       runBtn.textContent = "Calibrating…";
       statusEl.textContent = "Uploading + transcribing…";
@@ -1132,43 +1181,33 @@
         try { resp = await r.json(); } catch (_) { resp = {}; }
 
         if (!r.ok || resp?.error) {
-          // If auth died mid-upload and we redirected, stop
           if (r.status === 401) return;
-
           resultsEl.classList.remove("hidden");
           bannersEl.appendChild(banner("bad", "Error:", resp?.error || "Request failed."));
-          if (isDevMode()) {
-            diagnosticsDetailsEl.classList.remove("hidden");
-            renderDiagnostics(resp || {});
-          }
+          if (isDevMode()) { diagnosticsDetailsEl.classList.remove("hidden"); renderDiagnostics(resp || {}); }
           return;
         }
 
-        if (resp.run_id) {
-          goto("/runs/" + resp.run_id);
-          return;
-        }
+        // count only on success
+        incSoftRunCount();
+
+        if (resp.run_id) { goto("/runs/" + resp.run_id); return; }
 
         resultsEl.classList.remove("hidden");
-
-        // minimal rendering
         const reportMd = pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], "");
         renderSummaryInto(resp, { summaryKVEl, scenarioValue: categoryEl.value || "", userContext: ctx });
         renderTranscriptInto(resp.transcript, transcriptBoxEl);
         renderReportInto(reportMd, reportGridEl);
 
-        if (isDevMode()) {
-          diagnosticsDetailsEl.classList.remove("hidden");
-          renderDiagnostics(resp);
-        } else {
-          diagnosticsDetailsEl.classList.add("hidden");
-        }
+        if (isDevMode()) { diagnosticsDetailsEl.classList.remove("hidden"); renderDiagnostics(resp); }
+        else { diagnosticsDetailsEl.classList.add("hidden"); }
 
         statusEl.textContent = "Done ✅";
       } catch (e) {
         resultsEl.classList.remove("hidden");
         bannersEl.appendChild(banner("bad", "Error:", e?.message || String(e)));
       } finally {
+        RUN_IN_FLIGHT = false;
         runBtn.disabled = false;
         runBtn.textContent = "Calibrate";
       }
@@ -1176,26 +1215,16 @@
 
     runBtn.addEventListener("click", onRun);
 
-    // ---- Routing ----
     async function renderRoute() {
       if (!sb) return;
-
       updateTopNav();
       hideAllViews();
 
       const path = window.location.pathname || "/";
       const loggedIn = !!session;
 
-      // protected routes
-      const needsAuth =
-        path === "/home" ||
-        path === "/calibrate" ||
-        path.startsWith("/runs/");
-
-      if (needsAuth && !loggedIn) {
-        goto("/login");
-        return;
-      }
+      const needsAuth = path === "/home" || path === "/calibrate" || path.startsWith("/runs/");
+      if (needsAuth && !loggedIn) { goto("/login"); return; }
 
       if (path === "/") {
         if (loggedIn) { goto("/home"); return; }
@@ -1204,10 +1233,7 @@
         return;
       }
 
-      if (path === "/session-expired") {
-        viewSessionExpired.classList.remove("hidden");
-        return;
-      }
+      if (path === "/session-expired") { viewSessionExpired.classList.remove("hidden"); return; }
 
       if (path === "/login") {
         if (loggedIn) { goto("/home"); return; }
@@ -1235,10 +1261,7 @@
       if (path.startsWith("/runs/")) {
         viewRun.classList.remove("hidden");
         const runId = path.split("/runs/")[1] || "";
-        if (!runId) {
-          runBanners.appendChild(banner("bad", "Error:", "Missing run id."));
-          return;
-        }
+        if (!runId) { runBanners.appendChild(banner("bad", "Error:", "Missing run id.")); return; }
         await loadRun(runId);
         return;
       }
@@ -1246,7 +1269,6 @@
       goto("/");
     }
 
-    // Boot
     (async () => {
       try {
         await initSupabase();
