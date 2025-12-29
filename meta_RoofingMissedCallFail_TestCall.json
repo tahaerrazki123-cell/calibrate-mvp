@@ -1,0 +1,9 @@
+{
+  "audio": "RoofingMissedCallFail_TestCall.m4a",
+  "scenarioKey": "roofing",
+  "scriptMaxWords": 90,
+  "scriptTargetWords": 78,
+  "scriptWordCount": 67,
+  "generatedAt": "2025-12-27T19:24:27.331Z",
+  "enforcerVersion": "ENFORCER_V7_2025-12-27"
+}

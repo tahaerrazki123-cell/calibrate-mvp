@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calibrate</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --card: #111827;
+      --muted: #94a3b8;
+      --text: #e5e7eb;
+      --line: rgba(255,255,255,0.08);
+      --good: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --chip: rgba(255,255,255,0.08);
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --radius: 16px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: radial-gradient(1200px 600px at 20% -10%, rgba(59,130,246,0.18), transparent 55%),
+                  radial-gradient(1000px 500px at 100% 0%, rgba(34,197,94,0.10), transparent 45%),
+                  var(--bg);
+      color: var(--text);
+    }
+    .wrap { max-width: 980px; margin: 28px auto; padding: 0 16px; }
+    .header { display:flex; align-items:flex-end; justify-content:space-between; gap: 12px; margin-bottom: 14px; }
+    .brand h1 { margin: 0; font-size: 22px; letter-spacing: 0.2px; }
+    .brand p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .grid { display:grid; gap: 12px; }
+    @media (min-width: 880px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+    label { display:block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input[type="file"], select, textarea, input[type="email"], input[type="password"] {
+      width: 100%;
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      outline: none;
+    }
+    textarea { min-height: 92px; resize: vertical; }
+    .help { color: var(--muted); font-size: 12.5px; margin-top: 6px; line-height: 1.35; }
+    .row { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
+    .btn {
+      appearance:none; border: 0;
+      background: linear-gradient(135deg, rgba(59,130,246,0.95), rgba(34,197,94,0.75));
+      color: #061018;
+      font-weight: 800;
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    .btn.secondary {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-weight: 800;
+    }
+    .btn:disabled { opacity: 0.55; cursor:not-allowed; }
+    .status { color: var(--muted); font-size: 13px; }
+    .hidden { display:none !important; }
+    .link { color: #93c5fd; text-decoration: none; font-weight: 800; }
+    .pill {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .banner {
+      border-radius: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      margin-bottom: 12px;
+      display:flex; gap:10px; align-items:flex-start;
+      background: rgba(255,255,255,0.03);
+    }
+    .banner .dot { width: 10px; height: 10px; border-radius: 999px; margin-top: 4px; }
+    .banner.good .dot { background: var(--good); }
+    .banner.warn .dot { background: var(--warn); }
+    .banner.bad  .dot { background: var(--bad); }
+    .banner .txt { font-size: 13.5px; line-height: 1.35; color: var(--text); }
+    .banner .txt strong { font-weight: 800; }
+
+    .sectionTitle { font-size: 15px; font-weight: 800; margin: 0 0 10px; }
+    .kv { display:grid; gap: 8px; }
+    .kv .item { display:grid; grid-template-columns: 180px 1fr; gap: 10px; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--line); }
+    .kv .k { color: var(--muted); font-size: 13px; }
+    .kv .v { font-size: 13.5px; white-space: pre-wrap; }
+    .bullets { margin: 0; padding-left: 18px; }
+    .bullets li { margin: 4px 0; color: var(--text); font-size: 13.5px; }
+
+    .transcriptBox {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+    .tLine {
+      display:flex; gap: 10px; align-items:flex-start;
+      padding: 10px 12px;
+      border-top: 1px solid var(--line);
+    }
+    .tLine:first-child { border-top: 0; }
+    .ln { width: 34px; text-align:right; color: var(--muted); font-family: var(--mono); font-size: 12px; padding-top: 2px; }
+    .chip {
+      flex: 0 0 auto;
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-weight: 700;
+    }
+    .chip.you { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.28); }
+    .chip.pro { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.26); }
+    .chip.other { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.26); }
+    .tText { font-size: 13.5px; line-height: 1.35; white-space: pre-wrap; }
+
+    .reportGrid { display:grid; gap: 10px; }
+    .reportCard {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+      overflow: hidden;
+    }
+    .reportHead {
+      padding: 10px 12px;
+      font-weight: 850;
+      display:flex; align-items:center; justify-content:space-between;
+      cursor:pointer;
+      user-select:none;
+      background: rgba(255,255,255,0.02);
+    }
+    .reportBody { padding: 10px 12px; border-top: 1px solid var(--line); }
+    .reportBody p { margin: 0 0 8px; color: var(--text); font-size: 13.5px; line-height: 1.4; }
+    .reportBody ul, .reportBody ol { margin: 6px 0 10px 18px; }
+    .reportBody li { margin: 4px 0; font-size: 13.5px; line-height: 1.35; }
+    .reportBody strong { font-weight: 850; }
+
+    details { border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,0.02); padding: 10px 12px; }
+    details summary { cursor:pointer; font-weight: 850; }
+    .mono { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: var(--muted); margin-top: 10px; }
+    .footerNote { color: var(--muted); font-size: 12px; margin-top: 10px; }
+
+    .table { width:100%; border-collapse: collapse; }
+    .table th, .table td { padding: 10px 8px; border-top: 1px solid var(--line); font-size: 13.5px; text-align:left; }
+    .table th { color: var(--muted); font-weight: 900; }
+    .table tr:hover td { background: rgba(255,255,255,0.03); cursor:pointer; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="brand">
+        <h1 id="brandTitle">Calibrate</h1>
+        <p id="brandSub">Upload a call. Get a transcript + coaching report.</p>
+      </div>
+      <div class="row">
+        <span id="who" class="pill hidden"></span>
+        <button id="btnHome" class="btn secondary hidden">Home</button>
+        <button id="btnNew" class="btn secondary hidden">New</button>
+        <button id="btnSignIn" class="btn secondary">Sign in</button>
+        <button id="btnSignOut" class="btn secondary hidden">Sign out</button>
+      </div>
+    </div>
+
+    <!-- Landing -->
+    <div id="viewLanding" class="card hidden">
+      <h3 class="sectionTitle">Calibrate MVP</h3>
+      <p style="margin:0 0 10px; color:var(--muted);">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
+      <ul class="bullets">
+        <li>Transcript line-by-line with speakers</li>
+        <li>Call outcome + coaching report</li>
+        <li>Script gate (PASS/FAIL) capped ~90 words</li>
+      </ul>
+      <div class="row" style="margin-top:12px;">
+        <button id="btnGetStarted" class="btn">Get started</button>
+        <span id="landingStatus" class="status"></span>
+      </div>
+    </div>
+
+    <!-- Login -->
+    <div id="viewLogin" class="card hidden">
+      <h3 class="sectionTitle">Sign in</h3>
+      <div id="loginBanners"></div>
+
+      <div class="grid two">
+        <div>
+          <label for="email">Email</label>
+          <input id="email" type="email" placeholder="you@email.com" />
+          <div class="help">Magic link (no password). Check your inbox.</div>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
+          <div class="help">Google OAuth button is included too (only works if you set Google provider in Supabase).</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <button id="btnGoogle" class="btn secondary">Continue with Google</button>
+        <span id="loginStatus" class="status"></span>
+      </div>
+    </div>
+
+    <!-- Home / History -->
+    <div id="viewHome" class="card hidden">
+      <div class="row" style="justify-content:space-between;">
+        <h3 class="sectionTitle" style="margin:0;">Your history</h3>
+        <button id="btnHomeNew" class="btn">New call</button>
+      </div>
+      <div id="homeBanners" style="margin-top:12px;"></div>
+      <div id="homeStatus" class="status" style="margin: 8px 0;"></div>
+      <div style="overflow:auto;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Scenario</th>
+              <th>Outcome</th>
+              <th>Enforcer</th>
+              <th>Mismatch</th>
+            </tr>
+          </thead>
+          <tbody id="runsTbody"></tbody>
+        </table>
+      </div>
+      <div class="footerNote">Click a row to open that run.</div>
+    </div>
+
+    <!-- Calibrate (new run) -->
+    <div id="viewCalibrate" class="card hidden">
+      <div class="grid two">
+        <div>
+          <label for="audio">Audio file</label>
+          <input id="audio" type="file" accept="audio/*" />
+        </div>
+
+        <div>
+          <label for="category">Scenario template (optional)</label>
+          <select id="category"></select>
+          <div class="help">This nudges examples and wording. Context + transcript stay the source of truth.</div>
+        </div>
+
+        <div>
+          <label for="legacyScenario">Legacy scenario (optional)</label>
+          <select id="legacyScenario"></select>
+          <div class="help">Kept for backwards compatibility during MVP.</div>
+        </div>
+
+        <div>
+          <label for="context">Context (required)</label>
+          <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."></textarea>
+          <div class="help">Keep it short — we infer prospect details from the transcript when possible.</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 10px;">
+        <button id="run" class="btn">Calibrate</button>
+        <span id="status" class="status"></span>
+      </div>
+
+      <div id="results" class="card hidden" style="margin-top:14px;">
+        <div id="banners"></div>
+
+        <h3 class="sectionTitle">Summary</h3>
+        <div class="kv" id="summaryKV"></div>
+
+        <div style="height: 12px;"></div>
+
+        <h3 class="sectionTitle">Transcript</h3>
+        <div class="transcriptBox" id="transcriptBox"></div>
+
+        <div style="height: 12px;"></div>
+
+        <h3 class="sectionTitle">Report</h3>
+        <div class="reportGrid" id="reportGrid"></div>
+
+        <div style="height: 12px;"></div>
+
+        <details id="diagnosticsDetails" class="hidden">
+          <summary>Diagnostics (internal)</summary>
+          <div class="mono" id="diagnosticsMono"></div>
+          <div class="mono" id="rawJson"></div>
+          <div class="footerNote">Dev mode only. Add <span style="font-family:var(--mono)">?dev=1</span> to the URL.</div>
+        </details>
+      </div>
+    </div>
+
+    <!-- Run viewer -->
+    <div id="viewRun" class="card hidden">
+      <div class="row" style="justify-content:space-between;">
+        <h3 class="sectionTitle" style="margin:0;">Run</h3>
+        <button id="btnBackHome" class="btn secondary">Back</button>
+      </div>
+
+      <div id="runBanners" style="margin-top:12px;"></div>
+
+      <h3 class="sectionTitle" style="margin-top:14px;">Summary</h3>
+      <div class="kv" id="summaryKV2"></div>
+
+      <div style="height: 12px;"></div>
+
+      <h3 class="sectionTitle">Transcript</h3>
+      <div class="transcriptBox" id="transcriptBox2"></div>
+
+      <div style="height: 12px;"></div>
+
+      <h3 class="sectionTitle">Report</h3>
+      <div class="reportGrid" id="reportGrid2"></div>
+    </div>
+  </div>
+
+  <!-- Supabase JS (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    // ---- Router helpers ----
+    function goto(path) {
+      history.pushState({}, "", path);
+      renderRoute();
+    }
+    window.addEventListener("popstate", renderRoute);
+
+    // ---- Dev mode ----
+    function isDevMode() {
+      const url = new URL(window.location.href);
+      const qp = url.searchParams.get("dev");
+      if (qp === "1" || qp === "true") {
+        localStorage.setItem("calibrate_dev", "1");
+        return true;
+      }
+      return localStorage.getItem("calibrate_dev") === "1";
+    }
+
+    // ---- Scenario data ----
+    const scenarioTemplates = [
+      ["", "None"],
+      ["b2b_service_software", "B2B service / software"],
+      ["local_service", "Local service (contractors, clinics, home services)"],
+      ["ecommerce", "E-commerce / Shopify / DTC"],
+      ["agency_services", "Agency service (SEO, ads, creative, etc.)"],
+      ["recruiting_staffing", "Recruiting / staffing"],
+      ["real_estate", "Real estate"],
+      ["coaching_consulting", "Coaching / consulting"],
+    ];
+
+    const templateGuidance = {
+      b2b_service_software:
+        "Use ROI/time-saved/pipeline language. Qualify decision-maker, current tool/process, measurable outcome, and a low-friction next step (10-min walkthrough).",
+      local_service:
+        "Use local intent language (calls, booked jobs, service areas). Qualify service area, lead source, seasonality, and a low-friction proof offer (quick audit / 2 examples).",
+      ecommerce:
+        "Use revenue + CAC framing. Qualify platform (Shopify), hero products, current ad spend, and a proof-first deliverable (keyword gap + technical fixes).",
+      agency_services:
+        "Position as outcomes + proof. Qualify current vendor, KPI targets, decision-maker, and offer a diagnostic deliverable (audit + quick wins).",
+      recruiting_staffing:
+        "Use time-to-hire and cost-of-vacancy language. Qualify hiring volume, roles, urgency, and propose a short calibration call + sample slate/pipeline plan.",
+      real_estate:
+        "Use appointments + listings + pipeline framing. Qualify market area, lead channels, current follow-up process, and offer a small proof asset (lead gap audit).",
+      coaching_consulting:
+        "Use offer clarity + lead gen + conversion language. Qualify niche, price point, lead source, and propose a low-friction audit (funnel/offer).",
+    };
+
+    const legacyScenarios = [
+      ["", "None"],
+      ["dentist", "Dentist (legacy)"],
+      ["barber", "Barber (legacy)"],
+      ["seo", "SEO (legacy)"],
+      ["roofing", "Roofing (legacy)"],
+    ];
+
+    function fillSelect(el, options) {
+      el.innerHTML = "";
+      for (const [value, label] of options) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = label;
+        el.appendChild(opt);
+      }
+    }
+
+    function pick(obj, keys, fallback = "") {
+      for (const k of keys) {
+        if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
+      }
+      return fallback;
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function banner(type, title, msg) {
+      const wrap = document.createElement("div");
+      wrap.className = "banner " + type;
+      wrap.innerHTML = `
+        <div class="dot"></div>
+        <div class="txt"><strong>${escapeHtml(title)}</strong> ${escapeHtml(msg)}</div>
+      `;
+      return wrap;
+    }
+
+    function renderMiniMarkdown(md) {
+      const lines = String(md || "").split("\n");
+      let html = "";
+      let inUL = false;
+      let inOL = false;
+
+      const flushLists = () => {
+        if (inUL) { html += "</ul>"; inUL = false; }
+        if (inOL) { html += "</ol>"; inOL = false; }
+      };
+
+      for (let raw of lines) {
+        const line = raw.trimEnd();
+
+        if (!line.trim()) { flushLists(); continue; }
+
+        const ulMatch = line.match(/^\s*[-*]\s+(.*)$/);
+        if (ulMatch) {
+          if (inOL) { html += "</ol>"; inOL = false; }
+          if (!inUL) { html += "<ul>"; inUL = true; }
+          html += `<li>${escapeHtml(ulMatch[1]).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`;
+          continue;
+        }
+
+        const olMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+        if (olMatch) {
+          if (inUL) { html += "</ul>"; inUL = false; }
+          if (!inOL) { html += "<ol>"; inOL = true; }
+          html += `<li>${escapeHtml(olMatch[1]).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`;
+          continue;
+        }
+
+        flushLists();
+        const p = escapeHtml(line).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        html += `<p>${p}</p>`;
+      }
+
+      flushLists();
+      return html;
+    }
+
+    function splitReportIntoSections(reportMd) {
+      const text = String(reportMd || "").trim();
+      if (!text) return [];
+
+      const cleaned = text.replace(/^\uFEFF/, "").trim();
+
+      if (cleaned.startsWith("##")) {
+        const normalized = cleaned.replace(/^##\s+/, "");
+        return normalized.split(/\n##\s+/g).map((chunk) => chunk.trim()).filter(Boolean).map((chunk) => {
+          const [titleLine, ...rest] = chunk.split("\n");
+          return { title: titleLine.trim(), body: rest.join("\n").trim() };
+        });
+      }
+
+      const parts = cleaned.split(/\n##\s+/g);
+      if (parts.length === 1) return [{ title: "Report", body: cleaned }];
+
+      const sections = [];
+      if (parts[0].trim()) sections.push({ title: "Report", body: parts[0].trim() });
+      for (let i = 1; i < parts.length; i++) {
+        const chunk = parts[i].trim();
+        if (!chunk) continue;
+        const [titleLine, ...rest] = chunk.split("\n");
+        sections.push({ title: titleLine.trim(), body: rest.join("\n").trim() });
+      }
+      return sections;
+    }
+
+    function renderTranscriptInto(transcript, transcriptBoxEl) {
+      transcriptBoxEl.innerHTML = "";
+      const lines = String(transcript || "").split("\n").map(s => s.trim()).filter(Boolean);
+
+      if (!lines.length) {
+        const empty = document.createElement("div");
+        empty.className = "tLine";
+        empty.innerHTML = `<div class="ln">–</div><span class="chip other">Transcript</span><div class="tText">(empty)</div>`;
+        transcriptBoxEl.appendChild(empty);
+        return;
+      }
+
+      lines.forEach((line, idx) => {
+        let speaker = "Other";
+        let text = line;
+
+        const m = line.match(/^([^:]{1,20}):\s*(.*)$/);
+        if (m) {
+          speaker = m[1].trim();
+          text = (m[2] || "").trim();
+        }
+
+        const chipClass =
+          /^you$/i.test(speaker) ? "you" :
+          /^prospect$/i.test(speaker) ? "pro" :
+          "other";
+
+        const row = document.createElement("div");
+        row.className = "tLine";
+        row.innerHTML = `
+          <div class="ln">${idx + 1}</div>
+          <span class="chip ${chipClass}">${escapeHtml(speaker)}</span>
+          <div class="tText">${escapeHtml(text || "")}</div>
+        `;
+        transcriptBoxEl.appendChild(row);
+      });
+    }
+
+    function renderReportInto(reportMd, reportGridEl) {
+      reportGridEl.innerHTML = "";
+      const sections = splitReportIntoSections(reportMd);
+
+      if (!sections.length) {
+        const card = document.createElement("div");
+        card.className = "reportCard";
+        card.innerHTML = `<div class="reportHead">Report</div><div class="reportBody"><p>(empty)</p></div>`;
+        reportGridEl.appendChild(card);
+        return;
+      }
+
+      sections.forEach((s, i) => {
+        const card = document.createElement("div");
+        card.className = "reportCard";
+
+        const head = document.createElement("div");
+        head.className = "reportHead";
+        head.textContent = s.title || `Section ${i + 1}`;
+
+        const body = document.createElement("div");
+        body.className = "reportBody";
+        body.innerHTML = renderMiniMarkdown(s.body || "");
+
+        let open = (i < 2);
+        body.style.display = open ? "block" : "none";
+        head.addEventListener("click", () => {
+          open = !open;
+          body.style.display = open ? "block" : "none";
+        });
+
+        card.appendChild(head);
+        card.appendChild(body);
+        reportGridEl.appendChild(card);
+      });
+    }
+
+    function renderSummaryInto(resp, opts) {
+      const summaryKVEl = opts.summaryKVEl;
+      const scenarioValue = opts.scenarioValue || "";
+      const userContext = opts.userContext || "";
+
+      summaryKVEl.innerHTML = "";
+
+      const scenarioLabel = (() => {
+        const found = scenarioTemplates.find(([v]) => v === scenarioValue);
+        return found ? found[1] : "None";
+      })();
+
+      const inferredList = pick(resp, ["inferred_lines", "inferredLines", "inferred", "inferredFromTranscript", "inferred_from_transcript"], null);
+
+      let inferredItems = [];
+      if (Array.isArray(inferredList)) inferredItems = inferredList.map(String);
+      else if (inferredList && typeof inferredList === "object") {
+        const pt = pick(inferredList, ["prospectType", "prospect_type"], "");
+        const ok = pick(inferredList, ["offerKeywords", "offer_keywords"], "");
+        if (pt) inferredItems.push(`Prospect type: ${pt}`);
+        if (ok) inferredItems.push(`Offer keywords: ${Array.isArray(ok) ? ok.join(", ") : ok}`);
+      }
+
+      let derivedTemplate = pick(resp, ["derived_from_template", "derivedFromTemplate", "templateDerived", "template_text", "templateSummary"], "");
+      if (!derivedTemplate || derivedTemplate === "(none)") {
+        if (scenarioValue && templateGuidance[scenarioValue]) derivedTemplate = templateGuidance[scenarioValue];
+      }
+
+      const callOutcome = pick(resp, ["call_outcome", "callOutcome", "outcome"], "");
+
+      const addKV = (k, vNodeOrText) => {
+        const item = document.createElement("div");
+        item.className = "item";
+        const kEl = document.createElement("div");
+        kEl.className = "k";
+        kEl.textContent = k;
+
+        const vEl = document.createElement("div");
+        vEl.className = "v";
+
+        if (vNodeOrText instanceof Node) vEl.appendChild(vNodeOrText);
+        else vEl.textContent = String(vNodeOrText || "");
+
+        item.appendChild(kEl);
+        item.appendChild(vEl);
+        summaryKVEl.appendChild(item);
+      };
+
+      addKV("Scenario (selected)", scenarioLabel);
+      addKV("User Context", userContext);
+
+      if (inferredItems.length) {
+        const ul = document.createElement("ul");
+        ul.className = "bullets";
+        inferredItems.forEach((x) => {
+          const li = document.createElement("li");
+          li.textContent = x;
+          ul.appendChild(li);
+        });
+        addKV("Inferred from Transcript", ul);
+      } else {
+        addKV("Inferred from Transcript", "(none)");
+      }
+
+      addKV("Derived from Template", derivedTemplate || "(none)");
+      addKV("Call Outcome", callOutcome || "(unknown)");
+    }
+
+    // ---- DOM ----
+    const viewLanding = document.getElementById("viewLanding");
+    const viewLogin = document.getElementById("viewLogin");
+    const viewHome = document.getElementById("viewHome");
+    const viewCalibrate = document.getElementById("viewCalibrate");
+    const viewRun = document.getElementById("viewRun");
+
+    const btnHome = document.getElementById("btnHome");
+    const btnNew = document.getElementById("btnNew");
+    const btnSignIn = document.getElementById("btnSignIn");
+    const btnSignOut = document.getElementById("btnSignOut");
+    const who = document.getElementById("who");
+
+    const btnGetStarted = document.getElementById("btnGetStarted");
+    const landingStatus = document.getElementById("landingStatus");
+
+    const loginBanners = document.getElementById("loginBanners");
+    const loginStatus = document.getElementById("loginStatus");
+    const emailEl = document.getElementById("email");
+    const btnMagicLink = document.getElementById("btnMagicLink");
+    const btnGoogle = document.getElementById("btnGoogle");
+
+    const btnHomeNew = document.getElementById("btnHomeNew");
+    const homeBanners = document.getElementById("homeBanners");
+    const homeStatus = document.getElementById("homeStatus");
+    const runsTbody = document.getElementById("runsTbody");
+
+    const btnBackHome = document.getElementById("btnBackHome");
+    const runBanners = document.getElementById("runBanners");
+
+    // calibrate DOM
+    const categoryEl = document.getElementById("category");
+    const legacyEl = document.getElementById("legacyScenario");
+    const audioEl = document.getElementById("audio");
+    const contextEl = document.getElementById("context");
+    const runBtn = document.getElementById("run");
+    const statusEl = document.getElementById("status");
+
+    const resultsEl = document.getElementById("results");
+    const bannersEl = document.getElementById("banners");
+    const summaryKVEl = document.getElementById("summaryKV");
+    const transcriptBoxEl = document.getElementById("transcriptBox");
+    const reportGridEl = document.getElementById("reportGrid");
+
+    const diagnosticsDetailsEl = document.getElementById("diagnosticsDetails");
+    const diagnosticsMonoEl = document.getElementById("diagnosticsMono");
+    const rawJsonEl = document.getElementById("rawJson");
+
+    // run viewer DOM
+    const summaryKVEl2 = document.getElementById("summaryKV2");
+    const transcriptBoxEl2 = document.getElementById("transcriptBox2");
+    const reportGridEl2 = document.getElementById("reportGrid2");
+
+    fillSelect(categoryEl, scenarioTemplates);
+    fillSelect(legacyEl, legacyScenarios);
+
+    // ---- Supabase init ----
+    let sb = null;
+    let session = null;
+    let config = null;
+
+    async function initSupabase() {
+      const r = await fetch("/api/config");
+      config = await r.json();
+      if (!config?.supabaseUrl || !config?.supabaseAnonKey) throw new Error("Missing Supabase config from /api/config");
+
+      const createClient = window.supabase?.createClient;
+      if (!createClient) throw new Error("Supabase JS not loaded");
+
+      sb = createClient(config.supabaseUrl, config.supabaseAnonKey);
+
+      const { data } = await sb.auth.getSession();
+      session = data.session;
+
+      sb.auth.onAuthStateChange((_event, newSession) => {
+        session = newSession;
+        renderRoute();
+      });
+    }
+
+    function hideAllViews() {
+      viewLanding.classList.add("hidden");
+      viewLogin.classList.add("hidden");
+      viewHome.classList.add("hidden");
+      viewCalibrate.classList.add("hidden");
+      viewRun.classList.add("hidden");
+    }
+
+    function updateTopNav() {
+      const loggedIn = !!session;
+      btnSignIn.classList.toggle("hidden", loggedIn);
+      btnSignOut.classList.toggle("hidden", !loggedIn);
+      btnHome.classList.toggle("hidden", !loggedIn);
+      btnNew.classList.toggle("hidden", !loggedIn);
+      who.classList.toggle("hidden", !loggedIn);
+
+      if (loggedIn) {
+        who.textContent = session.user?.email || "Signed in";
+      } else {
+        who.textContent = "";
+      }
+    }
+
+    function authHeader() {
+      if (!session?.access_token) return {};
+      return { Authorization: "Bearer " + session.access_token };
+    }
+
+    // ---- Nav buttons ----
+    btnHome.addEventListener("click", () => goto("/home"));
+    btnNew.addEventListener("click", () => goto("/calibrate"));
+    btnSignIn.addEventListener("click", () => goto("/login"));
+    btnSignOut.addEventListener("click", async () => {
+      if (!sb) return;
+      await sb.auth.signOut();
+      goto("/");
+    });
+
+    btnGetStarted.addEventListener("click", () => {
+      if (session) goto("/home");
+      else goto("/login");
+    });
+
+    btnHomeNew.addEventListener("click", () => goto("/calibrate"));
+    btnBackHome.addEventListener("click", () => goto("/home"));
+
+    // ---- Login actions ----
+    btnMagicLink.addEventListener("click", async () => {
+      loginBanners.innerHTML = "";
+      loginStatus.textContent = "";
+
+      const email = (emailEl.value || "").trim();
+      if (!email) { loginBanners.appendChild(banner("bad", "Error:", "Enter an email.")); return; }
+
+      try {
+        btnMagicLink.disabled = true;
+        loginStatus.textContent = "Sending magic link…";
+
+        await sb.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.origin + "/home" },
+        });
+
+        loginBanners.appendChild(banner("good", "Sent:", "Check your email for the magic link."));
+        loginStatus.textContent = "";
+      } catch (e) {
+        loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
+        loginStatus.textContent = "";
+      } finally {
+        btnMagicLink.disabled = false;
+      }
+    });
+
+    btnGoogle.addEventListener("click", async () => {
+      loginBanners.innerHTML = "";
+      loginStatus.textContent = "";
+      try {
+        await sb.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: window.location.origin + "/home" },
+        });
+      } catch (e) {
+        loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
+      }
+    });
+
+    // ---- History ----
+    async function loadRuns() {
+      homeBanners.innerHTML = "";
+      homeStatus.textContent = "Loading…";
+      runsTbody.innerHTML = "";
+
+      try {
+        const r = await fetch("/api/runs", { headers: authHeader() });
+        const j = await r.json();
+
+        if (!r.ok) {
+          homeBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load runs."));
+          homeStatus.textContent = "";
+          return;
+        }
+
+        const runs = j.runs || [];
+        if (!runs.length) {
+          homeStatus.textContent = "No runs yet.";
+          return;
+        }
+
+        homeStatus.textContent = "";
+
+        for (const run of runs) {
+          const tr = document.createElement("tr");
+          const when = new Date(run.created_at).toLocaleString();
+          const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
+          const outcome = run.call_outcome || "—";
+          const enforcer = run.enforcer || "—";
+          const mismatch = run.mismatch ? "Yes" : "No";
+
+          tr.innerHTML = `
+            <td>${escapeHtml(when)}</td>
+            <td>${escapeHtml(scenario)}</td>
+            <td>${escapeHtml(outcome)}</td>
+            <td>${escapeHtml(enforcer)}</td>
+            <td>${escapeHtml(mismatch)}</td>
+          `;
+
+          tr.addEventListener("click", () => goto("/runs/" + run.id));
+          runsTbody.appendChild(tr);
+        }
+      } catch (e) {
+        homeBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
+        homeStatus.textContent = "";
+      }
+    }
+
+    // ---- Run viewer ----
+    async function loadRun(runId) {
+      runBanners.innerHTML = "";
+      summaryKVEl2.innerHTML = "";
+      transcriptBoxEl2.innerHTML = "";
+      reportGridEl2.innerHTML = "";
+
+      try {
+        const r = await fetch("/api/runs/" + encodeURIComponent(runId), { headers: authHeader() });
+        const j = await r.json();
+
+        if (!r.ok) {
+          runBanners.appendChild(banner("bad", "Error:", j?.error || "Failed to load run."));
+          return;
+        }
+
+        const run = j.run;
+
+        // Build a "resp-like" object from stored DB
+        const diag = run.diagnostics || {};
+        const transcript = (run.transcript_lines || []).map(x => `${x.speaker}: ${x.text}`).join("\n");
+        const reportMd = run.report_text || "";
+        const scenarioValue = run.scenario_template || "";
+        const userContext = run.user_context || "";
+
+        const resp = Object.assign({}, diag, {
+          transcript,
+          call_outcome: run.call_outcome || diag.call_outcome || diag.callOutcome || "",
+        });
+
+        renderSummaryInto(resp, { summaryKVEl: summaryKVEl2, scenarioValue, userContext });
+        renderTranscriptInto(transcript, transcriptBoxEl2);
+        renderReportInto(reportMd || pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl2);
+
+        if (run.mismatch) runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
+      } catch (e) {
+        runBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
+      }
+    }
+
+    // ---- Calibrate (new run) ----
+    function renderBanners(resp) {
+      bannersEl.innerHTML = "";
+
+      const conflict = pick(resp, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "");
+      const outcomeBanner = pick(resp, ["call_outcome_banner", "callOutcomeBanner"], "");
+      const warn = pick(resp, ["warning", "warnings", "banner", "bannerText"], null);
+
+      if (conflict) bannersEl.appendChild(banner("warn", "Scenario mismatch:", String(conflict)));
+      if (outcomeBanner) bannersEl.appendChild(banner("warn", "Outcome:", String(outcomeBanner)));
+
+      if (warn) {
+        if (Array.isArray(warn)) warn.forEach((w) => bannersEl.appendChild(banner("warn", "Note:", String(w))));
+        else bannersEl.appendChild(banner("warn", "Note:", String(warn)));
+      }
+
+      const err = pick(resp, ["error"], "");
+      if (err) bannersEl.appendChild(banner("bad", "Error:", String(err)));
+    }
+
+    function renderDiagnostics(resp) {
+      const section5Raw = pick(resp, ["section5", "section_5", "section5Pass", "section_5_pass"], "");
+      const section5 =
+        typeof section5Raw === "object" && section5Raw
+          ? (pick(section5Raw, ["pass", "ok"], "") ? "PASS" : "FAIL")
+          : String(section5Raw || "");
+
+      const scriptWords = pick(resp, ["script_words", "scriptWords", "words"], "");
+      const turns = pick(resp, ["turn_count", "turns", "numTurns", "num_turns"], "");
+      const enforcer = pick(resp, ["enforcer_version", "enforcer", "enforcerVersion", "ENFORCER_VERSION"], "");
+      const outcomeReason = pick(resp, ["call_outcome_reason", "outcomeReason", "outcome_reason"], "");
+
+      diagnosticsMonoEl.textContent =
+        `Section 5: ${section5 || "(n/a)"}\n` +
+        `Script words: ${scriptWords || "(n/a)"}\n` +
+        `Turns: ${turns || "(n/a)"}\n` +
+        `Enforcer: ${enforcer || "(n/a)"}\n` +
+        `Outcome reason: ${outcomeReason || "(n/a)"}`;
+
+      rawJsonEl.textContent = "\nRaw JSON:\n" + JSON.stringify(resp, null, 2);
+    }
+
+    async function onRun() {
+      const file = audioEl.files?.[0];
+      const ctx = contextEl.value.trim();
+
+      statusEl.textContent = "";
+      bannersEl.innerHTML = "";
+      resultsEl.classList.add("hidden");
+
+      if (!file) { statusEl.textContent = "Choose an audio file first."; return; }
+      if (ctx.length < 10) { statusEl.textContent = "Context is required (10+ characters)."; return; }
+
+      runBtn.disabled = true;
+      runBtn.textContent = "Calibrating…";
+      statusEl.textContent = "Uploading + transcribing…";
+
+      const fd = new FormData();
+      fd.append("audio", file);
+      fd.append("context", ctx);
+      fd.append("category", categoryEl.value || "");
+      fd.append("legacyScenario", legacyEl.value || "");
+
+      try {
+        const headers = authHeader();
+        const r = await fetch("/api/run", { method: "POST", headers, body: fd });
+        const resp = await r.json();
+
+        if (!r.ok || resp?.error) {
+          resultsEl.classList.remove("hidden");
+          bannersEl.appendChild(banner("bad", "Error:", resp?.error || "Request failed."));
+          if (isDevMode()) {
+            diagnosticsDetailsEl.classList.remove("hidden");
+            renderDiagnostics(resp || {});
+          }
+          return;
+        }
+
+        // If logged in, backend returns run_id. Go to viewer so it appears in history.
+        if (resp.run_id) {
+          goto("/runs/" + resp.run_id);
+          return;
+        }
+
+        // Otherwise (not logged in), show inline results
+        resultsEl.classList.remove("hidden");
+        renderBanners(resp);
+
+        renderSummaryInto(resp, {
+          summaryKVEl,
+          scenarioValue: categoryEl.value || "",
+          userContext: ctx,
+        });
+
+        renderTranscriptInto(resp.transcript, transcriptBoxEl);
+        renderReportInto(pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl);
+
+        if (isDevMode()) {
+          diagnosticsDetailsEl.classList.remove("hidden");
+          renderDiagnostics(resp);
+        } else {
+          diagnosticsDetailsEl.classList.add("hidden");
+        }
+
+        statusEl.textContent = "Done ✅";
+      } catch (e) {
+        resultsEl.classList.remove("hidden");
+        bannersEl.appendChild(banner("bad", "Error:", e?.message || String(e)));
+      } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = "Calibrate";
+      }
+    }
+
+    runBtn.addEventListener("click", onRun);
+
+    // ---- Routing ----
+    async function renderRoute() {
+      if (!sb) return;
+
+      updateTopNav();
+      hideAllViews();
+
+      const path = window.location.pathname || "/";
+      const loggedIn = !!session;
+
+      // protected routes
+      const needsAuth =
+        path === "/home" ||
+        path === "/calibrate" ||
+        path.startsWith("/runs/");
+
+      if (needsAuth && !loggedIn) {
+        goto("/login");
+        return;
+      }
+
+      if (path === "/") {
+        if (loggedIn) { goto("/home"); return; }
+        viewLanding.classList.remove("hidden");
+        landingStatus.textContent = "";
+        return;
+      }
+
+      if (path === "/login") {
+        if (loggedIn) { goto("/home"); return; }
+        viewLogin.classList.remove("hidden");
+        return;
+      }
+
+      if (path === "/home") {
+        viewHome.classList.remove("hidden");
+        await loadRuns();
+        return;
+      }
+
+      if (path === "/calibrate") {
+        viewCalibrate.classList.remove("hidden");
+        // reset inline results
+        resultsEl.classList.add("hidden");
+        bannersEl.innerHTML = "";
+        statusEl.textContent = "";
+        if (isDevMode()) diagnosticsDetailsEl.classList.remove("hidden");
+        else diagnosticsDetailsEl.classList.add("hidden");
+        return;
+      }
+
+      if (path.startsWith("/runs/")) {
+        viewRun.classList.remove("hidden");
+        const runId = path.split("/runs/")[1] || "";
+        if (!runId) {
+          runBanners.appendChild(banner("bad", "Error:", "Missing run id."));
+          return;
+        }
+        await loadRun(runId);
+        return;
+      }
+
+      // fallback
+      goto("/");
+    }
+
+    // Boot
+    (async () => {
+      try {
+        await initSupabase();
+        renderRoute();
+      } catch (e) {
+        hideAllViews();
+        viewLanding.classList.remove("hidden");
+        landingStatus.textContent = "Init error: " + (e?.message || String(e));
+      }
+    })();
+  </script>
+</body>
+</html>
