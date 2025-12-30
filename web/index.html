@@ -233,23 +233,54 @@
     .banner .txt{font-size:13.5px;line-height:1.35;color:var(--text)}
     .banner .txt strong{font-weight:950}
 
-    /* Transcript */
+    /* Transcript (FIXED: grid layout = no squiggles) */
     .transcriptBox{border:1px solid var(--line);border-radius:14px;background:rgba(15,23,42,0.02);overflow:hidden}
-    .tLine{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-top:1px solid var(--line);min-width:0}
+
+    .tLine{
+      display:grid;
+      grid-template-columns:34px 92px 1fr;
+      column-gap:10px;
+      align-items:start;
+      padding:10px 12px;
+      border-top:1px solid var(--line);
+    }
     .tLine:first-child{border-top:0}
-    .ln{width:34px;text-align:right;color:var(--muted);font-family:var(--mono);font-size:12px;padding-top:2px}
+
+    .ln{
+      text-align:right;
+      color:var(--muted);
+      font-family:var(--mono);
+      font-size:12px;
+      padding-top:2px;
+      font-variant-numeric: tabular-nums;
+    }
+
     .chip{
-      flex:0 0 92px;
-      font-size:12px;padding:4px 8px;border-radius:999px;
+      width:92px;
+      font-size:12px;
+      padding:4px 8px;
+      border-radius:999px;
       background:rgba(37,99,235,0.08);
       border:1px solid rgba(37,99,235,0.16);
-      color:var(--text);font-weight:850;text-align:center;
-      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      color:var(--text);
+      font-weight:850;
+      text-align:center;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
     }
     .chip.you{background:rgba(37,99,235,0.14);border-color:rgba(37,99,235,0.24)}
     .chip.pro{background:rgba(22,163,74,0.12);border-color:rgba(22,163,74,0.22)}
     .chip.other{background:rgba(2,6,23,0.04);border-color:rgba(2,6,23,0.10)}
-    .tText{flex:1 1 auto;min-width:0;font-size:13.5px;line-height:1.35;white-space:pre-wrap}
+
+    .tText{
+      min-width:0;
+      font-size:13.5px;
+      line-height:1.35;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+      word-break:break-word;
+    }
 
     /* Report */
     .reportGrid{display:grid;gap:10px}
@@ -804,31 +835,49 @@
       };
     }
 
-    function renderTranscriptInto(transcript, transcriptBoxEl) {
+    // UPDATED: accepts either transcript string OR transcript_lines array
+    function renderTranscriptInto(transcriptOrLines, transcriptBoxEl) {
       transcriptBoxEl.innerHTML = "";
-      const rawLines = String(transcript || "").split("\n").map(s => s.trim()).filter(Boolean);
 
-      if (!rawLines.length) {
+      let parsed = [];
+
+      // Preferred: structured lines from server
+      if (Array.isArray(transcriptOrLines)) {
+        parsed = transcriptOrLines
+          .map(x => ({
+            speaker: String(x?.speaker || "Other").trim() || "Other",
+            text: String(x?.text || "").trim(),
+          }))
+          .filter(x => x.text);
+      } else {
+        // Backward compatible string parsing
+        const rawLines = String(transcriptOrLines || "")
+          .split("\n")
+          .map(s => s.trim())
+          .filter(Boolean);
+
+        parsed = rawLines.map((line) => {
+          let speaker = "Other";
+          let text = line;
+
+          const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
+          if (m) {
+            speaker = (m[1] || "Other").replace(/\s+/g, " ").trim();
+            text = (m[2] || "").trim();
+          }
+
+          speaker = speaker.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+          return { speaker, text };
+        }).filter(x => x.text);
+      }
+
+      if (!parsed.length) {
         const empty = document.createElement("div");
         empty.className = "tLine";
         empty.innerHTML = `<div class="ln">–</div><span class="chip other">Transcript</span><div class="tText">(empty)</div>`;
         transcriptBoxEl.appendChild(empty);
         return;
       }
-
-      const parsed = rawLines.map((line) => {
-        let speaker = "Other";
-        let text = line;
-
-        const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
-        if (m) {
-          speaker = (m[1] || "Other").replace(/\s+/g, " ").trim();
-          text = (m[2] || "").trim();
-        }
-
-        speaker = speaker.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
-        return { speaker, text };
-      });
 
       const remap = computeSpeakerDisplayMap(parsed);
 
@@ -1292,18 +1341,20 @@
         const run = json.run;
 
         const diag = run.diagnostics || {};
-        const transcript = (run.transcript_lines || []).map(x => `${x.speaker}: ${x.text}`).join("\n");
+        const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : [];
+        const transcriptText = transcriptLines.map(x => `${x.speaker}: ${x.text}`).join("\n");
+
         const reportMd = run.report_text || "";
         const scenarioValue = run.scenario_template || "";
         const userContext = run.user_context || "";
 
         const resp = Object.assign({}, diag, {
-          transcript,
+          transcript: transcriptText,
           call_outcome: run.call_outcome || diag.call_outcome || diag.callOutcome || "",
         });
 
         renderSummaryInto(resp, { summaryKVEl: summaryKVEl2, scenarioValue, userContext });
-        renderTranscriptInto(transcript, transcriptBoxEl2);
+        renderTranscriptInto(transcriptLines, transcriptBoxEl2);
         renderReportInto(reportMd || pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl2);
 
         if (run.mismatch || run.scenario_mismatch) {
@@ -1393,11 +1444,13 @@
           return;
         }
 
+        // Current server returns run_id; this navigates into the run viewer
         if (json.run_id) {
           goto("/runs/" + json.run_id);
           return;
         }
 
+        // Back-compat if server ever returns inline results
         resultsEl.classList.remove("hidden");
         renderBanners(json);
 
@@ -1407,7 +1460,9 @@
           userContext: ctx,
         });
 
-        renderTranscriptInto(json.transcript, transcriptBoxEl);
+        const transcriptPayload = json.transcript_lines || json.transcriptLines || json.transcript || "";
+        renderTranscriptInto(transcriptPayload, transcriptBoxEl);
+
         renderReportInto(pick(json, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl);
 
         if (isDevMode()) {

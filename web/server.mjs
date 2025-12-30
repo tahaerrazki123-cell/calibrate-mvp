@@ -223,49 +223,127 @@ app.get("/api/runs/:id", async (req, res) => {
 
 // -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
 
-function prettifyTranscript(raw) {
-  let t = (raw ?? "").toString().trim();
-  if (!t) return "";
+// NEW: Stable speaker labeling (never "Speaker X") + optional You/Prospect inference
+const SPEAKER_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-  t = t.replace(/\r\n/g, "\n");
+function normalizeSpeakerKey(raw) {
+  if (raw === null || raw === undefined) return "unknown";
+  const s = String(raw).trim();
+  return s ? s : "unknown";
+}
 
-  t = t.replace(/\s*(Speaker\s*(?:[A-Za-z]|\d+)\s*:)\s*/gim, "\n$1 ");
-  t = t.replace(/\s*(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "\n$1: ");
-  t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s+(?=[A-Za-z0-9])/gi, "$1\n$2: ");
-  t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "$1\n$2: ");
-
-  t = t
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/\n{2,}/g, "\n")
+function cleanText(s) {
+  return String(s || "")
+    .replace(/\s+/g, " ")
     .trim();
+}
 
-  let lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
+// Heuristic role inference: only if exactly 2 speakers and confidence is decent.
+// Returns a map { "Speaker A": "You", "Speaker B": "Prospect" } or null.
+function inferYouProspectMap(lines) {
+  const speakers = [...new Set(lines.map(l => l.speaker).filter(Boolean))];
+  if (speakers.length !== 2) return null;
 
-  const labelRe = /^(Speaker\s*(?:[A-Za-z]|\d+)|Prospect|Rep|Caller|Agent|Customer)\s*:\s*(.*)$/i;
+  const textFor = (sp) =>
+    lines.filter(l => l.speaker === sp).map(l => l.text || "").join(" ").slice(0, 5000);
 
-  lines = lines.map((line) => {
-    const m = line.match(labelRe);
-    if (!m) return line;
+  const repSignals = [
+    /\bmy name is\b/i,
+    /\bthis is\b/i,
+    /\bi['’]?m calling\b/i,
+    /\breaching out\b/i,
+    /\bquick (one|question|thing)\b/i,
+    /\bdo you have (a moment|a minute)\b/i,
+    /\bcan i\b/i,
+    /\bwould you\b/i,
+    /\bhow are you\b/i,
+    /\bnext step\b/i,
+    /\bbook\b/i,
+    /\bschedule\b/i,
+    /\bcalendar\b/i,
+    /\bwalkthrough\b/i,
+    /\b15 minutes\b/i,
+  ];
 
-    let label = (m[1] || "").replace(/\s+/g, " ").trim();
-    const text = (m[2] || "").trim();
+  const prospectSignals = [
+    /\bwho is this\b/i,
+    /\bnot interested\b/i,
+    /\bstop calling\b/i,
+    /\bjust email\b/i,
+    /\bhow much\b/i,
+    /\bwe already\b/i,
+    /\bwe're good\b/i,
+    /\bbusy\b/i,
+  ];
 
-    label = label.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+  const score = (txt) => {
+    let rep = 0, pro = 0;
+    for (const r of repSignals) if (r.test(txt)) rep++;
+    for (const p of prospectSignals) if (p.test(txt)) pro++;
+    return { rep, pro, net: rep - pro };
+  };
 
-    const lower = label.toLowerCase();
-    if (lower.startsWith("speaker")) return `${label}: ${text}`.trim();
+  const aSp = speakers[0];
+  const bSp = speakers[1];
 
-    if (lower === "prospect" || lower === "customer") return `Prospect: ${text}`.trim();
+  const a = score(textFor(aSp));
+  const b = score(textFor(bSp));
 
-    return `You: ${text}`.trim();
-  });
+  const diff = Math.abs(a.net - b.net);
+  if (diff < 2) return null; // not confident enough
 
-  lines = lines.map((l) =>
-    l.replace(/^You:\s*Prospect:\s*/i, "Prospect: ").replace(/^Prospect:\s*You:\s*/i, "You: ")
-  );
+  const aIsYou = a.net > b.net;
+  return {
+    [aSp]: aIsYou ? "You" : "Prospect",
+    [bSp]: aIsYou ? "Prospect" : "You",
+  };
+}
 
-  return lines.join("\n");
+// Converts AssemblyAI utterances -> stable Speaker A/B/C labels (never X),
+// then optionally upgrades to You/Prospect if confident.
+function normalizeAssemblyUtterances(utterances) {
+  const speakerMap = new Map(); // rawKey -> "Speaker A"
+  let idx = 0;
+
+  const lines = [];
+  for (const u of utterances || []) {
+    const key = normalizeSpeakerKey(u?.speaker);
+    if (!speakerMap.has(key)) {
+      const label =
+        idx < SPEAKER_LETTERS.length
+          ? `Speaker ${SPEAKER_LETTERS[idx]}`
+          : `Speaker ${idx + 1}`;
+      speakerMap.set(key, label);
+      idx++;
+    }
+
+    const speaker = speakerMap.get(key);
+    const text = cleanText(u?.text);
+    if (!text) continue;
+
+    lines.push({ speaker, text });
+  }
+
+  // Optional role inference (only if 2 speakers and confident)
+  const map = inferYouProspectMap(lines);
+  if (map) {
+    for (const l of lines) {
+      l.speaker = map[l.speaker] || l.speaker;
+    }
+  }
+
+  const transcript = lines.map(l => `${l.speaker}: ${l.text}`).join("\n");
+
+  return {
+    transcript,
+    lines,
+    meta: {
+      utterances: Array.isArray(utterances) ? utterances.length : 0,
+      speakers: speakerMap.size,
+      speaker_map: Object.fromEntries(speakerMap.entries()),
+      role_map: map || null,
+    },
+  };
 }
 
 async function transcribeWithAssemblyAI(audioBuffer) {
@@ -283,7 +361,12 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   const createRes = await fetch("https://api.assemblyai.com/v2/transcript", {
     method: "POST",
     headers: { authorization: apiKey, "content-type": "application/json" },
-    body: JSON.stringify({ audio_url, punctuate: true, format_text: true, speaker_labels: true }),
+    body: JSON.stringify({
+      audio_url,
+      punctuate: true,
+      format_text: true,
+      speaker_labels: true,
+    }),
   });
   if (!createRes.ok) throw new Error("AssemblyAI transcript create failed: " + (await createRes.text().catch(() => "")));
   const { id } = await createRes.json();
@@ -297,15 +380,19 @@ async function transcribeWithAssemblyAI(audioBuffer) {
     const pollJson = await pollRes.json();
 
     if (pollJson.status === "completed") {
+      // Best path: utterances exist (diarized)
       if (Array.isArray(pollJson.utterances) && pollJson.utterances.length) {
-        return pollJson.utterances
-          .map((u) => {
-            const sid = Number.isFinite(u?.speaker) ? u.speaker : "X";
-            return `Speaker ${sid}: ${(u.text || "").trim()}`.trim();
-          })
-          .join("\n");
+        return normalizeAssemblyUtterances(pollJson.utterances);
       }
-      return (pollJson.text || "").trim();
+
+      // Fallback: no utterances (no diarization) — still return something stable
+      const text = cleanText(pollJson.text || "");
+      const lines = text ? [{ speaker: "Speaker A", text }] : [];
+      return {
+        transcript: lines.map(l => `${l.speaker}: ${l.text}`).join("\n"),
+        lines,
+        meta: { utterances: 0, speakers: lines.length ? 1 : 0, speaker_map: {}, role_map: null },
+      };
     }
 
     if (pollJson.status === "error") throw new Error("AssemblyAI transcription error: " + (pollJson.error || "unknown"));
@@ -348,8 +435,10 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       return res.status(429).json({ error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Try again later.` });
     }
 
-    const transcriptRaw = await transcribeWithAssemblyAI(file.buffer);
-    const transcript = prettifyTranscript(transcriptRaw);
+    // NEW: stable diarized transcript + structured transcript_lines
+    const asr = await transcribeWithAssemblyAI(file.buffer);
+    const transcript = asr.transcript;         // "Speaker A: ..." or "You/Prospect: ..."
+    const transcriptLines = asr.lines;         // [{speaker,text}, ...]
 
     const result = await runCalibrate({ transcript, userContext, category, legacyScenario });
 
@@ -366,9 +455,9 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       user_context: userContext,
       scenario_template: category || null,
       legacy_scenario: legacyScenario || null,
-      transcript_lines: transcriptToLines(transcript),
+      transcript_lines: transcriptLines,
       report_text: reportText,
-      diagnostics: result,
+      diagnostics: { ...result, _transcript_meta: asr.meta },
       call_outcome: callOutcome,
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
