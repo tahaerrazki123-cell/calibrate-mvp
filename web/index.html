@@ -1,4 +1,3 @@
-<!-- FILE: web/index.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -6,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Calibrate</title>
 
+  <!-- Inline SVG favicon (Calibrate mark) -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231d4ed8'/%3E%3Cstop offset='1' stop-color='%2338bdf8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M32 6a26 26 0 1 0 18.38 7.62' fill='none' stroke='url(%23g)' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M28 33l6 6 14-14' fill='none' stroke='url(%23g)' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 
   <style>
@@ -105,11 +105,6 @@
       padding:16px;
     }
 
-    .centerCard{
-      max-width:720px;
-      margin:0 auto;
-    }
-
     /* Layout (sidebar + main) */
     .appLayout{
       display:grid;
@@ -117,12 +112,9 @@
       gap:16px;
       align-items:start;
     }
-    /* CRITICAL FIX: when sidebar is hidden (logged out), don't reserve 260px */
-    .appLayout.noSidebar{
-      grid-template-columns: 1fr;
-    }
     @media (max-width: 960px){
       .appLayout{grid-template-columns:1fr;}
+      .sidebar{position:relative;top:auto}
     }
 
     .sidebar{
@@ -154,7 +146,6 @@
       cursor:pointer;
       font-weight:900;
       color:var(--text);
-      text-align:left;
     }
     .navItem:hover{background:rgba(37,99,235,0.06);border-color:rgba(37,99,235,0.20)}
     .navItem.active{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.28)}
@@ -169,24 +160,35 @@
       white-space:nowrap;
     }
 
-    /* Current report indicator (UNDER the Home button, subtle + indented) */
-    .navSub{
-      margin-top:6px;
-      margin-left:14px;
-      font-size:11px;
-      font-weight:850;
-      color:rgba(15,23,42,0.72);
-      padding:3px 8px;
-      border-radius:999px;
-      border:1px solid rgba(37,99,235,0.16);
+    /* Sub-item indicator under Home (NOT inside Home button) */
+    .navSubWrap{margin-top:-4px;margin-bottom:2px;padding-left:10px;}
+    .navSubItem{
+      width:100%;
+      display:flex;align-items:center;gap:8px;
+      padding:7px 10px;
+      border-radius:12px;
+      border:1px solid rgba(37,99,235,0.14);
       background:rgba(37,99,235,0.06);
-      display:inline-block;
-      max-width:200px;
+      color:var(--text);
+      cursor:pointer;
+      font-weight:850;
+      font-size:12.5px;
+    }
+    .navSubItem:hover{background:rgba(37,99,235,0.09);border-color:rgba(37,99,235,0.20)}
+    .navSubDot{
+      width:8px;height:8px;border-radius:999px;
+      background:rgba(37,99,235,0.70);
+      flex:0 0 8px;
+      margin-top:1px;
+    }
+    .navSubText{
+      min-width:0;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
     }
 
+    /* Quick actions */
     .sectionTitle{font-size:15px;font-weight:950;margin:0 0 10px}
     .actionGrid{
       display:grid;
@@ -231,32 +233,77 @@
       pointer-events:none;
     }
 
+    /* Table */
     .tableWrap{overflow:auto;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,0.92)}
     .table{width:100%;border-collapse:collapse}
     .table th,.table td{
       padding:12px 10px;border-top:1px solid var(--line);
       font-size:13.5px;text-align:left;
-      white-space:nowrap;
       vertical-align:middle;
     }
     .table th{color:var(--muted);font-weight:950;background:rgba(15,23,42,0.02)}
     .table tr:hover td{background:rgba(37,99,235,0.05);cursor:pointer}
 
-    .colReport{min-width:320px; width:55%;}
-    .colScenario{min-width:200px}
-    .colOutcome{min-width:160px}
+    .colReport{width:55%}
+    .colScenario{width:25%}
+    .colOutcome{width:20%}
 
-    .truncate{
-      display:block;
-      max-width:560px;
+    .reportCell{
+      max-width:520px;
+      white-space:nowrap;
       overflow:hidden;
       text-overflow:ellipsis;
-      white-space:nowrap;
+      font-weight:850;
     }
-    @media (max-width: 960px){
-      .truncate{max-width:360px;}
+    .mutedCell{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;}
+
+    /* Outcome pill */
+    .outcomePill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:5px 10px;border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(2,6,23,0.03);
+      font-weight:950;
+      font-size:12.5px;
+      white-space:nowrap;
+      position:relative;
+    }
+    .outcomePill.good{border-color:rgba(22,163,74,0.25); background:rgba(22,163,74,0.10)}
+    .outcomePill.warn{border-color:rgba(245,158,11,0.28); background:rgba(245,158,11,0.10)}
+    .outcomePill.bad{border-color:rgba(239,68,68,0.28); background:rgba(239,68,68,0.10)}
+
+    /* Tooltip */
+    .hasTip{position:relative}
+    .hasTip:hover::after{
+      content: attr(data-tip);
+      position:absolute;
+      left:0;
+      top:calc(100% + 10px);
+      min-width:260px;
+      max-width:420px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.98);
+      box-shadow:0 18px 45px rgba(2,6,23,0.14);
+      color:var(--text);
+      font-weight:800;
+      font-size:12.5px;
+      line-height:1.35;
+      white-space:normal;
+      z-index:9999;
+    }
+    .hasTip:hover::before{
+      content:"";
+      position:absolute;
+      left:14px;
+      top:calc(100% + 4px);
+      border:7px solid transparent;
+      border-bottom-color:rgba(15,23,42,0.10);
+      z-index:10000;
     }
 
+    /* Banners */
     .banner{
       border-radius:14px;padding:10px 12px;border:1px solid var(--line);
       margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;
@@ -269,6 +316,7 @@
     .banner .txt{font-size:13.5px;line-height:1.35;color:var(--text)}
     .banner .txt strong{font-weight:950}
 
+    /* Transcript */
     .transcriptBox{border:1px solid var(--line);border-radius:14px;background:rgba(15,23,42,0.02);overflow:hidden}
 
     .tLine{
@@ -317,6 +365,7 @@
       word-break:break-word;
     }
 
+    /* Report */
     .reportGrid{display:grid;gap:10px}
     .reportCard{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.90);overflow:hidden}
     .reportHead{
@@ -329,6 +378,7 @@
     .reportBody li{margin:4px 0;font-size:13.5px;line-height:1.35}
     .reportBody strong{font-weight:950}
 
+    /* Key/Value */
     .kv{display:grid;gap:8px}
     .kv .item{
       display:grid;grid-template-columns:180px 1fr;gap:10px;padding:10px 12px;
@@ -345,55 +395,7 @@
     .mono{font-family:var(--mono);font-size:12px;white-space:pre-wrap;color:var(--muted);margin-top:10px}
     .footerNote{color:var(--muted);font-size:12px;margin-top:10px}
 
-    .assistBox{
-      border:1px solid rgba(37,99,235,0.18);
-      background:rgba(37,99,235,0.06);
-      border-radius:14px;
-      padding:12px;
-      min-height:92px;
-    }
-    .assistHead{
-      display:flex;align-items:center;justify-content:space-between;gap:10px;
-      margin-bottom:8px;
-    }
-    .assistTitle{
-      margin:0;
-      font-weight:950;
-      font-size:13.5px;
-    }
-    .assistPill{
-      font-size:11px;
-      font-weight:950;
-      padding:4px 8px;
-      border-radius:999px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,0.78);
-      color:var(--text);
-      white-space:nowrap;
-    }
-    .assistBody{
-      margin:0;
-      color:rgba(15,23,42,0.80);
-      font-size:12.8px;
-      line-height:1.35;
-      white-space:pre-wrap;
-    }
-    .assistActions{
-      display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;
-    }
-    .assistBtn{
-      appearance:none;
-      border:1px solid rgba(37,99,235,0.22);
-      background:rgba(255,255,255,0.82);
-      color:var(--text);
-      font-weight:950;
-      padding:7px 10px;
-      border-radius:999px;
-      cursor:pointer;
-      font-size:12px;
-    }
-    .assistBtn:hover{background:rgba(37,99,235,0.06)}
-
+    /* Toast */
     .toastHost{
       position:fixed;right:18px;bottom:18px;z-index:9999;
       display:flex;flex-direction:column;gap:10px;
@@ -415,6 +417,29 @@
     .toast.bad  .dot{background:var(--bad)}
     .toast .txt{font-size:13.5px;line-height:1.35}
     .toast .txt strong{font-weight:950}
+
+    /* Landing centering */
+    .landingWrap{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height: calc(100vh - 170px);
+    }
+    .landingCard{
+      width:min(620px, 100%);
+      text-align:left;
+    }
+
+    /* Support */
+    .field{
+      width:100%;
+      background:rgba(15,23,42,0.02);
+      color:var(--text);
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 12px;
+      outline:none;
+    }
   </style>
 </head>
 
@@ -449,18 +474,24 @@
       </div>
     </div>
 
-    <div class="appLayout" id="appLayout">
-      <!-- Sidebar -->
+    <div class="appLayout">
+      <!-- Sidebar (only visible when authed) -->
       <aside id="sidebar" class="card sidebar hidden">
         <div class="sideHead">
           <p class="sideTitle">Dashboard</p>
         </div>
 
         <div class="navList">
-          <!-- Home button stays compact; current report label is BELOW it -->
-          <div>
-            <button id="navDashboard" class="navItem"><span>Home</span></button>
-            <div id="navCurrentRun" class="navSub hidden" title=""></div>
+          <button id="navDashboard" class="navItem">
+            <span>Home</span>
+          </button>
+
+          <!-- current report indicator (sub-item) -->
+          <div id="navRunWrap" class="navSubWrap hidden">
+            <button id="navCurrentRun" class="navSubItem" title="">
+              <span class="navSubDot" aria-hidden="true"></span>
+              <span id="navRunText" class="navSubText"></span>
+            </button>
           </div>
 
           <button id="navUpload" class="navItem">
@@ -488,49 +519,50 @@
         </div>
       </aside>
 
-      <!-- Main -->
+      <!-- Main content -->
       <main>
         <!-- Landing -->
-        <div id="viewLanding" class="card centerCard hidden">
-          <h3 class="sectionTitle">Calibrate MVP</h3>
-          <p style="margin:0 0 10px; color:var(--muted);">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
-          <ul class="bullets">
-            <li>Transcript line-by-line with speakers</li>
-            <li>Call result + coaching report</li>
-            <li>Script gate (PASS/FAIL) capped ~90 words</li>
-          </ul>
-          <div class="row" style="margin-top:12px;">
-            <button id="btnGetStarted" class="btn">Get started</button>
-            <span id="landingStatus" class="status"></span>
+        <div id="viewLanding" class="hidden landingWrap">
+          <div class="card landingCard">
+            <h3 class="sectionTitle" style="margin:0;">Calibrate MVP</h3>
+            <p style="margin:6px 0 10px; color:var(--muted);">
+              Upload a cold call. Get a readable transcript + coaching report + a best next script.
+            </p>
+            <ul class="bullets">
+              <li>Transcript line-by-line with speakers</li>
+              <li>Call result + why it was labeled that way</li>
+              <li>Coaching report + next script</li>
+            </ul>
+            <div class="row" style="margin-top:12px;">
+              <button id="btnGetStarted" class="btn">Get started</button>
+              <span id="landingStatus" class="status"></span>
+            </div>
           </div>
         </div>
 
         <!-- Login -->
-        <div id="viewLogin" class="card centerCard hidden">
+        <div id="viewLogin" class="card hidden">
           <h3 class="sectionTitle">Sign in</h3>
           <div id="loginBanners"></div>
 
           <div style="display:grid; gap:12px;">
             <div>
               <label for="email">Email</label>
-              <input id="email" type="email" placeholder="you@email.com"
-                     style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;" />
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Magic link (no password). Check your inbox.</div>
+              <input id="email" type="email" placeholder="you@email.com" class="field" />
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                Magic link (no password). Check your inbox.
+              </div>
             </div>
-            <div>
-              <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Google OAuth works only if provider is enabled in Supabase.</div>
+            <div class="row">
+              <button id="btnMagicLink" class="btn">Send magic link</button>
+              <button id="btnGoogle" class="btn secondary">Continue with Google</button>
+              <span id="loginStatus" class="status"></span>
             </div>
-          </div>
-
-          <div class="row" style="margin-top:12px;">
-            <button id="btnGoogle" class="btn secondary">Continue with Google</button>
-            <span id="loginStatus" class="status"></span>
           </div>
         </div>
 
         <!-- Session expired -->
-        <div id="viewSessionExpired" class="card centerCard hidden">
+        <div id="viewSessionExpired" class="card hidden">
           <h3 class="sectionTitle">Session expired</h3>
           <p style="margin:0 0 10px; color:var(--muted);">
             Your session expired while you were using Calibrate. Please sign in again to continue.
@@ -542,11 +574,13 @@
           </div>
         </div>
 
-        <!-- Home -->
+        <!-- Home / History -->
         <div id="viewHome" class="hidden">
           <div class="card">
             <h3 class="sectionTitle" style="margin:0;">Quick Actions</h3>
-            <p style="margin:6px 0 0; color:var(--muted); font-size:13.5px;">Choose a workflow. Record + practice are teasers (coming soon).</p>
+            <p style="margin:6px 0 0; color:var(--muted); font-size:13.5px;">
+              Choose a workflow. Record + practice are teasers (coming soon).
+            </p>
 
             <div class="actionGrid">
               <div id="qaUpload" class="actionCard">
@@ -589,66 +623,41 @@
               </table>
             </div>
 
-            <div class="footerNote">Click a row to open that run.</div>
+            <div class="footerNote">Click a row to open that analysis.</div>
           </div>
         </div>
 
-        <!-- Support -->
-        <div id="viewSupport" class="card hidden">
-          <h3 class="sectionTitle" style="margin:0;">Contact Support</h3>
-          <p style="margin:8px 0 0; color:var(--muted); font-size:13.5px;">
-            Describe the issue and click Send. It will create a support ticket tied to your account.
-          </p>
-
-          <div id="supportBanners" style="margin-top:12px;"></div>
-
-          <div style="margin-top:12px;">
-            <label for="supportMsg" style="font-weight:900; font-size:13px;">Message</label>
-            <textarea id="supportMsg" placeholder="What happened? What did you expect? Any details that help reproduce it?"
-              style="width:100%;min-height:140px;resize:vertical;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></textarea>
-          </div>
-
-          <div class="row" style="margin-top:10px;">
-            <button id="btnSendSupport" class="btn">Send</button>
-            <span id="supportStatus" class="status"></span>
-          </div>
-        </div>
-
-        <!-- Calibrate -->
+        <!-- Calibrate (new run) -->
         <div id="viewCalibrate" class="card hidden">
           <div style="display:grid; gap:12px;">
             <div>
               <label for="audio">Audio file</label>
-              <input id="audio" type="file" accept="audio/*"
-                     style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;" />
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Limits: audio only • max 25MB • max 30 minutes • formats: mp3/m4a/wav/ogg.</div>
+              <input id="audio" type="file" accept="audio/*" class="field" />
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                Limits: audio only • max 25MB • formats: mp3/m4a/wav/ogg.
+              </div>
             </div>
 
             <div>
               <label for="category">Scenario template (optional)</label>
-              <select id="category"
-                      style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></select>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">This nudges examples and wording. Context + transcript stay the source of truth.</div>
+              <select id="category" class="field"></select>
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                This nudges examples and wording. Context + transcript stay the source of truth.
+              </div>
             </div>
 
             <div>
               <label for="context">Context (required)</label>
               <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."
-                        style="width:100%;min-height:120px;resize:vertical;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></textarea>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Keep it short — we infer prospect details from the transcript when possible.</div>
+                        style="width:100%;min-height:92px;resize:vertical" class="field"></textarea>
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                Keep it short — we infer details from the transcript when possible.
+              </div>
             </div>
 
-            <div>
-              <label>AI assistance</label>
-              <div class="assistBox">
-                <div class="assistHead">
-                  <p class="assistTitle" style="margin:0;">Context check</p>
-                  <span id="assistPill" class="assistPill">Waiting…</span>
-                </div>
-                <p id="assistBody" class="assistBody">(Type context to get guidance.)</p>
-                <div id="assistActions" class="assistActions hidden"></div>
-              </div>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Fast rules-based helper (no model call).</div>
+            <div id="assistCard" class="banner warn hidden" style="margin-bottom:0;">
+              <div class="dot"></div>
+              <div class="txt"><strong id="assistTitle"></strong> <span id="assistMsg"></span></div>
             </div>
           </div>
 
@@ -656,40 +665,15 @@
             <button id="run" class="btn">Calibrate</button>
             <span id="status" class="status"></span>
           </div>
-
-          <div id="results" class="card hidden" style="margin-top:14px;">
-            <div id="banners"></div>
-
-            <h3 class="sectionTitle">Summary</h3>
-            <div class="kv" id="summaryKV"></div>
-
-            <div style="height: 12px;"></div>
-
-            <h3 class="sectionTitle">Transcript</h3>
-            <div class="transcriptBox" id="transcriptBox"></div>
-
-            <div style="height: 12px;"></div>
-
-            <h3 class="sectionTitle">Report</h3>
-            <div class="reportGrid" id="reportGrid"></div>
-
-            <div style="height: 12px;"></div>
-
-            <details id="diagnosticsDetails" class="hidden">
-              <summary>Diagnostics (internal)</summary>
-              <div class="mono" id="diagnosticsMono"></div>
-              <div class="mono" id="rawJson"></div>
-              <div class="footerNote">Dev mode only. Add <span style="font-family:var(--mono)">?dev=1</span>.</div>
-            </details>
-          </div>
         </div>
 
         <!-- Run viewer -->
         <div id="viewRun" class="card hidden">
           <div class="row" style="justify-content:space-between;">
-            <div style="min-width:0;">
-              <h3 id="runTitle" class="sectionTitle" style="margin:0; font-size:16px; font-weight:950; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:720px;">Run</h3>
-              <div id="runSubtitle" style="margin-top:6px; color:var(--muted); font-size:12.5px;"></div>
+            <div>
+              <h3 class="sectionTitle" style="margin:0;">Call Analysis</h3>
+              <div id="runTitle" style="margin-top:6px;font-weight:950;font-size:16px;"></div>
+              <div id="runMeta" style="margin-top:4px;color:var(--muted);font-size:12.5px;"></div>
             </div>
             <button id="btnBackHome" class="btn secondary">Back</button>
           </div>
@@ -709,27 +693,57 @@
           <h3 class="sectionTitle">Report</h3>
           <div class="reportGrid" id="reportGrid2"></div>
         </div>
+
+        <!-- Support -->
+        <div id="viewSupport" class="card hidden">
+          <div class="row" style="justify-content:space-between;">
+            <h3 class="sectionTitle" style="margin:0;">Contact Support</h3>
+            <button id="btnSupportBack" class="btn secondary">Back</button>
+          </div>
+
+          <div id="supportBanners" style="margin-top:12px;"></div>
+
+          <div style="display:grid; gap:12px; margin-top:10px;">
+            <div>
+              <label for="supportMessage">Message</label>
+              <textarea id="supportMessage" class="field" style="width:100%;min-height:120px;resize:vertical"
+                        placeholder="Describe what happened. Include what you expected vs what you saw."></textarea>
+            </div>
+
+            <div>
+              <label for="supportContact">Your contact (optional)</label>
+              <input id="supportContact" class="field" placeholder="Email, Instagram, etc." />
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                If you want a reply, leave a contact method.
+              </div>
+            </div>
+
+            <div class="row">
+              <button id="btnSupportSend" class="btn">Send</button>
+              <span id="supportStatus" class="status"></span>
+            </div>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>
 
   <div id="toastHost" class="toastHost"></div>
 
+  <!-- Supabase JS (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
-    function goto(path) { history.pushState({}, "", path); renderRoute(); }
+    // ---- Router helpers ----
+    function goto(path) {
+      history.pushState({}, "", path);
+      renderRoute();
+    }
     window.addEventListener("popstate", renderRoute);
 
+    // ---- Toast ----
     const toastHost = document.getElementById("toastHost");
-    function escapeHtml(s) {
-      return String(s)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
     function toast(type, title, msg, ms = 2600) {
       const t = document.createElement("div");
       t.className = "toast " + (type || "warn");
@@ -741,6 +755,26 @@
       setTimeout(() => { try { t.remove(); } catch {} }, ms);
     }
 
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function banner(type, title, msg) {
+      const wrap = document.createElement("div");
+      wrap.className = "banner " + type;
+      wrap.innerHTML = `
+        <div class="dot"></div>
+        <div class="txt"><strong>${escapeHtml(title)}</strong> ${escapeHtml(msg)}</div>
+      `;
+      return wrap;
+    }
+
+    // ---- Scenario data ----
     const scenarioTemplates = [
       ["", "None"],
       ["b2b_service_software", "B2B service / software"],
@@ -752,53 +786,15 @@
       ["coaching_consulting", "Coaching / consulting"],
     ];
 
-    const templateGuidance = {
-      b2b_service_software: "Use ROI/time-saved/pipeline language. Qualify decision-maker, current tool/process, measurable outcome, and a low-friction next step (10-min walkthrough).",
-      local_service: "Use local intent language (calls, booked jobs, service areas). Qualify service area, lead source, seasonality, and a low-friction proof offer (quick audit / 2 examples).",
-      ecommerce: "Use revenue + CAC framing. Qualify platform (Shopify), hero products, current ad spend, and a proof-first deliverable (keyword gap + technical fixes).",
-      agency_services: "Position as outcomes + proof. Qualify current vendor, KPI targets, decision-maker, and offer a diagnostic deliverable (audit + quick wins).",
-      recruiting_staffing: "Use time-to-hire and cost-of-vacancy language. Qualify hiring volume, roles, urgency, and propose a short calibration call + sample slate/pipeline plan.",
-      real_estate: "Use appointments + listings + pipeline framing. Qualify market area, lead channels, current follow-up process, and offer a small proof asset (lead gap audit).",
-      coaching_consulting: "Use offer clarity + lead gen + conversion language. Qualify niche, price point, lead source, and propose a low-friction audit (funnel/offer).",
-    };
-
     const scenarioKeywords = {
-      b2b_service_software: ["saas","software","crm","demo","pipeline","integrat","subscription","seats","users","it","security","api","platform"],
-      local_service: ["dentist","dental","clinic","roof","plumb","hvac","contractor","barber","salon","repair","home service","appointment","booked","front desk"],
-      ecommerce: ["shopify","ecom","e-commerce","d2c","product","cart","checkout","conversion","aov","cac","roas","brand","store","sku"],
-      agency_services: ["seo","ads","google ads","meta ads","facebook ads","creative","agency","marketing","leads","rank","keywords","content","landing page"],
-      recruiting_staffing: ["recruit","staff","hiring","candidates","talent","roles","job","positions","headcount","time-to-hire"],
-      real_estate: ["real estate","realtor","listing","buyer","seller","property","home","house","mortgage","investor","motivated seller"],
-      coaching_consulting: ["coach","coaching","consult","consulting","program","clients","retainer","offer","funnel","course","mastermind"],
+      b2b_service_software: ["pipeline","crm","demo","saas","software","workflow","time saved","roi","automation"],
+      local_service: ["estimate","quote","jobs","service area","booked jobs","roof","plumbing","clinic","dentist","hvac"],
+      ecommerce: ["shopify","ecommerce","d2c","cart","conversion","roas","ads","product page","checkout","aov"],
+      agency_services: ["seo","ads","creative","agency","retainer","audit","rank","keywords","google ads","meta ads"],
+      recruiting_staffing: ["hire","hiring","staffing","recruiting","candidates","roles","openings","time to hire"],
+      real_estate: ["listing","realtor","buyer","seller","open house","zillow","mls","showing","offer"],
+      coaching_consulting: ["coaching","consulting","clients","program","course","mentorship","1:1","funnel"],
     };
-
-    const outcomeHelp = {
-      CONNECTED: "You reached a real person and had a conversation. No clear next step was booked.",
-      BOOKED_MEETING: "Prospect agreed to a next step (demo/appointment/meeting). A time was set or clearly implied.",
-      CALLBACK: "Prospect requested a callback at a later time.",
-      REJECTED: "Prospect declined and did not agree to a next step.",
-      HOSTILE: "Prospect was hostile/angry and signaled to stop contacting them.",
-      VOICEMAIL: "Call went to voicemail (or only voicemail was reached).",
-      NO_ANSWER: "No answer / disconnected before a conversation.",
-      GATEKEEPER: "You spoke to a gatekeeper rather than the decision maker.",
-    };
-
-    function normalizeOutcomeKey(outcomeRaw) {
-      const s = String(outcomeRaw || "").trim();
-      if (!s) return "";
-      if (/^[A-Z0-9_]+$/.test(s)) return s;
-      return s.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_").replace(/-+/g, "_").toUpperCase();
-    }
-    function outcomeLabel(outcomeRaw) {
-      const key = normalizeOutcomeKey(outcomeRaw);
-      if (!key) return "—";
-      return key.toLowerCase().split("_").map(w => w ? (w[0].toUpperCase() + w.slice(1)) : "").join(" ");
-    }
-    function outcomeTooltip(outcomeRaw) {
-      const key = normalizeOutcomeKey(outcomeRaw);
-      if (!key) return "";
-      return outcomeHelp[key] || "Auto-classified call result.";
-    }
 
     function fillSelect(el, options) {
       el.innerHTML = "";
@@ -810,13 +806,44 @@
       }
     }
 
-    function banner(type, title, msg) {
-      const wrap = document.createElement("div");
-      wrap.className = "banner " + type;
-      wrap.innerHTML = `<div class="dot"></div><div class="txt"><strong>${escapeHtml(title)}</strong> ${escapeHtml(msg)}</div>`;
-      return wrap;
+    // ---- Outcome labels + tips ----
+    function normalizeOutcomeKey(raw) {
+      const s = String(raw || "").trim();
+      if (!s) return "";
+      return s.toUpperCase().replace(/\s+/g, "_").replace(/-+/g, "_");
     }
 
+    function outcomeLabel(key) {
+      const k = normalizeOutcomeKey(key);
+      const map = {
+        BOOKED_MEETING: "Booked Meeting",
+        CONNECTED: "Connected",
+        REJECTED: "Rejected",
+        HOSTILE: "Hostile",
+        VOICEMAIL: "Voicemail",
+        NO_ANSWER: "No Answer",
+      };
+      return map[k] || (k ? k.replace(/_/g, " ") : "—");
+    }
+
+    function outcomePillClass(key) {
+      const k = normalizeOutcomeKey(key);
+      if (k === "BOOKED_MEETING") return "good";
+      if (k === "REJECTED" || k === "VOICEMAIL" || k === "NO_ANSWER") return "warn";
+      if (k === "HOSTILE") return "bad";
+      return "";
+    }
+
+    const outcomeGlossary = {
+      BOOKED_MEETING: "A meeting/call was scheduled or explicitly agreed to (calendar/Zoom/link/time agreement).",
+      CONNECTED: "You reached a real person and had a conversation, but no meeting was clearly booked.",
+      REJECTED: "They declined the offer or ended the call without engaging further.",
+      HOSTILE: "They rejected aggressively (anger/insults/stop calling).",
+      VOICEMAIL: "This appears to be voicemail or a message prompt.",
+      NO_ANSWER: "No real conversation happened (no pickup / dead air).",
+    };
+
+    // ---- Mini markdown ----
     function renderMiniMarkdown(md) {
       const lines = String(md || "").split("\n");
       let html = "";
@@ -860,7 +887,9 @@
     function splitReportIntoSections(reportMd) {
       const text = String(reportMd || "").trim();
       if (!text) return [];
+
       const cleaned = text.replace(/^\uFEFF/, "").trim();
+
       if (cleaned.startsWith("##")) {
         const normalized = cleaned.replace(/^##\s+/, "");
         return normalized.split(/\n##\s+/g).map((chunk) => chunk.trim()).filter(Boolean).map((chunk) => {
@@ -868,8 +897,10 @@
           return { title: titleLine.trim(), body: rest.join("\n").trim() };
         });
       }
+
       const parts = cleaned.split(/\n##\s+/g);
       if (parts.length === 1) return [{ title: "Report", body: cleaned }];
+
       const sections = [];
       if (parts[0].trim()) sections.push({ title: "Report", body: parts[0].trim() });
       for (let i = 1; i < parts.length; i++) {
@@ -881,37 +912,10 @@
       return sections;
     }
 
-    function renderReportInto(reportMd, reportGridEl) {
-      reportGridEl.innerHTML = "";
-      const sections = splitReportIntoSections(reportMd);
-      if (!sections.length) {
-        const card = document.createElement("div");
-        card.className = "reportCard";
-        card.innerHTML = `<div class="reportHead">Report</div><div class="reportBody"><p>(empty)</p></div>`;
-        reportGridEl.appendChild(card);
-        return;
-      }
-      sections.forEach((s, i) => {
-        const card = document.createElement("div");
-        card.className = "reportCard";
-        const head = document.createElement("div");
-        head.className = "reportHead";
-        head.textContent = s.title || `Section ${i + 1}`;
-        const body = document.createElement("div");
-        body.className = "reportBody";
-        body.innerHTML = renderMiniMarkdown(s.body || "");
-        let open = (i < 2);
-        body.style.display = open ? "block" : "none";
-        head.addEventListener("click", () => { open = !open; body.style.display = open ? "block" : "none"; });
-        card.appendChild(head);
-        card.appendChild(body);
-        reportGridEl.appendChild(card);
-      });
-    }
-
-    // transcript renderer (kept stable)
+    // Keep remap conservative (only when truly 2 diarized speakers)
     function computeSpeakerDisplayMap(parsedLines) {
       const labels = [...new Set(parsedLines.map(x => x.speaker).filter(Boolean))];
+
       if (labels.some(l => /^you$/i.test(l) || /^prospect$/i.test(l))) return null;
 
       const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
@@ -925,42 +929,69 @@
       const aLabel = labels[0];
       const bLabel = labels[1];
 
-      const textFor = (label) => parsedLines.filter(x => x.speaker === label).map(x => x.text || "").join(" ").slice(0, 4000);
+      const textFor = (label) => parsedLines
+        .filter(x => x.speaker === label)
+        .map(x => x.text || "")
+        .join(" ")
+        .slice(0, 4000);
 
-      const repSignals = [/\bmy name's\b/i,/\bmy name is\b/i,/\bi['’]?m\b/i,/\bcalling\b/i,/\bquick\b/i,/\bcan i\b/i,/\bdo you have\b/i];
-      const prospectSignals = [/\bnot interested\b/i,/\bjust email\b/i,/\bwe already\b/i,/\bwe['’]?re good\b/i,/\bstop calling\b/i];
+      const repSignals = [
+        /\bhey\b/i, /\bhi\b/i, /\bthis\s+is\b/i, /\bmy\s+name\s+is\b/i, /\bi['’]?m\b/i,
+        /\bcalling\b/i, /\breaching\s+out\b/i, /\bquick\b/i, /\bseconds?\b/i, /\bcan\s+i\b/i, /\bdo\s+you\s+have\b/i
+      ];
+      const prospectSignals = [
+        /\bnot\s+interested\b/i, /\bprobably\s+not\b/i, /\bjust\s+email\b/i, /\bhow\s+much\b/i,
+        /\bwe\s+already\b/i, /\bwe['’]?re\s+good\b/i, /\bstop\s+calling\b/i, /\bwho\s+is\s+this\b/i
+      ];
 
       const score = (txt) => {
         let rep = 0, pro = 0;
         for (const r of repSignals) if (r.test(txt)) rep++;
         for (const p of prospectSignals) if (p.test(txt)) pro++;
-        return { net: rep - pro };
+        return { rep, pro, net: rep - pro };
       };
 
       const a = score(textFor(aLabel));
       const b = score(textFor(bLabel));
-      if (Math.abs(a.net - b.net) < 2) return null;
+
+      const diff = Math.abs(a.net - b.net);
+      if (diff < 2) return null;
 
       const aIsYou = a.net > b.net;
-      return { [aLabel]: aIsYou ? "You" : "Prospect", [bLabel]: aIsYou ? "Prospect" : "You" };
+      return {
+        [aLabel]: aIsYou ? "You" : "Prospect",
+        [bLabel]: aIsYou ? "Prospect" : "You",
+      };
     }
 
     function renderTranscriptInto(transcriptOrLines, transcriptBoxEl) {
       transcriptBoxEl.innerHTML = "";
+
       let parsed = [];
 
       if (Array.isArray(transcriptOrLines)) {
-        parsed = transcriptOrLines.map(x => ({
-          speaker: String(x?.speaker || "Other").trim() || "Other",
-          text: String(x?.text || "").trim(),
-        })).filter(x => x.text);
+        parsed = transcriptOrLines
+          .map(x => ({
+            speaker: String(x?.speaker || "Other").trim() || "Other",
+            text: String(x?.text || "").trim(),
+          }))
+          .filter(x => x.text);
       } else {
-        const rawLines = String(transcriptOrLines || "").split("\n").map(s => s.trim()).filter(Boolean);
+        const rawLines = String(transcriptOrLines || "")
+          .split("\n")
+          .map(s => s.trim())
+          .filter(Boolean);
+
         parsed = rawLines.map((line) => {
           let speaker = "Other";
           let text = line;
+
           const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
-          if (m) { speaker = (m[1] || "Other").replace(/\s+/g, " ").trim(); text = (m[2] || "").trim(); }
+          if (m) {
+            speaker = (m[1] || "Other").replace(/\s+/g, " ").trim();
+            text = (m[2] || "").trim();
+          }
+
           speaker = speaker.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
           return { speaker, text };
         }).filter(x => x.text);
@@ -978,7 +1009,12 @@
 
       parsed.forEach((p, idx) => {
         const displaySpeaker = remap?.[p.speaker] || p.speaker;
-        const chipClass = /^you$/i.test(displaySpeaker) ? "you" : /^prospect$/i.test(displaySpeaker) ? "pro" : "other";
+
+        const chipClass =
+          /^you$/i.test(displaySpeaker) ? "you" :
+          /^prospect$/i.test(displaySpeaker) ? "pro" :
+          "other";
+
         const row = document.createElement("div");
         row.className = "tLine";
         row.innerHTML = `
@@ -990,42 +1026,46 @@
       });
     }
 
-    function pick(obj, keys, fallback = "") {
-      for (const k of keys) { if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k]; }
-      return fallback;
+    function renderReportInto(reportMd, reportGridEl) {
+      reportGridEl.innerHTML = "";
+      const sections = splitReportIntoSections(reportMd);
+
+      if (!sections.length) {
+        const card = document.createElement("div");
+        card.className = "reportCard";
+        card.innerHTML = `<div class="reportHead">Report</div><div class="reportBody"><p>(empty)</p></div>`;
+        reportGridEl.appendChild(card);
+        return;
+      }
+
+      sections.forEach((s, i) => {
+        const card = document.createElement("div");
+        card.className = "reportCard";
+
+        const head = document.createElement("div");
+        head.className = "reportHead";
+        head.textContent = s.title || `Section ${i + 1}`;
+
+        const body = document.createElement("div");
+        body.className = "reportBody";
+        body.innerHTML = renderMiniMarkdown(s.body || "");
+
+        let open = (i < 2);
+        body.style.display = open ? "block" : "none";
+        head.addEventListener("click", () => {
+          open = !open;
+          body.style.display = open ? "block" : "none";
+        });
+
+        card.appendChild(head);
+        card.appendChild(body);
+        reportGridEl.appendChild(card);
+      });
     }
 
-    function renderSummaryInto(resp, opts) {
+    function renderSummaryInto(run, opts) {
       const summaryKVEl = opts.summaryKVEl;
-      const scenarioValue = opts.scenarioValue || "";
-      const userContext = opts.userContext || "";
-      const submittedAt = opts.submittedAt || "";
-
       summaryKVEl.innerHTML = "";
-
-      const scenarioLabel = (() => {
-        const found = scenarioTemplates.find(([v]) => v === scenarioValue);
-        return found ? found[1] : "None";
-      })();
-
-      const inferredList = pick(resp, ["inferred_lines", "inferredLines", "inferred", "inferredFromTranscript", "inferred_from_transcript"], null);
-      let inferredItems = [];
-      if (Array.isArray(inferredList)) inferredItems = inferredList.map(String);
-      else if (inferredList && typeof inferredList === "object") {
-        const pt = pick(inferredList, ["prospectType", "prospect_type"], "");
-        const ok = pick(inferredList, ["offerKeywords", "offer_keywords"], "");
-        if (pt) inferredItems.push(`Prospect type: ${pt}`);
-        if (ok) inferredItems.push(`Offer keywords: ${Array.isArray(ok) ? ok.join(", ") : ok}`);
-      }
-
-      let derivedTemplate = pick(resp, ["derived_from_template", "derivedFromTemplate", "templateDerived", "template_text", "templateSummary"], "");
-      if (!derivedTemplate || derivedTemplate === "(none)") {
-        if (scenarioValue && templateGuidance[scenarioValue]) derivedTemplate = templateGuidance[scenarioValue];
-      }
-
-      const callOutcomeRaw = pick(resp, ["call_outcome", "callOutcome", "outcome", "call_result", "callResult"], "");
-      const callOutcome = callOutcomeRaw ? outcomeLabel(callOutcomeRaw) : "(unknown)";
-      const callOutcomeReason = pick(resp, ["call_outcome_reason","outcomeReason","outcome_reason"], "");
 
       const addKV = (k, vNodeOrText) => {
         const item = document.createElement("div");
@@ -1036,6 +1076,7 @@
 
         const vEl = document.createElement("div");
         vEl.className = "v";
+
         if (vNodeOrText instanceof Node) vEl.appendChild(vNodeOrText);
         else vEl.textContent = String(vNodeOrText || "");
 
@@ -1044,77 +1085,24 @@
         summaryKVEl.appendChild(item);
       };
 
-      if (submittedAt) addKV("Submitted at", submittedAt);
+      const scenario = run.scenario_template || "";
+      const scenarioLabel = scenarioTemplates.find(([v]) => v === scenario)?.[1] || "None";
+
+      const outcomeKey = normalizeOutcomeKey(run.call_outcome || "");
+      const outcomeTxt = outcomeLabel(outcomeKey);
+      const outcomeTip = run.call_outcome_reason || outcomeGlossary[outcomeKey] || "—";
+
+      const outcomeNode = document.createElement("span");
+      outcomeNode.className = `outcomePill hasTip ${outcomePillClass(outcomeKey)}`;
+      outcomeNode.setAttribute("data-tip", outcomeTip);
+      outcomeNode.textContent = outcomeTxt;
+
       addKV("Scenario (selected)", scenarioLabel);
-      addKV("User Context", userContext);
-
-      if (inferredItems.length) {
-        const ul = document.createElement("ul");
-        ul.className = "bullets";
-        inferredItems.forEach((x) => { const li = document.createElement("li"); li.textContent = x; ul.appendChild(li); });
-        addKV("Inferred from Transcript", ul);
-      } else {
-        addKV("Inferred from Transcript", "(none)");
-      }
-
-      addKV("Derived from Template", derivedTemplate || "(none)");
-
-      const outcomeSpan = document.createElement("span");
-      outcomeSpan.textContent = callOutcome;
-      outcomeSpan.title = outcomeTooltip(callOutcomeRaw);
-      addKV("Call Result", outcomeSpan);
-
-      if (callOutcomeReason) addKV("Why this result", callOutcomeReason);
+      addKV("User Context", run.user_context || "(none)");
+      addKV("Call Result", outcomeNode);
     }
 
-    // AI assistance (keep "good enough" state)
-    const assistPill = document.getElementById("assistPill");
-    const assistBody = document.getElementById("assistBody");
-    const assistActions = document.getElementById("assistActions");
-
-    function scoreScenario(text, key) {
-      const t = String(text || "").toLowerCase();
-      const words = scenarioKeywords[key] || [];
-      let score = 0;
-      for (const kw of words) if (kw && t.includes(kw)) score++;
-      return score;
-    }
-
-    function bestScenarioForContext(ctx) {
-      const scores = scenarioTemplates.map(([k]) => k).filter(Boolean).map((k) => ({ k, score: scoreScenario(ctx, k) }))
-        .sort((a, b) => b.score - a.score);
-      return { top: scores[0] || { k: "", score: 0 }, scores };
-    }
-
-    function setAssist(pillText, bodyText, border) {
-      assistPill.textContent = pillText;
-      assistBody.textContent = bodyText;
-      assistActions.classList.add("hidden");
-      assistActions.innerHTML = "";
-      assistPill.style.borderColor = border || "rgba(15,23,42,0.10)";
-    }
-
-    function updateAssist() {
-      const ctx = (contextEl.value || "").trim();
-      const selected = categoryEl.value || "";
-
-      if (ctx.length < 10) { setAssist("Waiting…", "Type a short context (10+ chars) to get guidance."); return; }
-
-      if (!selected) {
-        const { top } = bestScenarioForContext(ctx);
-        if (top.score >= 2) setAssist("Suggestion", `Your context strongly matches: ${scenarioTemplates.find(([v]) => v === top.k)?.[1] || top.k}.`, "rgba(245,158,11,0.28)");
-        else setAssist("Optional", "Scenario is optional. Pick one if you want tighter wording.");
-        return;
-      }
-
-      const s = scoreScenario(ctx, selected);
-      if (s >= 2) setAssist("Looks aligned", `Context matches your selected scenario.\n\nTemplate nudge: ${templateGuidance[selected] || ""}`, "rgba(22,163,74,0.22)");
-      else setAssist("Weak match", "Add 1–2 specifics (offer + prospect type) to improve accuracy.", "rgba(245,158,11,0.28)");
-    }
-
-    // DOM
-    const appLayout = document.getElementById("appLayout");
-
+    // ---- DOM ----
     const viewLanding = document.getElementById("viewLanding");
     const viewLogin = document.getElementById("viewLogin");
     const viewSessionExpired = document.getElementById("viewSessionExpired");
@@ -1129,7 +1117,10 @@
     const navRecord = document.getElementById("navRecord");
     const navPractice = document.getElementById("navPractice");
     const navSupport = document.getElementById("navSupport");
+
+    const navRunWrap = document.getElementById("navRunWrap");
     const navCurrentRun = document.getElementById("navCurrentRun");
+    const navRunText = document.getElementById("navRunText");
 
     const qaUpload = document.getElementById("qaUpload");
     const qaRecord = document.getElementById("qaRecord");
@@ -1161,46 +1152,35 @@
     const btnBackHome = document.getElementById("btnBackHome");
     const runBanners = document.getElementById("runBanners");
     const runTitleEl = document.getElementById("runTitle");
-    const runSubtitleEl = document.getElementById("runSubtitle");
+    const runMetaEl = document.getElementById("runMeta");
 
+    // calibrate DOM
     const categoryEl = document.getElementById("category");
     const audioEl = document.getElementById("audio");
     const contextEl = document.getElementById("context");
     const runBtn = document.getElementById("run");
     const statusEl = document.getElementById("status");
 
-    const resultsEl = document.getElementById("results");
-    const bannersEl = document.getElementById("banners");
-    const summaryKVEl = document.getElementById("summaryKV");
-    const transcriptBoxEl = document.getElementById("transcriptBox");
-    const reportGridEl = document.getElementById("reportGrid");
+    const assistCard = document.getElementById("assistCard");
+    const assistTitle = document.getElementById("assistTitle");
+    const assistMsg = document.getElementById("assistMsg");
 
-    const diagnosticsDetailsEl = document.getElementById("diagnosticsDetails");
-    const diagnosticsMonoEl = document.getElementById("diagnosticsMono");
-    const rawJsonEl = document.getElementById("rawJson");
-
+    // run viewer DOM
     const summaryKVEl2 = document.getElementById("summaryKV2");
     const transcriptBoxEl2 = document.getElementById("transcriptBox2");
     const reportGridEl2 = document.getElementById("reportGrid2");
 
+    // support DOM
+    const btnSupportBack = document.getElementById("btnSupportBack");
     const supportBanners = document.getElementById("supportBanners");
-    const supportMsg = document.getElementById("supportMsg");
-    const btnSendSupport = document.getElementById("btnSendSupport");
+    const supportMessage = document.getElementById("supportMessage");
+    const supportContact = document.getElementById("supportContact");
+    const btnSupportSend = document.getElementById("btnSupportSend");
     const supportStatus = document.getElementById("supportStatus");
 
     fillSelect(categoryEl, scenarioTemplates);
 
-    categoryEl.addEventListener("change", updateAssist);
-    contextEl.addEventListener("input", () => { clearTimeout(window.__assistT); window.__assistT = setTimeout(updateAssist, 120); });
-
-    function isDevMode() {
-      const url = new URL(window.location.href);
-      const qp = url.searchParams.get("dev");
-      if (qp === "1" || qp === "true") { localStorage.setItem("calibrate_dev", "1"); return true; }
-      return localStorage.getItem("calibrate_dev") === "1";
-    }
-
-    // Supabase
+    // ---- Supabase init ----
     let sb = null;
     let session = null;
     let config = null;
@@ -1212,12 +1192,19 @@
       const r = await fetch("/api/config");
       config = await r.json();
       if (!config?.supabaseUrl || !config?.supabaseAnonKey) throw new Error("Missing Supabase config from /api/config");
+
       const createClient = window.supabase?.createClient;
       if (!createClient) throw new Error("Supabase JS not loaded");
+
       sb = createClient(config.supabaseUrl, config.supabaseAnonKey);
+
       const { data } = await sb.auth.getSession();
       session = data.session;
-      sb.auth.onAuthStateChange((_event, newSession) => { session = newSession; renderRoute(); });
+
+      sb.auth.onAuthStateChange((_event, newSession) => {
+        session = newSession;
+        renderRoute();
+      });
     }
 
     function hideAllViews() {
@@ -1233,32 +1220,36 @@
     function setActiveNav(path) {
       const btns = [navDashboard, navUpload, navRecord, navPractice, navSupport];
       btns.forEach(b => b.classList.remove("active"));
+
       if (path === "/home") navDashboard.classList.add("active");
       else if (path === "/calibrate") navUpload.classList.add("active");
-      else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
       else if (path === "/support") navSupport.classList.add("active");
+      else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
     }
 
     function updateTopNav() {
       const loggedIn = !!session;
-
       btnSignIn.classList.toggle("hidden", loggedIn);
       btnSignOut.classList.toggle("hidden", !loggedIn);
       btnHome.classList.toggle("hidden", !loggedIn);
       btnNew.classList.toggle("hidden", !loggedIn);
       who.classList.toggle("hidden", !loggedIn);
-      sidebar.classList.toggle("hidden", !loggedIn);
 
-      // CRITICAL: prevent landing/login from being offset by invisible sidebar column
-      appLayout.classList.toggle("noSidebar", !loggedIn);
+      sidebar.classList.toggle("hidden", !loggedIn);
 
       if (loggedIn) who.textContent = session.user?.email || "Signed in";
       else who.textContent = "";
     }
 
-    function authHeader() { return session?.access_token ? { Authorization: "Bearer " + session.access_token } : {}; }
+    function authHeader() {
+      if (!session?.access_token) return {};
+      return { Authorization: "Bearer " + session.access_token };
+    }
 
-    async function safeJson(r) { try { return await r.json(); } catch { return {}; } }
+    async function safeJson(r) {
+      try { return await r.json(); }
+      catch { return {}; }
+    }
 
     async function trySilentRefresh() {
       if (!sb) return null;
@@ -1267,7 +1258,9 @@
         if (error) return null;
         session = data?.session || null;
         return session;
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     }
 
     function handleSessionExpired(msg) {
@@ -1284,259 +1277,259 @@
         return { ok: false, status: 401, json: { error: "Unauthorized" } };
       }
 
-      const opts1 = { ...options, headers: { ...(options.headers || {}), ...authHeader() } };
-      const r1 = await fetch(url, opts1);
+      try {
+        const opts1 = { ...options, headers: { ...(options.headers || {}), ...authHeader() } };
+        const r1 = await fetch(url, opts1);
 
-      if (r1.status !== 401) return { ok: r1.ok, status: r1.status, json: await safeJson(r1) };
+        if (r1.status !== 401) {
+          const j1 = await safeJson(r1);
+          return { ok: r1.ok, status: r1.status, json: j1 };
+        }
 
-      const refreshed = await trySilentRefresh();
-      if (!refreshed?.access_token) {
-        const j1 = await safeJson(r1);
-        handleSessionExpired(j1?.error || "Session expired. Please sign in again.");
-        return { ok: false, status: 401, json: j1 };
+        const refreshed = await trySilentRefresh();
+        if (!refreshed?.access_token) {
+          const j1 = await safeJson(r1);
+          handleSessionExpired(j1?.error || "Session expired. Please sign in again.");
+          return { ok: false, status: 401, json: j1 };
+        }
+
+        const opts2 = { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + refreshed.access_token } };
+        const r2 = await fetch(url, opts2);
+        const j2 = await safeJson(r2);
+
+        if (r2.status === 401) handleSessionExpired(j2?.error || "Session expired. Please sign in again.");
+
+        return { ok: r2.ok, status: r2.status, json: j2 };
+      } catch (e) {
+        // network/server down
+        return { ok: false, status: 0, json: { error: e?.message || "Failed to fetch" } };
       }
-
-      const opts2 = { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + refreshed.access_token } };
-      const r2 = await fetch(url, opts2);
-      const j2 = await safeJson(r2);
-      if (r2.status === 401) handleSessionExpired(j2?.error || "Session expired. Please sign in again.");
-      return { ok: r2.ok, status: r2.status, json: j2 };
     }
 
-    // Top buttons
+    // ---- Nav buttons ----
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
     btnSignIn.addEventListener("click", () => goto("/login"));
-    btnSignOut.addEventListener("click", async () => { if (!sb) return; await sb.auth.signOut(); goto("/"); });
+    btnSignOut.addEventListener("click", async () => {
+      if (!sb) return;
+      await sb.auth.signOut();
+      goto("/");
+    });
 
-    btnGetStarted.addEventListener("click", () => { if (session) goto("/home"); else goto("/login"); });
+    btnGetStarted.addEventListener("click", () => {
+      if (session) goto("/home");
+      else goto("/login");
+    });
+
     btnBackHome.addEventListener("click", () => goto("/home"));
     btnGoSignIn.addEventListener("click", () => goto("/login"));
     btnGoLanding.addEventListener("click", () => goto("/"));
 
-    // Sidebar nav
+    // Sidebar + quick actions
     navDashboard.addEventListener("click", () => goto("/home"));
     navUpload.addEventListener("click", () => goto("/calibrate"));
     navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
     navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
     navSupport.addEventListener("click", () => goto("/support"));
+    navCurrentRun.addEventListener("click", () => {
+      const rid = navCurrentRun.getAttribute("data-run-id") || "";
+      if (rid) goto("/runs/" + rid);
+    });
 
     qaUpload.addEventListener("click", () => goto("/calibrate"));
     qaRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
     qaPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
 
-    // Login actions
+    btnSupportBack.addEventListener("click", () => goto("/home"));
+
+    // ---- Login actions ----
     btnMagicLink.addEventListener("click", async () => {
-      loginBanners.innerHTML = ""; loginStatus.textContent = "";
+      loginBanners.innerHTML = "";
+      loginStatus.textContent = "";
+
       const email = (emailEl.value || "").trim();
       if (!email) { loginBanners.appendChild(banner("bad", "Error:", "Enter an email.")); return; }
 
       try {
         btnMagicLink.disabled = true;
         loginStatus.textContent = "Sending magic link…";
-        await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin + "/home" }});
+
+        await sb.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.origin + "/home" },
+        });
+
         loginBanners.appendChild(banner("good", "Sent:", "Check your email for the magic link."));
         loginStatus.textContent = "";
       } catch (e) {
         loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
         loginStatus.textContent = "";
-      } finally { btnMagicLink.disabled = false; }
+      } finally {
+        btnMagicLink.disabled = false;
+      }
     });
 
     btnGoogle.addEventListener("click", async () => {
-      loginBanners.innerHTML = ""; loginStatus.textContent = "";
+      loginBanners.innerHTML = "";
+      loginStatus.textContent = "";
       try {
-        await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/home" }});
+        await sb.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: window.location.origin + "/home" },
+        });
       } catch (e) {
         loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
       }
     });
 
-    // Support send
-    btnSendSupport.addEventListener("click", async () => {
-      supportBanners.innerHTML = "";
-      supportStatus.textContent = "";
-      const msg = (supportMsg.value || "").trim();
-      if (msg.length < 10) { supportBanners.appendChild(banner("bad", "Error:", "Write at least 10 characters.")); return; }
+    // ---- AI assist (simple + conservative) ----
+    function renderAssist() {
+      const scenario = categoryEl.value || "";
+      const ctx = (contextEl.value || "").toLowerCase();
 
-      try {
-        btnSendSupport.disabled = true;
-        supportStatus.textContent = "Sending…";
-        const { ok, status, json } = await fetchJsonAuthed("/api/support", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: msg, page: window.location.pathname }),
-        });
-        if (!ok) {
-          if (status !== 401) supportBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to send."));
-          supportStatus.textContent = "";
-          return;
-        }
-        supportMsg.value = "";
-        supportBanners.appendChild(banner("good", "Sent:", "Support ticket created. We’ll follow up by email."));
-        supportStatus.textContent = "";
-      } catch (e) {
-        supportBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
-        supportStatus.textContent = "";
-      } finally {
-        btnSendSupport.disabled = false;
+      if (!scenario) {
+        assistCard.classList.add("hidden");
+        return;
       }
+
+      const keys = scenarioKeywords[scenario] || [];
+      let hits = 0;
+      for (const k of keys) {
+        if (ctx.includes(k)) hits++;
+      }
+
+      assistCard.classList.remove("hidden");
+      if (hits >= 2) {
+        assistCard.className = "banner good";
+        assistTitle.textContent = "Looks aligned:";
+        assistMsg.textContent = " Context matches this scenario template.";
+      } else if (hits === 1) {
+        assistCard.className = "banner warn";
+        assistTitle.textContent = "Probably fine:";
+        assistMsg.textContent = " If this feels mismatched, switch the scenario or reword the context.";
+      } else {
+        assistCard.className = "banner warn";
+        assistTitle.textContent = "Possible mismatch:";
+        assistMsg.textContent = " Your context doesn’t mention typical keywords for this scenario. Consider switching scenario or rewriting context.";
+      }
+    }
+
+    categoryEl.addEventListener("change", renderAssist);
+    contextEl.addEventListener("input", () => {
+      // lightweight debounce-ish
+      if (window.__assistTimer) clearTimeout(window.__assistTimer);
+      window.__assistTimer = setTimeout(renderAssist, 120);
     });
 
-    // History
+    // ---- History ----
     let runsLoadSeq = 0;
+
     async function loadRuns() {
       const seq = ++runsLoadSeq;
       homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
 
-      try {
-        const { ok, status, json } = await fetchJsonAuthed("/api/runs");
-        if (seq !== runsLoadSeq) return;
+      const { ok, status, json } = await fetchJsonAuthed("/api/runs");
+      if (seq !== runsLoadSeq) return;
 
-        if (!ok) {
-          if (status !== 401) homeBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load runs."));
-          homeStatus.textContent = "";
-          return;
-        }
-
-        const runs = json.runs || [];
-        runsTbody.innerHTML = "";
-
-        if (!runs.length) { homeStatus.textContent = "No runs yet."; return; }
+      if (!ok) {
         homeStatus.textContent = "";
+        homeBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load runs."));
+        return;
+      }
 
-        for (const run of runs) {
-          const tr = document.createElement("tr");
+      const runs = json.runs || [];
+      runsTbody.innerHTML = "";
 
-          const titleFull = run.title_full || run.title || "Call Analysis";
-          const titleShort = run.title_short || run.title || titleFull;
+      if (!runs.length) {
+        homeStatus.textContent = "No runs yet.";
+        return;
+      }
 
-          const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
+      homeStatus.textContent = "";
 
-          const outcomeRaw = run.call_outcome || "—";
-          const oLabel = outcomeLabel(outcomeRaw);
-          const oTip = outcomeTooltip(outcomeRaw);
+      for (const run of runs) {
+        const tr = document.createElement("tr");
 
-          tr.innerHTML = `
-            <td class="colReport"><span class="truncate" title="${escapeHtml(titleFull)}">${escapeHtml(titleShort)}</span></td>
-            <td>${escapeHtml(scenario)}</td>
-            <td><span title="${escapeHtml(oTip)}">${escapeHtml(oLabel)}</span></td>
-          `;
+        // IMPORTANT: never default to "Call Analysis" unless truly missing
+        const title = (run.title || run.run_title || "").trim() || "(untitled)";
+        const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
 
-          tr.addEventListener("click", () => goto("/runs/" + run.id));
-          runsTbody.appendChild(tr);
-        }
-      } catch (e) {
-        if (seq !== runsLoadSeq) return;
-        homeBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
-        homeStatus.textContent = "";
+        const outcomeKey = normalizeOutcomeKey(run.call_outcome || "");
+        const outcomeTxt = outcomeLabel(outcomeKey);
+        const tip = run.call_outcome_reason || outcomeGlossary[outcomeKey] || "—";
+
+        tr.innerHTML = `
+          <td class="reportCell">${escapeHtml(title)}</td>
+          <td class="mutedCell">${escapeHtml(scenario)}</td>
+          <td>
+            <span class="outcomePill hasTip ${outcomePillClass(outcomeKey)}" data-tip="${escapeHtml(tip)}">
+              ${escapeHtml(outcomeTxt)}
+            </span>
+          </td>
+        `;
+
+        tr.addEventListener("click", () => goto("/runs/" + run.id));
+        runsTbody.appendChild(tr);
       }
     }
 
-    // Run viewer
+    // ---- Run viewer ----
     let runLoadSeq = 0;
+
     async function loadRun(runId) {
       const seq = ++runLoadSeq;
+
       runBanners.innerHTML = "";
       summaryKVEl2.innerHTML = "";
       transcriptBoxEl2.innerHTML = "";
       reportGridEl2.innerHTML = "";
 
-      try {
-        const { ok, status, json } = await fetchJsonAuthed("/api/runs/" + encodeURIComponent(runId));
-        if (seq !== runLoadSeq) return;
+      runTitleEl.textContent = "";
+      runMetaEl.textContent = "";
 
-        if (!ok) {
-          if (status !== 401) runBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load run."));
-          return;
-        }
+      const { ok, status, json } = await fetchJsonAuthed("/api/runs/" + encodeURIComponent(runId));
+      if (seq !== runLoadSeq) return;
 
-        const run = json.run;
-        const createdAt = run.created_at ? new Date(run.created_at).toLocaleString() : "";
-        const titleFull = run.title_full || run.title || run.run_title || "Call Analysis";
-        const titleShort = run.title_short || run.title || titleFull;
-
-        runTitleEl.textContent = titleShort || "Call Analysis";
-        runTitleEl.title = titleFull || "";
-        runSubtitleEl.textContent = createdAt ? `Submitted at ${createdAt}` : "";
-
-        // show sidebar indicator (below Home)
-        navCurrentRun.textContent = titleShort || "Viewing report";
-        navCurrentRun.title = titleFull || "";
-        navCurrentRun.classList.remove("hidden");
-
-        const diag = run.diagnostics || {};
-        const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : [];
-        const transcriptText = transcriptLines.map(x => `${x.speaker}: ${x.text}`).join("\n");
-
-        const reportMd = run.report_text || "";
-        const scenarioValue = run.scenario_template || "";
-        const userContext = run.user_context || "";
-
-        const resp = Object.assign({}, diag, {
-          transcript: transcriptText,
-          call_outcome: run.call_outcome || diag.call_outcome || diag.callOutcome || "",
-          call_outcome_reason: run.call_outcome_reason || pick(diag, ["call_outcome_reason","outcomeReason","outcome_reason"], ""),
-        });
-
-        renderSummaryInto(resp, { summaryKVEl: summaryKVEl2, scenarioValue, userContext, submittedAt: createdAt || "" });
-        renderTranscriptInto(transcriptLines, transcriptBoxEl2);
-        renderReportInto(reportMd || pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl2);
-
-        if (scenarioValue && (run.mismatch || run.scenario_mismatch)) {
-          runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
-        }
-      } catch (e) {
-        if (seq !== runLoadSeq) return;
-        runBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
+      if (!ok) {
+        runBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load run."));
+        return;
       }
-    }
 
-    // Calibrate (new run)
-    function renderBanners(resp) {
-      bannersEl.innerHTML = "";
-      const selectedScenario = categoryEl.value || "";
-      const conflict = pick(resp, ["context_conflict_banner","contextConflictBanner","scenarioMismatch","scenario_mismatch"], "");
-      const warn = pick(resp, ["warning","warnings","banner","bannerText"], null);
-      if (selectedScenario && conflict) bannersEl.appendChild(banner("warn", "Scenario mismatch:", String(conflict)));
-      if (warn) {
-        if (Array.isArray(warn)) warn.forEach((w) => bannersEl.appendChild(banner("warn", "Note:", String(w))));
-        else bannersEl.appendChild(banner("warn", "Note:", String(warn)));
+      const run = json.run || {};
+
+      const title = (run.title || run.run_title || "").trim() || "Call Analysis";
+      runTitleEl.textContent = title;
+
+      const submittedAt = run.created_at ? new Date(run.created_at).toLocaleString() : "";
+      runMetaEl.textContent = submittedAt ? `Submitted at: ${submittedAt}` : "";
+
+      // sidebar indicator
+      navRunText.textContent = title;
+      navCurrentRun.setAttribute("data-run-id", runId);
+      navCurrentRun.setAttribute("title", title);
+      navRunWrap.classList.remove("hidden");
+
+      // mismatch banner (server already gates scenario=None)
+      if (run.mismatch || run.scenario_mismatch) {
+        runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
       }
-      const err = pick(resp, ["error"], "");
-      if (err) bannersEl.appendChild(banner("bad", "Error:", String(err)));
+
+      renderSummaryInto(run, { summaryKVEl: summaryKVEl2 });
+
+      const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : [];
+      renderTranscriptInto(transcriptLines, transcriptBoxEl2);
+
+      const reportMd = run.report_text || "";
+      renderReportInto(reportMd, reportGridEl2);
     }
 
-    function renderDiagnostics(resp) {
-      const section5Raw = pick(resp, ["section5","section_5","section5Pass","section_5_pass"], "");
-      const section5 =
-        typeof section5Raw === "object" && section5Raw
-          ? (pick(section5Raw, ["pass","ok"], "") ? "PASS" : "FAIL")
-          : String(section5Raw || "");
-
-      const scriptWords = pick(resp, ["script_words","scriptWords","words"], "");
-      const turns = pick(resp, ["turn_count","turns","numTurns","num_turns"], "");
-      const enforcer = pick(resp, ["enforcer_version","enforcer","enforcerVersion","ENFORCER_VERSION"], "");
-      const outcomeReason = pick(resp, ["call_outcome_reason","outcomeReason","outcome_reason"], "");
-
-      diagnosticsMonoEl.textContent =
-        `Section 5: ${section5 || "(n/a)"}\n` +
-        `Script words: ${scriptWords || "(n/a)"}\n` +
-        `Turns: ${turns || "(n/a)"}\n` +
-        `Enforcer: ${enforcer || "(n/a)"}\n` +
-        `Outcome reason: ${outcomeReason || "(n/a)"}`;
-
-      rawJsonEl.textContent = "\nRaw JSON:\n" + JSON.stringify(resp, null, 2);
-    }
-
+    // ---- Calibrate (new run) ----
     async function onRun() {
       const file = audioEl.files?.[0];
       const ctx = contextEl.value.trim();
 
       statusEl.textContent = "";
-      bannersEl.innerHTML = "";
-      resultsEl.classList.add("hidden");
 
       if (!file) { statusEl.textContent = "Choose an audio file first."; return; }
       if (ctx.length < 10) { statusEl.textContent = "Context is required (10+ characters)."; return; }
@@ -1550,44 +1543,67 @@
       fd.append("context", ctx);
       fd.append("category", categoryEl.value || "");
 
-      try {
-        const { ok, status, json } = await fetchJsonAuthed("/api/run", { method: "POST", body: fd });
+      const { ok, status, json } = await fetchJsonAuthed("/api/run", { method: "POST", body: fd });
 
+      try {
         if (!ok) {
-          if (status !== 401) {
-            resultsEl.classList.remove("hidden");
-            bannersEl.appendChild(banner("bad", "Error:", json?.error || "Request failed."));
-            if (isDevMode()) { diagnosticsDetailsEl.classList.remove("hidden"); renderDiagnostics(json || {}); }
-          }
+          statusEl.textContent = "";
+          toast("bad", "Error:", json?.error || "Request failed.");
           return;
         }
 
-        if (json.run_id) { goto("/runs/" + json.run_id); return; }
+        if (json.run_id) {
+          goto("/runs/" + json.run_id);
+          return;
+        }
 
-        // back-compat
-        resultsEl.classList.remove("hidden");
-        renderBanners(json);
-        renderSummaryInto(json, { summaryKVEl, scenarioValue: categoryEl.value || "", userContext: ctx, submittedAt: "" });
-        const transcriptPayload = json.transcript_lines || json.transcriptLines || json.transcript || "";
-        renderTranscriptInto(transcriptPayload, transcriptBoxEl);
-        renderReportInto(pick(json, ["report","coachingReport","report_md","reportMarkdown"], ""), reportGridEl);
-        if (isDevMode()) { diagnosticsDetailsEl.classList.remove("hidden"); renderDiagnostics(json); }
-        else diagnosticsDetailsEl.classList.add("hidden");
-        statusEl.textContent = "Done ✅";
-      } catch (e) {
-        resultsEl.classList.remove("hidden");
-        bannersEl.appendChild(banner("bad", "Error:", e?.message || String(e)));
+        toast("warn", "Note:", "Unexpected server response.");
       } finally {
         runBtn.disabled = false;
         runBtn.textContent = "Calibrate";
+        statusEl.textContent = "";
       }
     }
 
     runBtn.addEventListener("click", onRun);
 
-    // Routing
-    function hideRunIndicator() { navCurrentRun.classList.add("hidden"); navCurrentRun.textContent = ""; navCurrentRun.title = ""; }
+    // ---- Support ----
+    btnSupportSend.addEventListener("click", async () => {
+      supportBanners.innerHTML = "";
+      supportStatus.textContent = "";
 
+      const msg = (supportMessage.value || "").trim();
+      const contact = (supportContact.value || "").trim();
+
+      if (msg.length < 5) {
+        supportBanners.appendChild(banner("bad", "Error:", "Message is required (5+ characters)."));
+        return;
+      }
+
+      btnSupportSend.disabled = true;
+      supportStatus.textContent = "Sending…";
+
+      const { ok, json } = await fetchJsonAuthed("/api/support", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: msg, contact, page_url: window.location.pathname }),
+      });
+
+      btnSupportSend.disabled = false;
+      supportStatus.textContent = "";
+
+      if (!ok) {
+        supportBanners.appendChild(banner("bad", "Error:", json?.error || "Support failed."));
+        if (json?.detail) supportBanners.appendChild(banner("warn", "Details:", json.detail));
+        return;
+      }
+
+      supportBanners.appendChild(banner("good", "Sent:", "Thanks — your message was submitted."));
+      supportMessage.value = "";
+      supportContact.value = "";
+    });
+
+    // ---- Routing ----
     async function renderRoute() {
       if (!sb) return;
 
@@ -1598,10 +1614,24 @@
       const loggedIn = !!session;
 
       setActiveNav(path);
-      hideRunIndicator();
 
-      const needsAuth = path === "/home" || path === "/calibrate" || path === "/support" || path.startsWith("/runs/");
-      if (needsAuth && !loggedIn) { goto("/login"); return; }
+      const needsAuth =
+        path === "/home" ||
+        path === "/calibrate" ||
+        path === "/support" ||
+        path.startsWith("/runs/");
+
+      if (needsAuth && !loggedIn) {
+        goto("/login");
+        return;
+      }
+
+      // default: hide sub indicator unless viewing a run
+      if (!path.startsWith("/runs/")) {
+        navRunWrap.classList.add("hidden");
+        navRunText.textContent = "";
+        navCurrentRun.removeAttribute("data-run-id");
+      }
 
       if (path === "/") {
         if (loggedIn) { goto("/home"); return; }
@@ -1629,6 +1659,14 @@
         return;
       }
 
+      if (path === "/calibrate") {
+        viewCalibrate.classList.remove("hidden");
+        statusEl.textContent = "";
+        assistCard.classList.add("hidden");
+        renderAssist();
+        return;
+      }
+
       if (path === "/support") {
         viewSupport.classList.remove("hidden");
         supportBanners.innerHTML = "";
@@ -1636,21 +1674,13 @@
         return;
       }
 
-      if (path === "/calibrate") {
-        viewCalibrate.classList.remove("hidden");
-        resultsEl.classList.add("hidden");
-        bannersEl.innerHTML = "";
-        statusEl.textContent = "";
-        updateAssist();
-        if (isDevMode()) diagnosticsDetailsEl.classList.remove("hidden");
-        else diagnosticsDetailsEl.classList.add("hidden");
-        return;
-      }
-
       if (path.startsWith("/runs/")) {
         viewRun.classList.remove("hidden");
         const runId = path.split("/runs/")[1] || "";
-        if (!runId) { runBanners.appendChild(banner("bad", "Error:", "Missing run id.")); return; }
+        if (!runId) {
+          runBanners.appendChild(banner("bad", "Error:", "Missing run id."));
+          return;
+        }
         await loadRun(runId);
         return;
       }
@@ -1658,9 +1688,16 @@
       goto("/");
     }
 
+    // Boot
     (async () => {
-      try { await initSupabase(); renderRoute(); }
-      catch (e) { hideAllViews(); viewLanding.classList.remove("hidden"); landingStatus.textContent = "Init error: " + (e?.message || String(e)); }
+      try {
+        await initSupabase();
+        renderRoute();
+      } catch (e) {
+        hideAllViews();
+        viewLanding.classList.remove("hidden");
+        landingStatus.textContent = "Init error: " + (e?.message || String(e));
+      }
     })();
   </script>
 </body>

@@ -12,12 +12,14 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.set("trust proxy", 1);
+
+// Parse JSON + form bodies (support endpoint uses JSON)
 app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // ---- Limits (server truth) ----
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
 const MAX_RUNS_PER_24H = 10;
-const MAX_SUPPORT_MESSAGE_CHARS = 4000;
 
 // One-run-at-a-time per user (simple in-memory lock)
 const activeRunByUser = new Map(); // userId -> startedAtMs
@@ -69,7 +71,7 @@ function supabaseService() {
   return _sbService;
 }
 
-async function requireUser(req) {
+async function requireUserId(req) {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return null;
@@ -77,11 +79,7 @@ async function requireUser(req) {
   const sb = supabaseAnon();
   const { data, error } = await sb.auth.getUser(token);
   if (error) return null;
-
-  const u = data?.user;
-  if (!u?.id) return null;
-
-  return { id: u.id, email: u.email || null };
+  return data?.user?.id || null;
 }
 
 function pick(obj, keys, fallback = null) {
@@ -89,14 +87,6 @@ function pick(obj, keys, fallback = null) {
     if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
   }
   return fallback;
-}
-
-function normalizeKey(k) {
-  return String(k || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^\w]+/g, "_")
-    .replace(/^_+|_+$/g, "");
 }
 
 // Normalize mismatch across shapes
@@ -111,33 +101,16 @@ function normalizeScenarioMismatch(row) {
   return null;
 }
 
-function transcriptToLines(transcript) {
-  const lines = String(transcript || "")
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  return lines.map((line) => {
-    const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
-    if (!m) return { speaker: "Other", text: line };
-    const speakerRaw = (m[1] || "Other").replace(/\s+/g, " ").trim();
-    const speaker = speakerRaw.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
-    return { speaker, text: (m[2] || "").trim() };
-  });
-}
-
-// Generic "insert and drop missing columns" helper
-async function insertResilient(sb, table, payload, selectCols = "id") {
+// Insert, and if DB schema is missing a column, drop it and retry
+async function insertRunResilient(sb, payload) {
   let p = { ...payload };
 
   for (let i = 0; i < 20; i++) {
-    const { data, error } = await sb.from(table).insert([p]).select(selectCols).maybeSingle();
+    const { data, error } = await sb.from("runs").insert([p]).select("id").maybeSingle();
     if (!error) return data;
 
     const msg = String(error.message || "");
 
-    // Missing column patterns
     let m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
     if (m && m[1]) {
       delete p[m[1]];
@@ -153,180 +126,10 @@ async function insertResilient(sb, table, payload, selectCols = "id") {
     throw new Error(msg);
   }
 
-  throw new Error(`Insert into '${table}' failed after retries (schema mismatch).`);
+  throw new Error("Insert failed after retries (schema mismatch).");
 }
 
-// -------------------- SUPPORT (stores tickets in Supabase) --------------------
-// Table suggestion (create in Supabase SQL editor):
-// create table if not exists support_tickets (
-//   id uuid primary key default gen_random_uuid(),
-//   created_at timestamptz not null default now(),
-//   user_id uuid,
-//   user_email text,
-//   reply_to text,
-//   message text not null,
-//   page text,
-//   run_id uuid,
-//   meta jsonb
-// );
-app.post("/api/support", async (req, res) => {
-  try {
-    const user = await requireUser(req);
-    if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-    const messageRaw = String(req.body?.message || "").trim();
-    const replyTo = String(req.body?.reply_to || "").trim();
-    const page = String(req.body?.page || "").trim();
-    const runId = String(req.body?.run_id || "").trim();
-
-    if (!messageRaw) return res.status(400).json({ error: "Message is required." });
-    if (messageRaw.length > MAX_SUPPORT_MESSAGE_CHARS) {
-      return res.status(400).json({ error: `Message too long (max ${MAX_SUPPORT_MESSAGE_CHARS} chars).` });
-    }
-
-    const sb = supabaseService();
-
-    const row = {
-      user_id: user.id,
-      user_email: user.email,
-      reply_to: replyTo || null,
-      message: messageRaw,
-      page: page || null,
-      run_id: runId || null,
-      meta: {
-        ua: req.headers["user-agent"] || null,
-        ip: req.ip || null,
-      },
-    };
-
-    const inserted = await insertResilient(sb, "support_tickets", row, "id");
-    return res.json({ ok: true, ticket_id: inserted?.id || null });
-  } catch (err) {
-    const msg = err?.message || String(err);
-    // Helpful error if table doesn't exist
-    if (/relation .*support_tickets.* does not exist/i.test(msg)) {
-      return res.status(500).json({
-        error:
-          "Support table missing. Create a Supabase table named 'support_tickets' (see comment in server.mjs).",
-      });
-    }
-    return res.status(500).json({ error: msg });
-  }
-});
-
-// -------------------- Runs API (history + details) --------------------
-
-app.get("/api/runs", async (req, res) => {
-  try {
-    const user = await requireUser(req);
-    if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-    const sb = supabaseService();
-
-    const { data, error } = await sb
-      .from("runs")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    const runs = (data || []).map((r) => {
-      const mismatch = Boolean(normalizeScenarioMismatch(r));
-      const runTypeRaw = r.run_type ?? r.runType ?? r.type ?? "upload";
-      const type =
-        String(runTypeRaw).toLowerCase() === "upload"
-          ? "Upload"
-          : String(runTypeRaw).toLowerCase() === "record"
-          ? "Record"
-          : String(runTypeRaw).toLowerCase() === "practice"
-          ? "Practice"
-          : "Upload";
-
-      const title =
-        r.run_title ??
-        r.title ??
-        r.report_title ??
-        r.name ??
-        // fallback: shorten user_context if title missing
-        shortenTitle(String(r.user_context || "").trim());
-
-      return {
-        id: r.id,
-        created_at: r.created_at,
-        scenario_template: r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null,
-        call_outcome: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
-        call_result: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
-        call_outcome_reason: r.call_outcome_reason ?? r.outcome_reason ?? null,
-        type,
-        run_type: runTypeRaw,
-        mismatch,
-        scenario_mismatch: mismatch,
-        mismatch_reason: r.mismatch_reason ?? null,
-        run_title: title,
-      };
-    });
-
-    return res.json({ runs });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
-  }
-});
-
-app.get("/api/runs/:id", async (req, res) => {
-  try {
-    const user = await requireUser(req);
-    if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-    const runId = req.params.id;
-    const sb = supabaseService();
-
-    const { data, error } = await sb
-      .from("runs")
-      .select("*")
-      .eq("id", runId)
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (error) return res.status(500).json({ error: error.message });
-    if (!data) return res.status(404).json({ error: "Run not found" });
-
-    const mismatch = Boolean(normalizeScenarioMismatch(data));
-    const runTypeRaw = data.run_type ?? data.runType ?? data.type ?? "upload";
-    const type =
-      String(runTypeRaw).toLowerCase() === "upload"
-        ? "Upload"
-        : String(runTypeRaw).toLowerCase() === "record"
-        ? "Record"
-        : String(runTypeRaw).toLowerCase() === "practice"
-        ? "Practice"
-        : "Upload";
-
-    const title =
-      data.run_title ??
-      data.title ??
-      data.report_title ??
-      data.name ??
-      shortenTitle(String(data.user_context || "").trim());
-
-    const run = {
-      ...data,
-      mismatch,
-      scenario_mismatch: mismatch,
-      run_type: runTypeRaw,
-      type,
-      run_title: title,
-      call_result: data.call_outcome ?? data.callOutcome ?? data.outcome ?? null,
-    };
-
-    return res.json({ run });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
-  }
-});
-
-// -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
+// -------------------- Transcript normalization --------------------
 
 // NEW: Stable speaker labeling (never "Speaker X") + optional You/Prospect inference
 const SPEAKER_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -338,9 +141,7 @@ function normalizeSpeakerKey(raw) {
 }
 
 function cleanText(s) {
-  return String(s || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(s || "").replace(/\s+/g, " ").trim();
 }
 
 // Heuristic role inference: only if exactly 2 speakers and confidence is decent.
@@ -349,7 +150,12 @@ function inferYouProspectMap(lines) {
   const speakers = [...new Set(lines.map((l) => l.speaker).filter(Boolean))];
   if (speakers.length !== 2) return null;
 
-  const textFor = (sp) => lines.filter((l) => l.speaker === sp).map((l) => l.text || "").join(" ").slice(0, 5000);
+  const textFor = (sp) =>
+    lines
+      .filter((l) => l.speaker === sp)
+      .map((l) => l.text || "")
+      .join(" ")
+      .slice(0, 5000);
 
   const repSignals = [
     /\bmy name is\b/i,
@@ -361,14 +167,22 @@ function inferYouProspectMap(lines) {
     /\bcan i\b/i,
     /\bwould you\b/i,
     /\bnext step\b/i,
-    /\bbook\b/i,
     /\bschedule\b/i,
     /\bcalendar\b/i,
     /\bwalkthrough\b/i,
     /\b15 minutes\b/i,
   ];
 
-  const prospectSignals = [/\bwho is this\b/i, /\bnot interested\b/i, /\bstop calling\b/i, /\bjust email\b/i, /\bhow much\b/i, /\bwe already\b/i, /\bwe're good\b/i, /\bbusy\b/i];
+  const prospectSignals = [
+    /\bwho is this\b/i,
+    /\bnot interested\b/i,
+    /\bstop calling\b/i,
+    /\bjust email\b/i,
+    /\bhow much\b/i,
+    /\bwe already\b/i,
+    /\bwe're good\b/i,
+    /\bbusy\b/i,
+  ];
 
   const score = (txt) => {
     let rep = 0,
@@ -385,7 +199,7 @@ function inferYouProspectMap(lines) {
   const b = score(textFor(bSp));
 
   const diff = Math.abs(a.net - b.net);
-  if (diff < 2) return null; // not confident enough
+  if (diff < 2) return null;
 
   const aIsYou = a.net > b.net;
   return {
@@ -394,7 +208,7 @@ function inferYouProspectMap(lines) {
   };
 }
 
-// Converts AssemblyAI utterances -> stable Speaker A/B/C labels (never X),
+// Converts AssemblyAI utterances -> stable Speaker A/B/C labels,
 // then optionally upgrades to You/Prospect if confident.
 function normalizeAssemblyUtterances(utterances) {
   const speakerMap = new Map(); // rawKey -> "Speaker A"
@@ -416,12 +230,9 @@ function normalizeAssemblyUtterances(utterances) {
     lines.push({ speaker, text });
   }
 
-  // Optional role inference (only if 2 speakers and confident)
   const map = inferYouProspectMap(lines);
   if (map) {
-    for (const l of lines) {
-      l.speaker = map[l.speaker] || l.speaker;
-    }
+    for (const l of lines) l.speaker = map[l.speaker] || l.speaker;
   }
 
   const transcript = lines.map((l) => `${l.speaker}: ${l.text}`).join("\n");
@@ -472,12 +283,9 @@ async function transcribeWithAssemblyAI(audioBuffer) {
     const pollJson = await pollRes.json();
 
     if (pollJson.status === "completed") {
-      // Best path: utterances exist (diarized)
       if (Array.isArray(pollJson.utterances) && pollJson.utterances.length) {
         return normalizeAssemblyUtterances(pollJson.utterances);
       }
-
-      // Fallback: no utterances (no diarization)
       const text = cleanText(pollJson.text || "");
       const lines = text ? [{ speaker: "Speaker A", text }] : [];
       return {
@@ -494,128 +302,448 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   }
 }
 
-// ---- Call result override logic (Transcript-first + priority) ----
-function outcomePriority(key) {
-  const k = normalizeKey(key);
-  return (
-    {
-      BOOKED_MEETING: 100,
-      HOSTILE: 90,
-      REJECTED: 80,
-      CALLBACK: 70,
-      GATEKEEPER: 60,
-      VOICEMAIL: 50,
-      NO_ANSWER: 40,
-      CONNECTED: 10,
-    }[k] ?? 0
-  );
+// -------------------- Titles --------------------
+
+function stripOutcomeSuffix(title) {
+  const s = String(title || "").trim();
+  // remove "— Booked Meeting" / "- Booked Meeting" / "| Booked Meeting" etc
+  return s.replace(/\s*(—|-|\|)\s*(booked meeting|connected|rejected|hostile|voicemail|no answer)\s*$/i, "").trim();
 }
 
-function classifyOutcomeFromTranscript(transcript) {
-  const t = String(transcript || "").toLowerCase();
-
-  // HOSTILE
-  if (/\b(stop calling|don't call|do not call|never call|remove me|take me off your list)\b/.test(t) || /\b(fuck you|go to hell)\b/.test(t)) {
-    return { key: "HOSTILE", reason: "Detected hostile language / do-not-call intent." };
-  }
-
-  // VOICEMAIL
-  if (/\b(voicemail|leave (a )?message|at the tone|mailbox is full)\b/.test(t)) {
-    return { key: "VOICEMAIL", reason: "Detected voicemail language." };
-  }
-
-  // GATEKEEPER
-  if (/\b(front desk|receptionist|assistant|admin)\b/.test(t) && /\b(they('re| are) (not available|busy)|can i take a message|who is this for)\b/.test(t)) {
-    return { key: "GATEKEEPER", reason: "Detected gatekeeper interaction." };
-  }
-
-  // CALLBACK
-  if (/\b(call( me)? back|reach back out|try again|later today|tomorrow|next week)\b/.test(t) && /\b(busy|in a meeting|not a good time)\b/.test(t)) {
-    return { key: "CALLBACK", reason: "Detected callback request / timing deferral." };
-  }
-
-  // REJECTED (non-hostile)
-  if (/\b(not interested|no thanks|we're good|we are good|not a fit|don't need|already have|we already use)\b/.test(t) && !/\b(schedule|book|set up|let's do|lets do|zoom|calendar|invite)\b/.test(t)) {
-    return { key: "REJECTED", reason: "Detected clear rejection language without a next step." };
-  }
-
-  // BOOKED MEETING (expanded + prioritized)
-  const hasZoomOrMeetWord = /\bzoom\b/.test(t) || /\b(meeting|demo|walkthrough|consultation( call)?|call)\b/.test(t);
-
-  const hasBookingVerb = /\b(schedule|book|set up|lock in|put (it )?on the calendar|calendar|invite|send (me )?(a )?(link|invite)|calendly)\b/.test(t);
-
-  const hasAgreement = /\b(yeah|yes|sure|sounds good|that works|perfect|okay|ok|let's|lets)\b/.test(t);
-
-  const hasTimeCue = /\b(\d{1,2}:\d{2}|\d{1,2}\s?(am|pm)|today|tomorrow|monday|tuesday|wednesday|thursday|friday|next week)\b/.test(t);
-
-  const hasInviteLink = /\b(calendly|calendar link|invite)\b/.test(t) && /\b(send|sent|shoot|text|email)\b/.test(t);
-
-  const explicitAgreementToMeet = /\b(let's|lets|we can|can we|how about|would you be open to)\b.*\b(zoom|consultation( call)?|demo|meeting|call)\b/.test(t);
-
-  if (hasInviteLink || (hasZoomOrMeetWord && hasBookingVerb && (hasAgreement || hasTimeCue)) || (explicitAgreementToMeet && (hasAgreement || hasBookingVerb || hasTimeCue))) {
-    return { key: "BOOKED_MEETING", reason: "Detected agreement to a scheduled next step (zoom/consultation/meeting language)." };
-  }
-
-  return null; // fall back to model outcome (often CONNECTED)
+function shortenTitle(title, maxLen = 64) {
+  const t = stripOutcomeSuffix(String(title || "").replace(/\s+/g, " ").trim());
+  if (!t) return "";
+  if (t.length <= maxLen) return t;
+  return t.slice(0, maxLen - 1).trimEnd() + "…";
 }
 
-// ---- Title helpers ----
-function shortenTitle(s, max = 56) {
-  const cleaned = String(s || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^["']|["']$/g, "");
-  if (!cleaned) return "Untitled Call";
-  if (cleaned.length <= max) return cleaned;
-  return cleaned.slice(0, max - 1).trimEnd() + "…";
+function deriveTopicFromTranscript(transcriptText) {
+  const t = String(transcriptText || "");
+  const patterns = [
+    /\bcalling about (your|the)\s+([a-z0-9][a-z0-9 \-]{3,50})/i,
+    /\breaching out about (your|the)\s+([a-z0-9][a-z0-9 \-]{3,50})/i,
+    /\bregarding (your|the)\s+([a-z0-9][a-z0-9 \-]{3,50})/i,
+    /\babout (your|the)\s+([a-z0-9][a-z0-9 \-]{3,50})/i,
+  ];
+  for (const p of patterns) {
+    const m = t.match(p);
+    if (m && m[2]) return m[2].trim();
+  }
+  return "";
 }
 
-function generateRunTitle(userContext, transcript) {
-  // Keep it simple + stable: start from context, optionally nudge with one inferred cue
-  const ctx = shortenTitle(String(userContext || "").trim(), 64);
+function generateRunTitle({ userContext, transcript, category }) {
+  const ctx = shortenTitle(userContext || "", 80);
+  const topic = shortenTitle(deriveTopicFromTranscript(transcript || ""), 40);
 
-  // lightweight add-on: if transcript hints at industry, append short tag (but NEVER outcome)
-  const t = String(transcript || "").toLowerCase();
-  let tag = "";
+  // If context is already decent, use it
+  if (ctx) return shortenTitle(ctx, 72);
 
-  if (/\b(shopify|e-?com(merce)?|cart|checkout)\b/.test(t)) tag = " (Ecom)";
-  else if (/\b(dentist|dental|clinic|patient)\b/.test(t)) tag = " (Clinic)";
-  else if (/\b(real estate|realtor|listing|buyer|seller)\b/.test(t)) tag = " (Real Estate)";
-  else if (/\b(seo|google rankings|keywords)\b/.test(t)) tag = " (SEO)";
-  else if (/\b(saas|software|platform|tool)\b/.test(t)) tag = " (Software)";
+  // fallback to topic + category
+  const cat = category ? String(category).replace(/_/g, " ").trim() : "";
+  if (topic && cat) return shortenTitle(`${topic} (${cat})`, 72);
+  if (topic) return shortenTitle(topic, 72);
+  if (cat) return shortenTitle(`Call about ${cat}`, 72);
 
-  // Ensure we don't overflow and keep readable
-  return shortenTitle(ctx + tag, 68);
+  return "Call Analysis";
 }
+
+// -------------------- Outcome detection (override for Booked Meeting accuracy) --------------------
+
+function normalizeOutcomeKey(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const up = s.toUpperCase().replace(/\s+/g, "_").replace(/-+/g, "_");
+
+  const map = {
+    BOOKED: "BOOKED_MEETING",
+    BOOKEDCALL: "BOOKED_MEETING",
+    BOOKED_CALL: "BOOKED_MEETING",
+    MEETING_BOOKED: "BOOKED_MEETING",
+    BOOKED_MEETING: "BOOKED_MEETING",
+
+    CONNECTED: "CONNECTED",
+    CONVERSATION: "CONNECTED",
+
+    HOSTILE: "HOSTILE",
+    ABUSIVE: "HOSTILE",
+
+    REJECTED: "REJECTED",
+    DECLINED: "REJECTED",
+
+    VOICEMAIL: "VOICEMAIL",
+    NO_ANSWER: "NO_ANSWER",
+    NOANSWER: "NO_ANSWER",
+  };
+
+  return map[up] || up;
+}
+
+function firstRegexHit(text, regexes) {
+  for (const r of regexes) {
+    const m = text.match(r);
+    if (m && m[0]) return m[0];
+  }
+  return "";
+}
+
+function detectBookedMeeting(transcriptLower) {
+  const platform = firstRegexHit(transcriptLower, [
+    /\bzoom\b/i,
+    /\bgoogle meet\b/i,
+    /\bmeet link\b/i,
+    /\bmicrosoft teams\b/i,
+    /\bteams link\b/i,
+    /\bcalendar invite\b/i,
+    /\bcalendly\b/i,
+    /\bcalendar link\b/i,
+    /\binvite you\b/i,
+    /\bsend (you|ya) (a|the) (link|invite)\b/i,
+    /\bi['’]?ll (send|text|email) (you|ya) (a|the) (zoom|meet|teams)? ?(link|invite)\b/i,
+    /\blet['’]?s (do|hop on|jump on)\b.*\b(zoom|call|meeting)\b/i,
+    /\b(discovery|consultation|intro)\s+call\b/i,
+  ]);
+
+  const scheduling = firstRegexHit(transcriptLower, [
+    /\b(at|around)\s+\d{1,2}(:\d{2})?\s*(am|pm)\b/i,
+    /\b\d{1,2}(:\d{2})?\s*(am|pm)\b/i,
+    /\b(tomorrow|today|next week|next monday|next tuesday|next wednesday|next thursday|next friday)\b/i,
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+    /\b(once|when) (you|ya) (get|receive) (the )?(invite|link)\b/i,
+    /\b(send|text|email) (me|him|her|you) (the )?(invite|link)\b/i,
+    /\b(i['’]?ll|we['’]?ll) (schedule|set up|book)\b/i,
+  ]);
+
+  const acceptance = firstRegexHit(transcriptLower, [
+    /\bthat works\b/i,
+    /\bsounds good\b/i,
+    /\bokay\b/i,
+    /\byes\b/i,
+    /\bperfect\b/i,
+    /\bdeal\b/i,
+    /\blet['’]?s do it\b/i,
+  ]);
+
+  // scoring
+  let score = 0;
+  if (platform) score += 2;
+  if (scheduling) score += 2;
+  if (acceptance) score += 1;
+
+  // Strong enough if platform+scheduling, or platform+acceptance+some scheduling cue in nearby text
+  const hit = score >= 4;
+
+  let evidence = "";
+  if (hit) {
+    evidence = [platform, scheduling, acceptance].filter(Boolean).join(" • ");
+  }
+  return { hit, evidence };
+}
+
+function detectHostile(transcriptLower) {
+  const hit = firstRegexHit(transcriptLower, [
+    /\bfuck (off|you)\b/i,
+    /\bgo to hell\b/i,
+    /\bstop calling\b/i,
+    /\bdon't call (me|us) again\b/i,
+    /\btake (me|us) off (your|the) list\b/i,
+    /\basshole\b/i,
+    /\bidiot\b/i,
+  ]);
+  return { hit: !!hit, evidence: hit };
+}
+
+function detectRejected(transcriptLower) {
+  const hit = firstRegexHit(transcriptLower, [
+    /\bnot interested\b/i,
+    /\bno thanks\b/i,
+    /\bwe['’]?re good\b/i,
+    /\bwe already have\b/i,
+    /\bdo not need\b/i,
+    /\bnot right now\b/i,
+    /\bmaybe later\b/i,
+    /\bjust email\b/i,
+  ]);
+  return { hit: !!hit, evidence: hit };
+}
+
+function detectVoicemail(transcriptLower) {
+  const hit = firstRegexHit(transcriptLower, [
+    /\bvoicemail\b/i,
+    /\bleave (a )?message\b/i,
+    /\bafter the tone\b/i,
+    /\bbeep\b/i,
+  ]);
+  return { hit: !!hit, evidence: hit };
+}
+
+function computeOutcome({ llmOutcome, transcript }) {
+  const raw = String(transcript || "");
+  const lower = raw.toLowerCase();
+
+  // deterministic overrides (these should win)
+  const booked = detectBookedMeeting(lower);
+  if (booked.hit) {
+    return {
+      key: "BOOKED_MEETING",
+      reason: `Booked meeting detected from transcript evidence: ${booked.evidence || "meeting language + scheduling cues"}.`,
+      evidence: booked.evidence || "",
+    };
+  }
+
+  const hostile = detectHostile(lower);
+  if (hostile.hit) {
+    return {
+      key: "HOSTILE",
+      reason: `Hostile rejection detected from transcript evidence: ${hostile.evidence}.`,
+      evidence: hostile.evidence || "",
+    };
+  }
+
+  const rejected = detectRejected(lower);
+  if (rejected.hit) {
+    return {
+      key: "REJECTED",
+      reason: `Rejection detected from transcript evidence: ${rejected.evidence}.`,
+      evidence: rejected.evidence || "",
+    };
+  }
+
+  const vm = detectVoicemail(lower);
+  if (vm.hit) {
+    return {
+      key: "VOICEMAIL",
+      reason: `Voicemail detected from transcript evidence: ${vm.evidence}.`,
+      evidence: vm.evidence || "",
+    };
+  }
+
+  // fallback to model output, normalized
+  const norm = normalizeOutcomeKey(llmOutcome || "");
+  if (norm) {
+    // keep a plain-English reason even when model decides
+    return {
+      key: norm,
+      reason: `Classified as ${norm.replace(/_/g, " ").toLowerCase()} based on overall call content.`,
+      evidence: "",
+    };
+  }
+
+  return {
+    key: "CONNECTED",
+    reason: "Reached a real person and had a conversation. No strong evidence of a booked meeting or explicit rejection was detected.",
+    evidence: "",
+  };
+}
+
+// -------------------- Report sanitization (remove internal jargon) --------------------
+
+function sanitizeReportForUsers(reportText) {
+  let t = String(reportText || "");
+
+  const replacements = [
+    [/multiple label turns detected/gi, "Multiple speakers were detected in the call"],
+    [/label turns detected/gi, "speaker turns were detected"],
+    [/diarization/gi, "speaker detection"],
+    [/token limit/gi, "length limit"],
+  ];
+
+  for (const [re, rep] of replacements) t = t.replace(re, rep);
+  return t;
+}
+
+// -------------------- Support endpoint --------------------
+
+app.post("/api/support", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const message = String(req.body?.message || "").trim();
+    const contact = String(req.body?.contact || "").trim();
+    const page_url = String(req.body?.page_url || "").trim();
+
+    if (!message || message.length < 5) {
+      return res.status(400).json({ error: "Message is required (5+ characters)." });
+    }
+
+    const sb = supabaseService();
+
+    const payload = {
+      user_id: userId,
+      message,
+      contact: contact || null,
+      page_url: page_url || null,
+      created_at: new Date().toISOString(),
+    };
+
+    const { error } = await sb.from("support_tickets").insert([payload]);
+    if (error) {
+      return res.status(500).json({
+        error:
+          "Support submission failed. If this is your first time using support, make sure the 'support_tickets' table exists in Supabase.",
+        detail: error.message,
+      });
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+// -------------------- Runs API (history + details) --------------------
+
+app.get("/api/runs", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const sb = supabaseService();
+
+    const { data, error } = await sb
+      .from("runs")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const runs = (data || []).map((r) => {
+      const mismatch = Boolean(normalizeScenarioMismatch(r));
+
+      const runTypeRaw = r.run_type ?? r.runType ?? r.type ?? "upload";
+      const type =
+        String(runTypeRaw).toLowerCase() === "upload"
+          ? "Upload"
+          : String(runTypeRaw).toLowerCase() === "record"
+          ? "Record"
+          : String(runTypeRaw).toLowerCase() === "practice"
+          ? "Practice"
+          : "Upload";
+
+      const scenario_template = r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null;
+
+      const titleComputed =
+        pick(r, ["title", "run_title", "report_title"], "") ||
+        shortenTitle(pick(r, ["user_context", "userContext"], "") || "", 72) ||
+        "Call Analysis";
+
+      const call_outcome = pick(r, ["call_outcome", "callOutcome", "outcome"], null);
+      const call_outcome_reason = pick(r, ["call_outcome_reason", "outcome_reason", "callOutcomeReason"], null);
+
+      return {
+        id: r.id,
+        created_at: r.created_at,
+
+        // Titles: return BOTH to prevent frontend regressions
+        title: titleComputed,
+        run_title: titleComputed,
+
+        scenario_template,
+        call_outcome,
+        call_outcome_reason,
+
+        type,
+        run_type: runTypeRaw,
+
+        mismatch,
+        scenario_mismatch: mismatch,
+      };
+    });
+
+    return res.json({ runs });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+app.get("/api/runs/:id", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const runId = req.params.id;
+    const sb = supabaseService();
+
+    const { data, error } = await sb
+      .from("runs")
+      .select("*")
+      .eq("id", runId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Run not found" });
+
+    const mismatch = Boolean(normalizeScenarioMismatch(data));
+
+    const runTypeRaw = data.run_type ?? data.runType ?? data.type ?? "upload";
+    const type =
+      String(runTypeRaw).toLowerCase() === "upload"
+        ? "Upload"
+        : String(runTypeRaw).toLowerCase() === "record"
+        ? "Record"
+        : String(runTypeRaw).toLowerCase() === "practice"
+        ? "Practice"
+        : "Upload";
+
+    const scenario_template = data.scenario_template ?? data.scenarioTemplate ?? data.category ?? null;
+
+    const titleComputed =
+      pick(data, ["title", "run_title", "report_title"], "") ||
+      shortenTitle(pick(data, ["user_context", "userContext"], "") || "", 72) ||
+      "Call Analysis";
+
+    const run = {
+      ...data,
+      mismatch,
+      scenario_mismatch: mismatch,
+      run_type: runTypeRaw,
+      type,
+
+      // Titles: return BOTH to prevent frontend regressions
+      title: titleComputed,
+      run_title: titleComputed,
+
+      scenario_template,
+    };
+
+    return res.json({ run });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+// -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
 
 app.post("/api/run", upload.single("audio"), async (req, res) => {
-  const user = await requireUser(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const userId = await requireUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-  if (activeRunByUser.has(user.id)) {
+  if (activeRunByUser.has(userId)) {
     return res.status(429).json({ error: "A run is already in progress. Please wait." });
   }
 
   try {
-    activeRunByUser.set(user.id, Date.now());
+    activeRunByUser.set(userId, Date.now());
 
     const file = req.file;
     if (!file?.buffer) return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
 
     const userContext = (req.body?.context || "").trim();
-    const category = (req.body?.category || "").trim(); // scenario template
-    // legacy scenario intentionally ignored (already removed in UI), but keep backwards-compat if posted
-    const legacyScenario = (req.body?.legacyScenario || "").trim();
-
+    const category = (req.body?.category || "").trim();
     if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
+    // 24h limit
     const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const sb = supabaseService();
 
     const { count, error: countErr } = await sb
       .from("runs")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .gte("created_at", cutoffIso);
 
     if (countErr) return res.status(500).json({ error: countErr.message });
@@ -623,71 +751,68 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       return res.status(429).json({ error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Try again later.` });
     }
 
-    // Stable diarized transcript + structured transcript_lines
+    // Transcribe
     const asr = await transcribeWithAssemblyAI(file.buffer);
-    const transcript = asr.transcript; // "Speaker A: ..." or "You/Prospect: ..."
-    const transcriptLines = asr.lines; // [{speaker,text}, ...]
+    const transcript = asr.transcript;
+    const transcriptLines = asr.lines;
 
-    // Run LLM report
-    const result = await runCalibrate({
-      transcript,
-      userContext,
-      category,
-      legacyScenario, // ignored by frontend, but safe to pass for back-compat
-    });
+    // Run model
+    const result = await runCalibrate({ transcript, userContext, category, legacyScenario: "" });
 
-    const reportText = pick(result, ["report", "coachingReport", "report_md", "reportMarkdown"], "") || "";
+    // report text (sanitized)
+    const reportRaw = pick(result, ["report", "coachingReport", "report_md", "reportMarkdown"], "") || "";
+    const reportText = sanitizeReportForUsers(reportRaw);
 
-    let callOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], null);
-    let callOutcomeReason = pick(result, ["call_outcome_reason", "outcomeReason", "outcome_reason"], "") || "";
-
-    // Scenario mismatch should ONLY matter when a scenario template is selected
-    const rawMismatchReason =
-      pick(result, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "") || "";
-    const mismatchReason = category ? rawMismatchReason : "";
+    // mismatch: only meaningful when category selected
+    const mismatchReasonRaw =
+      pick(result, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "") ||
+      "";
+    const mismatchReason = category ? String(mismatchReasonRaw || "").trim() : "";
     const mismatch = Boolean(category && mismatchReason);
 
-    // Transcript-first outcome classifier with priority override
-    const forced = classifyOutcomeFromTranscript(transcript);
-    const modelKey = normalizeKey(callOutcome);
-    const forcedKey = normalizeKey(forced?.key);
+    // title generation
+    const computedTitle = generateRunTitle({ userContext, transcript, category });
 
-    if (forcedKey && outcomePriority(forcedKey) > outcomePriority(modelKey)) {
-      callOutcome = forcedKey;
-      callOutcomeReason = forced.reason;
-
-      // Also inject into diagnostics so UI can show "why"
-      result.call_outcome = callOutcome;
-      result.call_outcome_reason = callOutcomeReason;
-    }
-
-    // Title (no outcome suffix)
-    const runTitle = generateRunTitle(userContext, transcript);
+    // outcome: override booked-meeting reliably
+    const llmOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], "");
+    const outcome = computeOutcome({ llmOutcome, transcript });
 
     const row = {
-      user_id: user.id,
+      user_id: userId,
       run_type: "upload",
+
       user_context: userContext,
       scenario_template: category || null,
-      legacy_scenario: legacyScenario || null,
+
+      // titles
+      run_title: computedTitle,
+      title: computedTitle,
+
+      // content
       transcript_lines: transcriptLines,
       report_text: reportText,
+
+      // diagnostics
       diagnostics: { ...result, _transcript_meta: asr.meta },
-      call_outcome: callOutcome,
-      call_outcome_reason: callOutcomeReason || null,
+
+      // outcome
+      call_outcome: outcome.key,
+      call_outcome_reason: outcome.reason,
+      call_outcome_evidence: outcome.evidence || null,
+
+      // misc
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
       mismatch_reason: mismatchReason || null,
-      run_title: runTitle,
     };
 
-    const inserted = await insertResilient(sb, "runs", row, "id");
+    const inserted = await insertRunResilient(sb, row);
     return res.json({ run_id: inserted?.id || null });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err?.message || String(err) });
   } finally {
-    activeRunByUser.delete(user.id);
+    activeRunByUser.delete(userId);
   }
 });
 
