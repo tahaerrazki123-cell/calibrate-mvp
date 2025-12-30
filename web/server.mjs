@@ -26,8 +26,23 @@ const upload = multer({
   limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
-// serve static files (index.html, etc.)
-app.use(express.static(__dirname, { extensions: ["html"] }));
+// No-cache API responses (avoid stale JSON during rapid deploy/testing)
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
+// serve static files (index.html, etc.) — prevent HTML caching so new deploys show immediately
+app.use(
+  express.static(__dirname, {
+    extensions: ["html"],
+    setHeaders(res, filePath) {
+      if (filePath.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-store");
+      }
+    },
+  })
+);
 
 app.get("/health", (req, res) => {
   res.json({
@@ -98,6 +113,22 @@ function normalizeScenarioMismatch(row) {
   return null;
 }
 
+function transcriptToLines(transcript) {
+  const lines = String(transcript || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return lines.map((line) => {
+    const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
+    if (!m) return { speaker: "Other", text: line };
+    const speakerRaw = (m[1] || "Other").replace(/\s+/g, " ").trim();
+    const speaker = speakerRaw.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+    return { speaker, text: (m[2] || "").trim() };
+  });
+}
+
 // Insert, and if DB schema is missing a column, drop it and retry
 async function insertRunResilient(sb, payload) {
   let p = { ...payload };
@@ -127,226 +158,6 @@ async function insertRunResilient(sb, payload) {
   }
 
   throw new Error("Insert failed after retries (schema mismatch).");
-}
-
-function wordCount(text) {
-  return String(text || "").trim().split(/\s+/).filter(Boolean).length;
-}
-
-function cleanUtteranceText(t) {
-  return String(t || "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Map AssemblyAI diarization speakers to:
- * - "You"/"Prospect" ONLY when confidence is high
- * - otherwise "Speaker A/B/C..." (neutral, trust-first)
- *
- * Returns:
- * {
- *   mapping: Map<speakerIdString, displayLabel>,
- *   diarization_confident: boolean,
- *   role_confident: boolean,
- *   reason: string
- * }
- */
-function mapSpeakersTrustFirst(utterances) {
-  const us = Array.isArray(utterances) ? utterances : [];
-  const speakerOrder = [];
-  const seen = new Set();
-
-  for (const u of us) {
-    const sid = String(u?.speaker ?? "");
-    if (!sid) continue;
-    if (!seen.has(sid)) {
-      seen.add(sid);
-      speakerOrder.push(sid);
-    }
-  }
-
-  const stats = new Map(); // sid -> { words, turns }
-  for (const u of us) {
-    const sid = String(u?.speaker ?? "");
-    if (!sid) continue;
-    const txt = cleanUtteranceText(u?.text || "");
-    const wc = wordCount(txt);
-    const cur = stats.get(sid) || { words: 0, turns: 0 };
-    cur.words += wc;
-    cur.turns += 1;
-    stats.set(sid, cur);
-  }
-
-  const speakers = [...stats.entries()]
-    .map(([sid, s]) => ({ sid, words: s.words, turns: s.turns }))
-    .sort((a, b) => b.words - a.words);
-
-  const totalWords = speakers.reduce((sum, s) => sum + s.words, 0) || 1;
-
-  // Build neutral labels by order of appearance (stable + honest).
-  const neutralMapping = new Map();
-  let code = "A".charCodeAt(0);
-  for (const sid of speakerOrder) {
-    neutralMapping.set(sid, `Speaker ${String.fromCharCode(code++)}`);
-  }
-
-  if (speakers.length < 2) {
-    return {
-      mapping: neutralMapping,
-      diarization_confident: false,
-      role_confident: false,
-      reason: "Only one diarized speaker",
-    };
-  }
-
-  const top = speakers[0];
-  const second = speakers[1];
-  const topShare = top.words / totalWords;
-  const secondShare = second.words / totalWords;
-
-  // Confidence that diarization is meaningfully 2-speaker and not totally lopsided.
-  // (If this fails, we do NOT pretend we know who is who.)
-  const diarization_confident =
-    topShare <= 0.88 &&
-    secondShare >= 0.12;
-
-  // Role mapping heuristics (only used if diarization_confident)
-  const repSignals = [
-    /\bmy name is\b/i,
-    /\bthis is\b/i,
-    /\bi'm\b/i,
-    /\bcalling\b/i,
-    /\breaching out\b/i,
-    /\bquick one\b/i,
-    /\bkeep this\b/i,
-    /\bdo you have\b/i,
-    /\bis this\b/i,
-    /\bfront desk\b/i,
-    /\bcan i\b/i,
-  ];
-  const prospectSignals = [
-    /\bnot interested\b/i,
-    /\bjust email\b/i,
-    /\bhow much\b/i,
-    /\bwe already\b/i,
-    /\bwe're good\b/i,
-    /\bstop calling\b/i,
-    /\bwho is this\b/i,
-  ];
-
-  function scoreSpeaker(sid) {
-    const txt = us
-      .filter(u => String(u?.speaker ?? "") === sid)
-      .slice(0, 30)
-      .map(u => cleanUtteranceText(u?.text || ""))
-      .join(" ")
-      .slice(0, 4000);
-
-    let rep = 0, pro = 0;
-    for (const r of repSignals) if (r.test(txt)) rep++;
-    for (const p of prospectSignals) if (p.test(txt)) pro++;
-    return { rep, pro, net: rep - pro };
-  }
-
-  const firstMeaningful = (() => {
-    for (const u of us) {
-      const txt = cleanUtteranceText(u?.text || "");
-      if (wordCount(txt) >= 2) return String(u?.speaker ?? "");
-    }
-    return "";
-  })();
-
-  let role_confident = false;
-  let youSid = "";
-  let prospectSid = "";
-
-  if (diarization_confident) {
-    const a = scoreSpeaker(top.sid);
-    const b = scoreSpeaker(second.sid);
-    const diff = Math.abs(a.net - b.net);
-
-    // If one speaker is strongly "rep-like", use that.
-    if (diff >= 2) {
-      role_confident = true;
-      if (a.net > b.net) {
-        youSid = top.sid;
-        prospectSid = second.sid;
-      } else {
-        youSid = second.sid;
-        prospectSid = top.sid;
-      }
-    } else if (firstMeaningful && (firstMeaningful === top.sid || firstMeaningful === second.sid)) {
-      // Cold-call assumption: rep usually starts.
-      // Only apply if the first speaker's early text looks like a greeting/intro.
-      const firstTxt = us
-        .filter(u => String(u?.speaker ?? "") === firstMeaningful)
-        .slice(0, 2)
-        .map(u => cleanUtteranceText(u?.text || ""))
-        .join(" ")
-        .toLowerCase();
-
-      const looksLikeIntro =
-        firstTxt.includes("hi") ||
-        firstTxt.includes("hello") ||
-        firstTxt.includes("hey") ||
-        firstTxt.includes("my name") ||
-        firstTxt.includes("this is") ||
-        firstTxt.includes("calling");
-
-      if (looksLikeIntro) {
-        role_confident = true;
-        youSid = firstMeaningful;
-        prospectSid = (youSid === top.sid) ? second.sid : top.sid;
-      }
-    }
-  }
-
-  const mapping = new Map(neutralMapping);
-
-  if (role_confident && youSid && prospectSid) {
-    mapping.set(youSid, "You");
-    mapping.set(prospectSid, "Prospect");
-  }
-
-  const reason = !diarization_confident
-    ? "Imbalanced/unclear diarization (neutral speaker labels used)"
-    : (role_confident ? "Two-speaker + role mapping passed" : "Two-speaker likely, but role mapping not confident (neutral labels used)");
-
-  return { mapping, diarization_confident, role_confident, reason };
-}
-
-function utterancesToTranscriptLines(utterances) {
-  const us = Array.isArray(utterances) ? utterances : [];
-  const speakerMapInfo = mapSpeakersTrustFirst(us);
-  const mapping = speakerMapInfo.mapping;
-
-  // Merge consecutive utterances from same display speaker (cleaner transcript)
-  const lines = [];
-  let cur = null;
-
-  for (const u of us) {
-    const text = cleanUtteranceText(u?.text || "");
-    if (!text) continue;
-
-    const sid = String(u?.speaker ?? "");
-    const speaker = mapping.get(sid) || "Speaker";
-    if (cur && cur.speaker === speaker) {
-      cur.text += " " + text;
-    } else {
-      cur = { speaker, text };
-      lines.push(cur);
-    }
-  }
-
-  return { transcript_lines: lines, speaker_map: speakerMapInfo };
-}
-
-function linesToTranscriptText(lines) {
-  return (lines || [])
-    .map(l => `${l.speaker}: ${l.text}`)
-    .join("\n")
-    .trim();
 }
 
 // -------------------- Runs API (history + details) --------------------
@@ -454,12 +265,12 @@ function prettifyTranscript(raw) {
 
     const lower = label.toLowerCase();
 
-    // Keep diarization speakers neutral (frontend will style, but we avoid lying)
+    // Keep "Speaker X" as-is (frontend may remap ONLY if truly 2 speakers)
     if (lower.startsWith("speaker")) return `${label}: ${text}`.trim();
 
     if (lower === "prospect" || lower === "customer") return `Prospect: ${text}`.trim();
 
-    // Rep/Caller/Agent => You (role labels are explicit)
+    // Rep/Caller/Agent => You
     return `You: ${text}`.trim();
   });
 
@@ -486,12 +297,7 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   const createRes = await fetch("https://api.assemblyai.com/v2/transcript", {
     method: "POST",
     headers: { authorization: apiKey, "content-type": "application/json" },
-    body: JSON.stringify({
-      audio_url,
-      punctuate: true,
-      format_text: true,
-      speaker_labels: true,
-    }),
+    body: JSON.stringify({ audio_url, punctuate: true, format_text: true, speaker_labels: true }),
   });
   if (!createRes.ok) throw new Error("AssemblyAI transcript create failed: " + (await createRes.text().catch(() => "")));
   const { id } = await createRes.json();
@@ -505,11 +311,16 @@ async function transcribeWithAssemblyAI(audioBuffer) {
     const pollJson = await pollRes.json();
 
     if (pollJson.status === "completed") {
-      return {
-        text: (pollJson.text || "").trim(),
-        utterances: Array.isArray(pollJson.utterances) ? pollJson.utterances : [],
-        id,
-      };
+      if (Array.isArray(pollJson.utterances) && pollJson.utterances.length) {
+        // Keep the actual diarization speaker id (0/1/2/3...) to avoid skew/lying.
+        return pollJson.utterances
+          .map((u) => {
+            const sid = Number.isFinite(u?.speaker) ? u.speaker : "X";
+            return `Speaker ${sid}: ${(u.text || "").trim()}`.trim();
+          })
+          .join("\n");
+      }
+      return (pollJson.text || "").trim();
     }
 
     if (pollJson.status === "error") throw new Error("AssemblyAI transcription error: " + (pollJson.error || "unknown"));
@@ -553,41 +364,10 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       return res.status(429).json({ error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Try again later.` });
     }
 
-    const tx = await transcribeWithAssemblyAI(file.buffer);
-
-    // Prefer utterances (best shot at diarization), but remain trust-first.
-    let transcript_lines = [];
-    let speaker_map = null;
-
-    if (Array.isArray(tx.utterances) && tx.utterances.length) {
-      const built = utterancesToTranscriptLines(tx.utterances);
-      transcript_lines = built.transcript_lines;
-      speaker_map = built.speaker_map;
-    } else {
-      const prettified = prettifyTranscript(tx.text || "");
-      transcript_lines = prettified
-        .split("\n")
-        .map(s => s.trim())
-        .filter(Boolean)
-        .map(line => {
-          const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
-          if (!m) return { speaker: "Other", text: line };
-          const speaker = (m[1] || "Other").replace(/\s+/g, " ").trim();
-          return { speaker, text: (m[2] || "").trim() };
-        });
-      speaker_map = {
-        diarization_confident: false,
-        role_confident: false,
-        reason: "No utterances returned; used plain transcript text",
-      };
-    }
-
-    const transcript = linesToTranscriptText(transcript_lines);
+    const transcriptRaw = await transcribeWithAssemblyAI(file.buffer);
+    const transcript = prettifyTranscript(transcriptRaw);
 
     const result = await runCalibrate({ transcript, userContext, category, legacyScenario });
-
-    // attach diarization meta (frontend uses this for trust warnings + scorecard)
-    const diagnostics = Object.assign({}, result, { speaker_map });
 
     const reportText = pick(result, ["report", "coachingReport", "report_md", "reportMarkdown"], "") || "";
     const callOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], null);
@@ -601,9 +381,9 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       user_context: userContext,
       scenario_template: category || null,
       legacy_scenario: legacyScenario || null,
-      transcript_lines,
+      transcript_lines: transcriptToLines(transcript),
       report_text: reportText,
-      diagnostics,
+      diagnostics: result,
       call_outcome: callOutcome,
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
@@ -626,6 +406,7 @@ app.use("/api", (req, res) => res.status(404).json({ error: "Unknown API route" 
 
 // SPA fallback for non-API routes (works on Render/Node 22; avoids "*" path issues)
 app.get(/^(?!\/api\/).*/, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
