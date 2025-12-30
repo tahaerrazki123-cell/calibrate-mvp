@@ -126,94 +126,214 @@ async function insertRunResilient(sb, payload) {
   throw new Error("Insert failed after retries (schema mismatch).");
 }
 
-// -------------------- Title generation (short + no redundant suffix) --------------------
+// -------------------- Title generation --------------------
 
-function cleanOneLine(s) {
+function cleanSpaces(s) {
   return String(s || "").replace(/\s+/g, " ").trim();
 }
 
-function truncateAtWord(s, maxLen) {
-  const t = cleanOneLine(s);
+function stripOutcomeSuffix(title) {
+  let t = cleanSpaces(title);
+  if (!t) return t;
+
+  // common separators used by UI: " — Booked Meeting", "- Connected", "| Rejected", etc.
+  const outcomeWords = [
+    "booked meeting","booked demo","booked call","connected","rejected","hostile","voicemail","no answer","callback","gatekeeper"
+  ];
+  const re = new RegExp(`\\s*(—|\\-|\\||:)+\\s*(${outcomeWords.join("|")})\\s*$`, "i");
+  t = t.replace(re, "");
+
+  return cleanSpaces(t);
+}
+
+function clampTitle(title, maxLen = 62) {
+  const t = cleanSpaces(title);
   if (t.length <= maxLen) return t;
-  const cut = t.slice(0, maxLen);
-  const i = cut.lastIndexOf(" ");
-  return (i > 40 ? cut.slice(0, i) : cut).trim();
+  return t.slice(0, Math.max(0, maxLen - 1)).trimEnd() + "…";
 }
 
-function stripOutcomeSuffix(title, outcome) {
-  const t = cleanOneLine(title);
-  const o = cleanOneLine(outcome);
-  if (!t || !o) return t;
+function extractInferred(diagnostics) {
+  const inferred = pick(diagnostics, [
+    "inferred_from_transcript",
+    "inferredFromTranscript",
+    "inferred",
+    "inferred_lines",
+    "inferredLines",
+  ], null);
 
-  const esc = o.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Remove patterns like: " — Booked Meeting", " - Booked Meeting", " | Booked Meeting", "(Booked Meeting)"
-  let out = t
-    .replace(new RegExp(`\\s*[—\\-\\|:]\\s*${esc}\\s*$`, "i"), "")
-    .replace(new RegExp(`\\s*\\(\\s*${esc}\\s*\\)\\s*$`, "i"), "")
-    .trim();
+  let prospectType = "";
+  let offerKeywords = [];
 
-  // Also handle cases where someone already appended twice or similar
-  out = out.replace(/\s*[—\-|:]\s*$/g, "").trim();
-
-  return out || t;
-}
-
-function extractInferred(result) {
-  const out = { prospectType: "", offerKeyword: "" };
-
-  const inferredObj = pick(result, ["inferred_from_transcript", "inferredFromTranscript", "inferred"], null);
-  if (inferredObj && typeof inferredObj === "object") {
-    out.prospectType = cleanOneLine(pick(inferredObj, ["prospectType", "prospect_type"], "")) || out.prospectType;
-
-    const ok = pick(inferredObj, ["offerKeywords", "offer_keywords"], "");
-    if (Array.isArray(ok) && ok.length) out.offerKeyword = cleanOneLine(ok[0]);
-    else if (typeof ok === "string" && ok.trim()) out.offerKeyword = cleanOneLine(ok.split(",")[0]);
-  }
-
-  const inferredLines = pick(result, ["inferred_lines", "inferredLines"], null);
-  if (Array.isArray(inferredLines)) {
-    for (const line of inferredLines) {
-      const s = cleanOneLine(line);
-      const m1 = s.match(/^Prospect type:\s*(.+)$/i);
-      const m2 = s.match(/^Offer keywords:\s*(.+)$/i);
-      if (m1 && !out.prospectType) out.prospectType = cleanOneLine(m1[1]);
-      if (m2 && !out.offerKeyword) out.offerKeyword = cleanOneLine(m2[1].split(",")[0]);
+  if (Array.isArray(inferred)) {
+    for (const s of inferred) {
+      const line = String(s || "");
+      const m1 = line.match(/prospect\s*type:\s*(.+)$/i);
+      if (m1) prospectType = cleanSpaces(m1[1]);
+      const m2 = line.match(/offer\s*keywords:\s*(.+)$/i);
+      if (m2) offerKeywords = cleanSpaces(m2[1]).split(",").map(x => cleanSpaces(x)).filter(Boolean);
     }
+  } else if (inferred && typeof inferred === "object") {
+    prospectType = cleanSpaces(pick(inferred, ["prospectType","prospect_type"], "")) || "";
+    const ok = pick(inferred, ["offerKeywords","offer_keywords"], []);
+    if (Array.isArray(ok)) offerKeywords = ok.map(x => cleanSpaces(x)).filter(Boolean);
+    else if (ok) offerKeywords = cleanSpaces(ok).split(",").map(x => cleanSpaces(x)).filter(Boolean);
   }
 
-  return out;
+  return { prospectType, offerKeywords };
 }
 
-function prettyOffer(word) {
-  const w = cleanOneLine(word).toLowerCase();
-  if (!w) return "";
-  if (w.includes("seo")) return "SEO pitch";
-  if (w.includes("receptionist") || w.includes("ai receptionist")) return "AI receptionist pitch";
-  if (w.includes("ads") || w.includes("facebook") || w.includes("google ads")) return "Ads pitch";
-  if (w.includes("web") || w.includes("website")) return "Website pitch";
-  if (w.includes("recruit") || w.includes("staff")) return "Recruiting pitch";
-  return word.length <= 18 ? word.toUpperCase() + " pitch" : word;
+function titleFromContextAndInference({ userContext, diagnostics, scenarioTemplate }) {
+  const ctx = stripOutcomeSuffix(userContext || "");
+  const { prospectType, offerKeywords } = extractInferred(diagnostics || {});
+  const offer = offerKeywords[0] || "";
+  const pt = prospectType || "";
+
+  // if we have both offer + prospect type => "SEO → Ecommerce brand"
+  if (offer && pt) return `${offer.toUpperCase()} → ${pt}`;
+
+  // if only one inferred field, blend with context
+  if (offer && ctx) return `${offer.toUpperCase()} → ${ctx}`;
+  if (pt && ctx) return `${pt} → ${ctx}`;
+
+  // otherwise attempt a compact rewrite of context
+  const c = cleanSpaces(ctx);
+  if (!c) return "Call Analysis";
+
+  // heuristic: remove filler openings
+  let compact = c
+    .replace(/^(selling|offering|pitched|offered|calling)\s+/i, "")
+    .replace(/\bto\s+this\b/i, "to")
+    .replace(/\bfor\s+this\b/i, "for");
+
+  // If scenario chosen, prefix small hint
+  if (scenarioTemplate) {
+    const prefix = scenarioTemplate
+      .toLowerCase()
+      .split("_")
+      .map(w => w ? (w[0].toUpperCase() + w.slice(1)) : "")
+      .join(" ");
+    compact = `${prefix}: ${compact}`;
+  }
+
+  return compact;
 }
 
-function generateRunTitle({ userContext, transcriptLines, callResult, result }) {
-  const inferred = extractInferred(result || {});
-  const offer = prettyOffer(inferred.offerKeyword);
-  const prospect = inferred.prospectType ? cleanOneLine(inferred.prospectType) : "";
-
-  let base = cleanOneLine(userContext || "");
-  if (base.length > 120) base = truncateAtWord(base, 120);
-
-  let title = "";
-  if (offer && prospect) title = `${offer} to ${prospect}`;
-  else if (offer) title = offer;
-  else if (prospect) title = `Call with ${prospect}`;
-  else title = base || "Untitled report";
-
-  title = stripOutcomeSuffix(title, callResult);
-  title = truncateAtWord(title, 72);
-
-  return title;
+function buildTitleShapes({ userContext, diagnostics, scenarioTemplate }) {
+  const full = stripOutcomeSuffix(titleFromContextAndInference({ userContext, diagnostics, scenarioTemplate }));
+  const short = clampTitle(full, 58);
+  return { title_full: full, title_short: short, title: short };
 }
+
+// -------------------- Runs API (history + details) --------------------
+
+app.get("/api/runs", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const sb = supabaseService();
+
+    const { data, error } = await sb
+      .from("runs")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const runs = (data || []).map((r) => {
+      const runTypeRaw = r.run_type ?? r.runType ?? r.type ?? "upload";
+      const scenarioTemplate = r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null;
+
+      // IMPORTANT: mismatch should only matter if scenario selected
+      const mismatchRaw = Boolean(normalizeScenarioMismatch(r));
+      const mismatch = Boolean(scenarioTemplate) && mismatchRaw;
+
+      const diag = r.diagnostics || {};
+      const titles = buildTitleShapes({
+        userContext: r.user_context || "",
+        diagnostics: diag,
+        scenarioTemplate: scenarioTemplate || "",
+      });
+
+      const callOutcome = r.call_outcome ?? r.callOutcome ?? r.outcome ?? null;
+
+      return {
+        id: r.id,
+        created_at: r.created_at,
+        scenario_template: scenarioTemplate,
+        call_outcome: callOutcome,
+        mismatch,
+        scenario_mismatch: mismatch,
+
+        // title payload for UI
+        title: titles.title,
+        title_short: titles.title_short,
+        title_full: titles.title_full,
+      };
+    });
+
+    return res.json({ runs });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+app.get("/api/runs/:id", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const runId = req.params.id;
+    const sb = supabaseService();
+
+    const { data, error } = await sb
+      .from("runs")
+      .select("*")
+      .eq("id", runId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Run not found" });
+
+    const scenarioTemplate = data.scenario_template ?? data.scenarioTemplate ?? data.category ?? null;
+
+    // mismatch only if scenario selected
+    const mismatchRaw = Boolean(normalizeScenarioMismatch(data));
+    const mismatch = Boolean(scenarioTemplate) && mismatchRaw;
+
+    const diag = data.diagnostics || {};
+    const titles = buildTitleShapes({
+      userContext: data.user_context || "",
+      diagnostics: diag,
+      scenarioTemplate: scenarioTemplate || "",
+    });
+
+    const callOutcome = data.call_outcome ?? data.callOutcome ?? data.outcome ?? null;
+    const callOutcomeReason =
+      pick(diag, ["call_outcome_reason","outcomeReason","outcome_reason"], "") || null;
+
+    const run = {
+      ...data,
+      scenario_template: scenarioTemplate,
+      mismatch,
+      scenario_mismatch: mismatch,
+
+      title: titles.title,
+      title_short: titles.title_short,
+      title_full: titles.title_full,
+
+      call_outcome: callOutcome,
+      call_outcome_reason: callOutcomeReason,
+    };
+
+    return res.json({ run });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
 
 // -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
 
@@ -249,7 +369,6 @@ function inferYouProspectMap(lines) {
     /\bdo you have (a moment|a minute)\b/i,
     /\bcan i\b/i,
     /\bwould you\b/i,
-    /\bhow are you\b/i,
     /\bnext step\b/i,
     /\bbook\b/i,
     /\bschedule\b/i,
@@ -317,7 +436,9 @@ function normalizeAssemblyUtterances(utterances) {
 
   const map = inferYouProspectMap(lines);
   if (map) {
-    for (const l of lines) l.speaker = map[l.speaker] || l.speaker;
+    for (const l of lines) {
+      l.speaker = map[l.speaker] || l.speaker;
+    }
   }
 
   const transcript = lines.map(l => `${l.speaker}: ${l.text}`).join("\n");
@@ -388,146 +509,6 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   }
 }
 
-// -------------------- Runs API (history + details) --------------------
-
-app.get("/api/runs", async (req, res) => {
-  try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const sb = supabaseService();
-
-    const { data, error } = await sb
-      .from("runs")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    const runs = (data || []).map((r) => {
-      const mismatch = Boolean(normalizeScenarioMismatch(r));
-      const diag = r.diagnostics || {};
-
-      const scenario_template = r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null;
-
-      const call_result =
-        r.call_result ??
-        r.call_outcome ??
-        r.callOutcome ??
-        r.outcome ??
-        diag.call_result ??
-        diag.call_outcome ??
-        diag.callOutcome ??
-        diag.outcome ??
-        null;
-
-      const outcome_reason =
-        r.outcome_reason ??
-        diag.call_outcome_reason ??
-        diag.outcome_reason ??
-        null;
-
-      const transcript_lines = Array.isArray(r.transcript_lines) ? r.transcript_lines : [];
-
-      const title =
-        r.run_title ??
-        r.title ??
-        r.name ??
-        generateRunTitle({
-          userContext: r.user_context || "",
-          transcriptLines: transcript_lines,
-          callResult: call_result || "",
-          result: diag,
-        });
-
-      return {
-        id: r.id,
-        created_at: r.created_at,
-        run_title: title,
-        scenario_template,
-        call_result,
-        outcome_reason,
-        mismatch,
-        scenario_mismatch: mismatch,
-      };
-    });
-
-    return res.json({ runs });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
-  }
-});
-
-app.get("/api/runs/:id", async (req, res) => {
-  try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const runId = req.params.id;
-    const sb = supabaseService();
-
-    const { data, error } = await sb
-      .from("runs")
-      .select("*")
-      .eq("id", runId)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (error) return res.status(500).json({ error: error.message });
-    if (!data) return res.status(404).json({ error: "Run not found" });
-
-    const mismatch = Boolean(normalizeScenarioMismatch(data));
-    const diag = data.diagnostics || {};
-
-    const call_result =
-      data.call_result ??
-      data.call_outcome ??
-      data.callOutcome ??
-      data.outcome ??
-      diag.call_result ??
-      diag.call_outcome ??
-      diag.callOutcome ??
-      diag.outcome ??
-      null;
-
-    const outcome_reason =
-      data.outcome_reason ??
-      diag.call_outcome_reason ??
-      diag.outcome_reason ??
-      null;
-
-    const transcript_lines = Array.isArray(data.transcript_lines) ? data.transcript_lines : [];
-
-    const title =
-      data.run_title ??
-      data.title ??
-      data.name ??
-      generateRunTitle({
-        userContext: data.user_context || "",
-        transcriptLines: transcript_lines,
-        callResult: call_result || "",
-        result: diag,
-      });
-
-    const run = {
-      ...data,
-      mismatch,
-      scenario_mismatch: mismatch,
-      call_result,
-      outcome_reason,
-      run_title: title,
-    };
-
-    return res.json({ run });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
-  }
-});
-
-// -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
-
 app.post("/api/run", upload.single("audio"), async (req, res) => {
   const userId = await requireUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -543,7 +524,7 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     if (!file?.buffer) return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
 
     const userContext = (req.body?.context || "").trim();
-    const category = (req.body?.category || "").trim();
+    const category = (req.body?.category || "").trim(); // scenario template (optional)
     if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
     const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -564,25 +545,27 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     const transcript = asr.transcript;
     const transcriptLines = asr.lines;
 
-    const result = await runCalibrate({ transcript, userContext, category });
+    const result = await runCalibrate({
+      transcript,
+      userContext,
+      category,
+      legacyScenario: "", // legacy removed
+    });
 
     const reportText = pick(result, ["report", "coachingReport", "report_md", "reportMarkdown"], "") || "";
+    const callOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], null);
 
-    const callResult =
-      pick(result, ["call_result", "call_outcome", "callOutcome", "outcome"], null);
-
-    const outcomeReason =
-      pick(result, ["call_outcome_reason", "outcome_reason"], null);
-
-    const mismatchReason =
+    // IMPORTANT: mismatch only matters when scenario selected
+    const mismatchReasonRaw =
       pick(result, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "") || "";
-    const mismatch = Boolean(mismatchReason);
 
-    const runTitle = generateRunTitle({
+    const mismatchReason = category ? mismatchReasonRaw : "";
+    const mismatch = Boolean(category) && Boolean(mismatchReason);
+
+    const titles = buildTitleShapes({
       userContext,
-      transcriptLines,
-      callResult: callResult || "",
-      result,
+      diagnostics: result,
+      scenarioTemplate: category || "",
     });
 
     const row = {
@@ -590,21 +573,16 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       run_type: "upload",
       user_context: userContext,
       scenario_template: category || null,
-
-      // NEW fields (insertRunResilient will drop if table doesn't have them yet)
-      run_title: runTitle,
-      call_result: callResult,
-      outcome_reason: outcomeReason,
-
       transcript_lines: transcriptLines,
       report_text: reportText,
       diagnostics: { ...result, _transcript_meta: asr.meta },
-
-      // legacy fields (still useful for older UI)
-      call_outcome: callResult,
+      call_outcome: callOutcome,
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
       mismatch_reason: mismatchReason || null,
+
+      // optional column if exists; harmless if it doesn't
+      run_title: titles.title_full,
     };
 
     const inserted = await insertRunResilient(sb, row);

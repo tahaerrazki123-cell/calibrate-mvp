@@ -1,4 +1,3 @@
-<!-- FILE: web/index.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -106,6 +105,12 @@
       padding:16px;
     }
 
+    /* Centered cards (landing/login/session expired) */
+    .centerCard{
+      max-width:720px;
+      margin:0 auto;
+    }
+
     /* Layout (sidebar + main) */
     .appLayout{
       display:grid;
@@ -116,20 +121,6 @@
     @media (max-width: 960px){
       .appLayout{grid-template-columns:1fr;}
       .sidebar{position:relative;top:auto}
-    }
-
-    /* Unauthed experience: center primary card */
-    body.unauth .appLayout{ grid-template-columns: 1fr; }
-    body.unauth main{
-      display:flex;
-      justify-content:center;
-      align-items:flex-start;
-      padding-top:34px;
-      min-height: calc(100vh - 140px);
-    }
-    body.unauth main > .card{
-      width:100%;
-      max-width:680px;
     }
 
     .sidebar{
@@ -161,6 +152,7 @@
       cursor:pointer;
       font-weight:900;
       color:var(--text);
+      text-align:left;
     }
     .navItem:hover{background:rgba(37,99,235,0.06);border-color:rgba(37,99,235,0.20)}
     .navItem.active{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.28)}
@@ -175,20 +167,34 @@
       white-space:nowrap;
     }
 
-    /* Sub-item under Home to show current report */
+    /* Sub-indicator under Home when viewing a report */
     .navSub{
-      margin:-2px 0 6px 14px;
-      padding:6px 10px;
-      border-radius:12px;
-      border:1px solid rgba(37,99,235,0.14);
-      background:rgba(37,99,235,0.06);
-      color:rgba(15,23,42,0.78);
-      font-size:12px;
-      font-weight:850;
-      max-width: calc(100% - 22px);
+      margin-top:6px;
+      margin-left:14px;  /* indent */
+      font-size:11.5px;
+      font-weight:900;
+      color:rgba(15,23,42,0.72);
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid rgba(37,99,235,0.18);
+      background:rgba(37,99,235,0.07);
+      display:inline-block;
+      max-width:180px;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
+    }
+    .navStack{
+      display:flex;
+      flex-direction:column;
+      min-width:0;
+    }
+    .navMainRow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      min-width:0;
     }
 
     /* Quick actions */
@@ -243,20 +249,24 @@
       padding:12px 10px;border-top:1px solid var(--line);
       font-size:13.5px;text-align:left;
       white-space:nowrap;
+      vertical-align:middle;
     }
     .table th{color:var(--muted);font-weight:950;background:rgba(15,23,42,0.02)}
     .table tr:hover td{background:rgba(37,99,235,0.05);cursor:pointer}
 
-    /* History column sizing (prevents horizontal scrollbar) */
-    .colReport{min-width:360px; max-width:520px;}
-    .colScenario{min-width:210px}
-    .colResult{min-width:150px}
+    .colReport{min-width:320px; width:55%;}
+    .colScenario{min-width:200px}
+    .colOutcome{min-width:160px}
 
-    .titleCell{
-      max-width:520px;
+    .truncate{
+      display:block;
+      max-width:560px;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
+    }
+    @media (max-width: 960px){
+      .truncate{max-width:360px;}
     }
 
     /* Banners */
@@ -351,17 +361,55 @@
     .mono{font-family:var(--mono);font-size:12px;white-space:pre-wrap;color:var(--muted);margin-top:10px}
     .footerNote{color:var(--muted);font-size:12px;margin-top:10px}
 
-    .runTitleBig{
-      margin:10px 0 2px;
-      font-size:18px;
+    /* Assist box */
+    .assistBox{
+      border:1px solid rgba(37,99,235,0.18);
+      background:rgba(37,99,235,0.06);
+      border-radius:14px;
+      padding:12px;
+      min-height:92px;
+    }
+    .assistHead{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      margin-bottom:8px;
+    }
+    .assistTitle{
+      margin:0;
       font-weight:950;
-      letter-spacing:0.1px;
+      font-size:13.5px;
     }
-    .runTitleSub{
-      margin:0 0 10px;
-      color:var(--muted);
-      font-size:12.5px;
+    .assistPill{
+      font-size:11px;
+      font-weight:950;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.78);
+      color:var(--text);
+      white-space:nowrap;
     }
+    .assistBody{
+      margin:0;
+      color:rgba(15,23,42,0.80);
+      font-size:12.8px;
+      line-height:1.35;
+      white-space:pre-wrap;
+    }
+    .assistActions{
+      display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;
+    }
+    .assistBtn{
+      appearance:none;
+      border:1px solid rgba(37,99,235,0.22);
+      background:rgba(255,255,255,0.82);
+      color:var(--text);
+      font-weight:950;
+      padding:7px 10px;
+      border-radius:999px;
+      cursor:pointer;
+      font-size:12px;
+    }
+    .assistBtn:hover{background:rgba(37,99,235,0.06)}
 
     /* Toast */
     .toastHost{
@@ -428,9 +476,13 @@
 
         <div class="navList">
           <button id="navDashboard" class="navItem">
-            <span>Home</span>
+            <div class="navStack">
+              <div class="navMainRow">
+                <span>Home</span>
+              </div>
+              <span id="navCurrentRun" class="navSub hidden" title=""></span>
+            </div>
           </button>
-          <div id="navReportSub" class="navSub hidden" title=""></div>
 
           <button id="navUpload" class="navItem">
             <span>Upload Call</span>
@@ -460,7 +512,7 @@
       <!-- Main content -->
       <main>
         <!-- Landing -->
-        <div id="viewLanding" class="card hidden">
+        <div id="viewLanding" class="card centerCard hidden">
           <h3 class="sectionTitle">Calibrate MVP</h3>
           <p style="margin:0 0 10px; color:var(--muted);">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
           <ul class="bullets">
@@ -475,7 +527,7 @@
         </div>
 
         <!-- Login -->
-        <div id="viewLogin" class="card hidden">
+        <div id="viewLogin" class="card centerCard hidden">
           <h3 class="sectionTitle">Sign in</h3>
           <div id="loginBanners"></div>
 
@@ -489,7 +541,7 @@
             <div>
               <label>&nbsp;</label>
               <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Google OAuth button is included too (only works if you set Google provider in Supabase).</div>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Google OAuth button works only if Google provider is enabled in Supabase.</div>
             </div>
           </div>
 
@@ -500,7 +552,7 @@
         </div>
 
         <!-- Session expired -->
-        <div id="viewSessionExpired" class="card hidden">
+        <div id="viewSessionExpired" class="card centerCard hidden">
           <h3 class="sectionTitle">Session expired</h3>
           <p style="margin:0 0 10px; color:var(--muted);">
             Your session expired while you were using Calibrate. Please sign in again to continue.
@@ -552,7 +604,7 @@
                   <tr>
                     <th class="colReport">Call Analysis</th>
                     <th class="colScenario">Scenario</th>
-                    <th class="colResult">Call Result</th>
+                    <th class="colOutcome">Call Result</th>
                   </tr>
                 </thead>
                 <tbody id="runsTbody"></tbody>
@@ -580,11 +632,24 @@
               <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">This nudges examples and wording. Context + transcript stay the source of truth.</div>
             </div>
 
-            <div style="grid-column:1 / -1;">
+            <div>
               <label for="context">Context (required)</label>
               <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."
-                        style="width:100%;min-height:92px;resize:vertical;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></textarea>
+                        style="width:100%;min-height:120px;resize:vertical;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></textarea>
               <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Keep it short — we infer prospect details from the transcript when possible.</div>
+            </div>
+
+            <div>
+              <label>AI assistance</label>
+              <div class="assistBox">
+                <div class="assistHead">
+                  <p class="assistTitle" style="margin:0;">Context check</p>
+                  <span id="assistPill" class="assistPill">Waiting…</span>
+                </div>
+                <p id="assistBody" class="assistBody">(Type context to get guidance.)</p>
+                <div id="assistActions" class="assistActions hidden"></div>
+              </div>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">This is a fast rules-based helper (not a model call).</div>
             </div>
           </div>
 
@@ -593,7 +658,6 @@
             <span id="status" class="status"></span>
           </div>
 
-          <!-- Back-compat inline results (normally we navigate to /runs/:id) -->
           <div id="results" class="card hidden" style="margin-top:14px;">
             <div id="banners"></div>
 
@@ -624,12 +688,12 @@
         <!-- Run viewer -->
         <div id="viewRun" class="card hidden">
           <div class="row" style="justify-content:space-between;">
-            <h3 class="sectionTitle" style="margin:0;">Call Analysis</h3>
+            <div style="min-width:0;">
+              <h3 id="runTitle" class="sectionTitle" style="margin:0; font-size:16px; font-weight:950; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:720px;">Run</h3>
+              <div id="runSubtitle" style="margin-top:6px; color:var(--muted); font-size:12.5px;"></div>
+            </div>
             <button id="btnBackHome" class="btn secondary">Back</button>
           </div>
-
-          <div id="runTitleText" class="runTitleBig"></div>
-          <div id="runTitleMeta" class="runTitleSub"></div>
 
           <div id="runBanners" style="margin-top:12px;"></div>
 
@@ -718,13 +782,39 @@
         "Use offer clarity + lead gen + conversion language. Qualify niche, price point, lead source, and propose a low-friction audit (funnel/offer).",
     };
 
-    const CALL_RESULT_DEFS = {
-      "Connected": "You reached a real person (the call connected).",
-      "No Answer": "No live contact (missed/voicemail/no pickup).",
-      "Voicemail": "Reached voicemail (no live conversation).",
-      "Rejected": "Prospect clearly declined (explicit no / not interested).",
-      "Booked Meeting": "Prospect agreed to a scheduled next step (meeting/call).",
-      "Closed Deal": "Confirmed purchase / signed / paid (won).",
+    const scenarioKeywords = {
+      b2b_service_software: [
+        "saas","software","crm","demo","pipeline","integrat","subscription","seats","users","it","security","api","platform"
+      ],
+      local_service: [
+        "dentist","dental","clinic","roof","plumb","hvac","contractor","barber","salon","repair","home service","appointment","booked","front desk"
+      ],
+      ecommerce: [
+        "shopify","ecom","e-commerce","d2c","product","cart","checkout","conversion","aov","cac","roas","brand","store","sku"
+      ],
+      agency_services: [
+        "seo","ads","google ads","meta ads","facebook ads","creative","agency","marketing","leads","rank","keywords","content","landing page"
+      ],
+      recruiting_staffing: [
+        "recruit","staff","hiring","candidates","talent","roles","job","positions","headcount","time-to-hire"
+      ],
+      real_estate: [
+        "real estate","realtor","listing","buyer","seller","property","home","house","mortgage","investor","motivated seller"
+      ],
+      coaching_consulting: [
+        "coach","coaching","consult","consulting","program","clients","retainer","offer","funnel","course","mastermind"
+      ],
+    };
+
+    const outcomeHelp = {
+      CONNECTED: "You reached a real person and had a conversation. No clear next step was booked.",
+      BOOKED_MEETING: "Prospect agreed to a next step (demo/appointment/meeting). A time was set or clearly implied.",
+      CALLBACK: "Prospect requested a callback at a later time.",
+      REJECTED: "Prospect declined and did not agree to a next step.",
+      HOSTILE: "Prospect was hostile/angry and signaled to stop contacting them.",
+      VOICEMAIL: "Call went to voicemail (or only voicemail was reached).",
+      NO_ANSWER: "No answer / disconnected before a conversation.",
+      GATEKEEPER: "You spoke to a gatekeeper rather than the decision maker.",
     };
 
     function fillSelect(el, options) {
@@ -983,6 +1073,33 @@
       });
     }
 
+    function normalizeOutcomeKey(outcomeRaw) {
+      const s = String(outcomeRaw || "").trim();
+      if (!s) return "";
+      if (/^[A-Z0-9_]+$/.test(s)) return s;
+      return s
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "_")
+        .replace(/-+/g, "_")
+        .toUpperCase();
+    }
+
+    function outcomeLabel(outcomeRaw) {
+      const key = normalizeOutcomeKey(outcomeRaw);
+      if (!key) return "—";
+      return key
+        .toLowerCase()
+        .split("_")
+        .map(w => w ? (w[0].toUpperCase() + w.slice(1)) : "")
+        .join(" ");
+    }
+
+    function outcomeTooltip(outcomeRaw) {
+      const key = normalizeOutcomeKey(outcomeRaw);
+      if (!key) return "";
+      return outcomeHelp[key] || "Auto-classified call result.";
+    }
+
     function renderSummaryInto(resp, opts) {
       const summaryKVEl = opts.summaryKVEl;
       const scenarioValue = opts.scenarioValue || "";
@@ -1012,7 +1129,10 @@
         if (scenarioValue && templateGuidance[scenarioValue]) derivedTemplate = templateGuidance[scenarioValue];
       }
 
-      const callOutcome = pick(resp, ["call_result", "call_outcome", "callOutcome", "outcome"], "");
+      const callOutcomeRaw = pick(resp, ["call_outcome", "callOutcome", "outcome"], "");
+      const callOutcomeKey = normalizeOutcomeKey(callOutcomeRaw);
+      const callOutcome = callOutcomeRaw ? outcomeLabel(callOutcomeRaw) : "(unknown)";
+      const callOutcomeReason = pick(resp, ["call_outcome_reason","outcomeReason","outcome_reason"], "");
 
       const addKV = (k, vNodeOrText) => {
         const item = document.createElement("div");
@@ -1033,7 +1153,6 @@
       };
 
       if (submittedAt) addKV("Submitted at", submittedAt);
-
       addKV("Scenario (selected)", scenarioLabel);
       addKV("User Context", userContext);
 
@@ -1051,7 +1170,121 @@
       }
 
       addKV("Derived from Template", derivedTemplate || "(none)");
-      addKV("Call Result", callOutcome || "(unknown)");
+
+      const outcomeSpan = document.createElement("span");
+      outcomeSpan.textContent = callOutcome;
+      outcomeSpan.title = outcomeTooltip(callOutcomeKey || callOutcomeRaw);
+      addKV("Call Result", outcomeSpan);
+
+      if (callOutcomeReason) addKV("Why this result", callOutcomeReason);
+    }
+
+    // ---- AI assistance ----
+    const assistPill = document.getElementById("assistPill");
+    const assistBody = document.getElementById("assistBody");
+    const assistActions = document.getElementById("assistActions");
+
+    function scoreScenario(text, key) {
+      const t = String(text || "").toLowerCase();
+      const words = scenarioKeywords[key] || [];
+      let score = 0;
+      for (const kw of words) {
+        if (!kw) continue;
+        if (t.includes(kw)) score++;
+      }
+      return score;
+    }
+
+    function bestScenarioForContext(ctx) {
+      const scores = scenarioTemplates
+        .map(([k]) => k)
+        .filter(Boolean)
+        .map((k) => ({ k, score: scoreScenario(ctx, k) }))
+        .sort((a, b) => b.score - a.score);
+
+      const top = scores[0] || { k: "", score: 0 };
+      const second = scores[1] || { k: "", score: 0 };
+      return { top, second, scores };
+    }
+
+    function setAssist(state, pillText, bodyText) {
+      assistPill.textContent = pillText;
+      assistBody.textContent = bodyText;
+      assistActions.classList.add("hidden");
+      assistActions.innerHTML = "";
+
+      if (state === "good") assistPill.style.borderColor = "rgba(22,163,74,0.22)";
+      else if (state === "warn") assistPill.style.borderColor = "rgba(245,158,11,0.28)";
+      else if (state === "bad") assistPill.style.borderColor = "rgba(239,68,68,0.28)";
+      else assistPill.style.borderColor = "rgba(15,23,42,0.10)";
+    }
+
+    function addAssistAction(label, onClick) {
+      assistActions.classList.remove("hidden");
+      const b = document.createElement("button");
+      b.className = "assistBtn";
+      b.textContent = label;
+      b.addEventListener("click", onClick);
+      assistActions.appendChild(b);
+    }
+
+    function updateAssist() {
+      const ctx = (contextEl.value || "").trim();
+      const selected = categoryEl.value || "";
+
+      if (ctx.length < 10) {
+        setAssist("neutral", "Waiting…", "Type a short context (10+ chars) to get guidance.");
+        return;
+      }
+
+      if (!selected) {
+        const { top } = bestScenarioForContext(ctx);
+        if (top.score >= 2) {
+          const suggestedLabel = scenarioTemplates.find(([v]) => v === top.k)?.[1] || top.k;
+          setAssist("warn", "Pick a scenario", `Your context strongly matches: ${suggestedLabel}.\nPick it to reduce mismatches and improve report wording.`);
+          addAssistAction("Use suggested scenario", () => {
+            categoryEl.value = top.k;
+            updateAssist();
+          });
+        } else {
+          setAssist("neutral", "No scenario", "Scenario is optional. If you pick one, the report will use tighter examples and language.");
+        }
+        return;
+      }
+
+      const { top, second } = bestScenarioForContext(ctx);
+
+      const selectedScore = scoreScenario(ctx, selected);
+      const topLabel = scenarioTemplates.find(([v]) => v === top.k)?.[1] || top.k;
+      const selectedLabel = scenarioTemplates.find(([v]) => v === selected)?.[1] || selected;
+
+      // Stricter mismatch: if we have a strong top match and selected is weak OR different
+      const strongTop = top.score >= 2;
+      const mismatch =
+        strongTop &&
+        top.k !== selected &&
+        (top.score - selectedScore >= 2 || selectedScore === 0);
+
+      if (mismatch) {
+        setAssist("bad", "Mismatch likely", `Your context looks more like: ${topLabel}\nBut you selected: ${selectedLabel}\nThis will reduce accuracy. Either change scenario or rewrite context to match.`);
+        addAssistAction("Switch to suggested", () => {
+          categoryEl.value = top.k;
+          updateAssist();
+        });
+        addAssistAction("Show rewrite example", () => {
+          const ex = `Rewrite example for ${selectedLabel}:\n"Calling a ${selectedLabel.toLowerCase()} prospect about [your offer]. Goal: book a short next step."`;
+          toast("good","Example:", ex, 3800);
+        });
+        return;
+      }
+
+      // If selected is strong enough, call it good; else warn.
+      if (selectedScore >= 2) {
+        const nudge = templateGuidance[selected] ? `\n\nTemplate nudge: ${templateGuidance[selected]}` : "";
+        setAssist("good", "Looks aligned", `Context matches your selected scenario.${nudge}`);
+      } else {
+        setAssist("warn", "Weak match", `Your scenario is "${selectedLabel}" but the context doesn't include strong signals.\nAdd 1–2 specifics (offer + prospect type) to improve accuracy.`);
+      }
     }
 
     // ---- DOM ----
@@ -1064,11 +1297,11 @@
 
     const sidebar = document.getElementById("sidebar");
     const navDashboard = document.getElementById("navDashboard");
-    const navReportSub = document.getElementById("navReportSub");
     const navUpload = document.getElementById("navUpload");
     const navRecord = document.getElementById("navRecord");
     const navPractice = document.getElementById("navPractice");
     const navSupport = document.getElementById("navSupport");
+    const navCurrentRun = document.getElementById("navCurrentRun");
 
     const qaUpload = document.getElementById("qaUpload");
     const qaRecord = document.getElementById("qaRecord");
@@ -1099,10 +1332,8 @@
 
     const btnBackHome = document.getElementById("btnBackHome");
     const runBanners = document.getElementById("runBanners");
-
-    // run header
-    const runTitleText = document.getElementById("runTitleText");
-    const runTitleMeta = document.getElementById("runTitleMeta");
+    const runTitleEl = document.getElementById("runTitle");
+    const runSubtitleEl = document.getElementById("runSubtitle");
 
     // calibrate DOM
     const categoryEl = document.getElementById("category");
@@ -1127,6 +1358,13 @@
     const reportGridEl2 = document.getElementById("reportGrid2");
 
     fillSelect(categoryEl, scenarioTemplates);
+
+    categoryEl.addEventListener("change", updateAssist);
+    contextEl.addEventListener("input", () => {
+      // debounce-ish
+      clearTimeout(window.__assistT);
+      window.__assistT = setTimeout(updateAssist, 120);
+    });
 
     // ---- Supabase init ----
     let sb = null;
@@ -1164,23 +1402,6 @@
       viewRun.classList.add("hidden");
     }
 
-    let currentRunTitle = "";
-
-    function setReportIndicator(title) {
-      const t = String(title || "").trim();
-      currentRunTitle = t;
-
-      if (!t) {
-        navReportSub.classList.add("hidden");
-        navReportSub.textContent = "";
-        navReportSub.title = "";
-        return;
-      }
-      navReportSub.classList.remove("hidden");
-      navReportSub.textContent = t;
-      navReportSub.title = t;
-    }
-
     function setActiveNav(path) {
       const btns = [navDashboard, navUpload, navRecord, navPractice];
       btns.forEach(b => b.classList.remove("active"));
@@ -1188,16 +1409,10 @@
       if (path === "/home") navDashboard.classList.add("active");
       else if (path === "/calibrate") navUpload.classList.add("active");
       else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
-
-      // If not on a run, hide the report indicator
-      if (!path.startsWith("/runs/")) setReportIndicator("");
     }
 
     function updateTopNav() {
       const loggedIn = !!session;
-
-      document.body.classList.toggle("unauth", !loggedIn);
-
       btnSignIn.classList.toggle("hidden", loggedIn);
       btnSignOut.classList.toggle("hidden", !loggedIn);
       btnHome.classList.toggle("hidden", !loggedIn);
@@ -1294,7 +1509,7 @@
     navUpload.addEventListener("click", () => goto("/calibrate"));
     navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
     navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
-    navSupport.addEventListener("click", () => toast("good", "Support:", "Contact Support will be wired next (email or tickets)."));
+    navSupport.addEventListener("click", () => toast("good", "Support:", "Contact Support endpoint can be added next (currently placeholder)."));
 
     qaUpload.addEventListener("click", () => goto("/calibrate"));
     qaRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
@@ -1371,17 +1586,25 @@
         for (const run of runs) {
           const tr = document.createElement("tr");
 
-          const title = (run.run_title || run.title || run.name || run.user_context || "Untitled").toString();
+          const title = run.title || run.run_title || "Call Analysis";
+          const titleFull = run.title_full || title;
+          const titleShort = run.title_short || title;
+
           const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
-          const callResult = (run.call_result || run.call_outcome || run.outcome || "—").toString();
-          const reason = (run.outcome_reason || "").toString().trim();
-          const def = CALL_RESULT_DEFS[callResult] || "Call Result = how the call ended (highest-confidence classification).";
-          const resultTip = reason ? `${def} Reason: ${reason}` : def;
+
+          const outcomeRaw = run.call_outcome || "—";
+          const oKey = normalizeOutcomeKey(outcomeRaw);
+          const oLabel = outcomeLabel(outcomeRaw);
+          const oTip = outcomeTooltip(outcomeRaw);
 
           tr.innerHTML = `
-            <td class="titleCell" title="${escapeHtml(title)}">${escapeHtml(title)}</td>
-            <td title="${escapeHtml(scenario)}">${escapeHtml(scenario)}</td>
-            <td title="${escapeHtml(resultTip)}">${escapeHtml(callResult)}</td>
+            <td class="colReport">
+              <span class="truncate" title="${escapeHtml(titleFull)}">${escapeHtml(titleShort)}</span>
+            </td>
+            <td>${escapeHtml(scenario)}</td>
+            <td>
+              <span title="${escapeHtml(oTip)}">${escapeHtml(oLabel)}</span>
+            </td>
           `;
 
           tr.addEventListener("click", () => goto("/runs/" + run.id));
@@ -1403,8 +1626,6 @@
       summaryKVEl2.innerHTML = "";
       transcriptBoxEl2.innerHTML = "";
       reportGridEl2.innerHTML = "";
-      runTitleText.textContent = "";
-      runTitleMeta.textContent = "";
 
       try {
         const { ok, status, json } = await fetchJsonAuthed("/api/runs/" + encodeURIComponent(runId));
@@ -1417,15 +1638,20 @@
 
         const run = json.run;
 
-        const title = (run.run_title || run.title || run.name || run.user_context || "Untitled").toString();
-        const submittedAt = run.created_at ? new Date(run.created_at).toLocaleString() : "";
-        const callResult = (run.call_result || run.call_outcome || "—").toString();
-        const outcomeReason = (run.outcome_reason || "").toString().trim();
+        const createdAt = run.created_at ? new Date(run.created_at).toLocaleString() : "";
+        const titleFull = run.title_full || run.title || run.run_title || "Call Analysis";
+        const titleShort = run.title_short || run.title || titleFull;
 
-        runTitleText.textContent = title;
-        runTitleMeta.textContent = submittedAt ? `Submitted at ${submittedAt}` : "";
+        runTitleEl.textContent = titleShort || "Call Analysis";
+        runTitleEl.title = titleFull || "";
+        runSubtitleEl.textContent = createdAt ? `Submitted at ${createdAt}` : "";
 
-        setReportIndicator(title);
+        // sidebar sub-indicator
+        if (navCurrentRun) {
+          navCurrentRun.textContent = titleShort || "Viewing report";
+          navCurrentRun.title = titleFull || "";
+          navCurrentRun.classList.remove("hidden");
+        }
 
         const diag = run.diagnostics || {};
         const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : [];
@@ -1437,22 +1663,22 @@
 
         const resp = Object.assign({}, diag, {
           transcript: transcriptText,
-          call_result: callResult,
-          outcome_reason: outcomeReason,
+          call_outcome: run.call_outcome || diag.call_outcome || diag.callOutcome || "",
+          call_outcome_reason: run.call_outcome_reason || pick(diag, ["call_outcome_reason","outcomeReason","outcome_reason"], ""),
         });
 
-        renderSummaryInto(resp, { summaryKVEl: summaryKVEl2, scenarioValue, userContext, submittedAt });
+        renderSummaryInto(resp, {
+          summaryKVEl: summaryKVEl2,
+          scenarioValue,
+          userContext,
+          submittedAt: createdAt ? createdAt : "",
+        });
 
         renderTranscriptInto(transcriptLines, transcriptBoxEl2);
         renderReportInto(reportMd || pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl2);
 
-        const def = CALL_RESULT_DEFS[callResult] || "";
-        if (def) {
-          const tip = outcomeReason ? `${def} Reason: ${outcomeReason}` : def;
-          runBanners.appendChild(banner("good", "Call Result:", tip));
-        }
-
-        if (run.mismatch || run.scenario_mismatch) {
+        // mismatch banner only if scenario selected (NOT None)
+        if (scenarioValue && (run.mismatch || run.scenario_mismatch)) {
           runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
         }
       } catch (e) {
@@ -1465,11 +1691,13 @@
     function renderBanners(resp) {
       bannersEl.innerHTML = "";
 
+      const selectedScenario = categoryEl.value || "";
       const conflict = pick(resp, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "");
       const outcomeBanner = pick(resp, ["call_outcome_banner", "callOutcomeBanner"], "");
       const warn = pick(resp, ["warning", "warnings", "banner", "bannerText"], null);
 
-      if (conflict) bannersEl.appendChild(banner("warn", "Scenario mismatch:", String(conflict)));
+      // Only show mismatch banner when scenario is actually selected
+      if (selectedScenario && conflict) bannersEl.appendChild(banner("warn", "Scenario mismatch:", String(conflict)));
       if (outcomeBanner) bannersEl.appendChild(banner("warn", "Outcome:", String(outcomeBanner)));
 
       if (warn) {
@@ -1590,6 +1818,9 @@
 
       setActiveNav(path);
 
+      // hide current run indicator unless in run viewer
+      if (navCurrentRun) navCurrentRun.classList.add("hidden");
+
       const needsAuth =
         path === "/home" ||
         path === "/calibrate" ||
@@ -1631,6 +1862,8 @@
         resultsEl.classList.add("hidden");
         bannersEl.innerHTML = "";
         statusEl.textContent = "";
+        updateAssist();
+
         if (isDevMode()) diagnosticsDetailsEl.classList.remove("hidden");
         else diagnosticsDetailsEl.classList.add("hidden");
         return;
