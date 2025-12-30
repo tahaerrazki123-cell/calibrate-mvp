@@ -18,10 +18,11 @@ app.use(express.json());
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
 const MAX_RUNS_PER_24H = 10;
 
+const ALLOWED_EXT = new Set([".mp3", ".m4a", ".wav", ".ogg"]);
 const ALLOWED_MIME = new Set([
-  "audio/mpeg", // mp3
+  "audio/mpeg",
   "audio/mp3",
-  "audio/mp4", // m4a (often audio/mp4)
+  "audio/mp4",
   "audio/x-m4a",
   "audio/wav",
   "audio/x-wav",
@@ -29,9 +30,7 @@ const ALLOWED_MIME = new Set([
   "application/ogg",
 ]);
 
-const ALLOWED_EXT = new Set([".mp3", ".m4a", ".wav", ".ogg"]);
-
-// simple per-user in-flight lock (Render WEB_CONCURRENCY=1 but still useful)
+// One-run-at-a-time per user (simple in-memory lock)
 const activeRunByUser = new Map(); // userId -> startedAtMs
 
 const upload = multer({
@@ -42,13 +41,13 @@ const upload = multer({
 // serve static files (index.html, etc.)
 app.use(express.static(__dirname, { extensions: ["html"] }));
 
-app.get("/health", (req, res) =>
+app.get("/health", (req, res) => {
   res.json({
     ok: true,
     enforcer: ENFORCER_VERSION,
     commit: process.env.RENDER_GIT_COMMIT || null,
-  })
-);
+  });
+});
 
 // Expose anon config for frontend (SAFE: anon key is meant for browser use)
 app.get("/api/config", (req, res) => {
@@ -59,7 +58,7 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-// ---- Supabase clients (lazy) ----
+// ---- Supabase clients (lazy singletons) ----
 let _sbAnon = null;
 let _sbService = null;
 
@@ -99,11 +98,11 @@ function pick(obj, keys, fallback = null) {
   return fallback;
 }
 
-// Normalize mismatch even if your DB column name changes or doesn't exist
+// Normalize mismatch across shapes
 function normalizeScenarioMismatch(row) {
   if (!row || typeof row !== "object") return null;
   if ("scenario_mismatch" in row) return row.scenario_mismatch;
-  if ("mismatch" in row) return row.mismatch; // keep compatibility
+  if ("mismatch" in row) return row.mismatch;
   if ("scenarioMismatch" in row) return row.scenarioMismatch;
   if ("scenario_mismatch_flag" in row) return row.scenario_mismatch_flag;
   if ("scenario_mismatch_text" in row) return Boolean(row.scenario_mismatch_text);
@@ -125,9 +124,10 @@ function transcriptToLines(transcript) {
   });
 }
 
+// Insert, and if DB schema is missing a column, drop it and retry
 async function insertRunResilient(sb, payload) {
-  // tries to insert, and if schema is missing a column, removes it and retries
   let p = { ...payload };
+
   for (let i = 0; i < 12; i++) {
     const { data, error } = await sb.from("runs").insert([p]).select("id").maybeSingle();
     if (!error) return data;
@@ -140,12 +140,12 @@ async function insertRunResilient(sb, payload) {
     }
     throw new Error(msg);
   }
+
   throw new Error("Insert failed after retries (schema mismatch).");
 }
 
 // -------------------- Runs API (history + details) --------------------
 
-// List recent runs for signed-in user
 app.get("/api/runs", async (req, res) => {
   try {
     const userId = await requireUserId(req);
@@ -170,7 +170,6 @@ app.get("/api/runs", async (req, res) => {
         scenario_template: r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null,
         call_outcome: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
         enforcer: r.enforcer ?? r.enforcer_version ?? r.enforcerVersion ?? ENFORCER_VERSION,
-        // return BOTH names so the frontend never breaks
         mismatch,
         scenario_mismatch: mismatch,
       };
@@ -182,7 +181,6 @@ app.get("/api/runs", async (req, res) => {
   }
 });
 
-// Get one run (details page)
 app.get("/api/runs/:id", async (req, res) => {
   try {
     const userId = await requireUserId(req);
@@ -208,9 +206,9 @@ app.get("/api/runs/:id", async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err?.message || String(err) });
   }
-};
+});
 
-// -------------------- Existing Calibrate endpoint --------------------
+// -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
 
 function prettifyTranscript(raw) {
   let t = (raw ?? "").toString().trim();
@@ -243,8 +241,6 @@ function prettifyTranscript(raw) {
     return `You: ${text}`;
   });
 
-  // NOTE: if AssemblyAI only gave one speaker, everything will be Speaker A.
-  // We leave it as-is (You/Prospect mapping only happens when both speakers are present).
   const speakerALines = lines.filter((l) => /^Speaker\s*A\s*:/i.test(l));
   const speakerBLines = lines.filter((l) => /^Speaker\s*B\s*:/i.test(l));
 
@@ -273,7 +269,7 @@ function prettifyTranscript(raw) {
     const a = score(aText);
     const b = score(bText);
 
-    let aIsYou = a.net !== b.net ? a.net > b.net : null;
+    const aIsYou = a.net !== b.net ? a.net > b.net : null;
 
     if (aIsYou !== null) {
       lines = lines.map((l) => {
@@ -339,9 +335,8 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
   const userId = await requireUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-  // one-run-at-a-time per user
   if (activeRunByUser.has(userId)) {
-    return res.status(429).json({ error: "A run is already in progress for this account. Please wait." });
+    return res.status(429).json({ error: "A run is already in progress. Please wait." });
   }
 
   try {
@@ -355,23 +350,24 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       return res.status(400).json({ error: "Unsupported audio format. Use mp3, m4a, wav, or ogg." });
     }
     if (file.mimetype && !ALLOWED_MIME.has(file.mimetype)) {
-      // some browsers send weird mimetypes; extension check above helps
       return res.status(400).json({ error: "Unsupported audio format. Use mp3, m4a, wav, or ogg." });
     }
 
     const userContext = (req.body?.context || "").trim();
     const category = (req.body?.category || "").trim();
     const legacyScenario = (req.body?.legacyScenario || "").trim();
+
     if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
     // per-24h limit
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const sb = supabaseService();
+
     const { count, error: countErr } = await sb
       .from("runs")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
-      .gte("created_at", cutoff);
+      .gte("created_at", cutoffIso);
 
     if (countErr) return res.status(500).json({ error: countErr.message });
     if ((count || 0) >= MAX_RUNS_PER_24H) {
@@ -402,14 +398,11 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
       mismatch_reason: mismatchReason || null,
-      // optional future-proof fields (safe-removed if schema doesn't have them)
-      transcript_text: transcript,
+      transcript_text: transcript, // will be auto-dropped if column doesn't exist
     };
 
     const inserted = await insertRunResilient(sb, row);
-    const runId = inserted?.id;
-
-    return res.json({ run_id: runId });
+    return res.json({ run_id: inserted?.id || null });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err?.message || String(err) });
@@ -422,7 +415,9 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
 app.use("/api", (req, res) => res.status(404).json({ error: "Unknown API route" }));
 
 // SPA fallback for non-API routes (works on Render/Node 22; avoids "*" path issues)
-app.get(/^(?!\/api\/).*/, (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get(/^(?!\/api\/).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(PORT, () => {
