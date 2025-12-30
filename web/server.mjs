@@ -26,23 +26,8 @@ const upload = multer({
   limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
-// No-cache API responses (avoid stale JSON during rapid deploy/testing)
-app.use("/api", (req, res, next) => {
-  res.setHeader("Cache-Control", "no-store");
-  next();
-});
-
-// serve static files (index.html, etc.) — prevent HTML caching so new deploys show immediately
-app.use(
-  express.static(__dirname, {
-    extensions: ["html"],
-    setHeaders(res, filePath) {
-      if (filePath.endsWith(".html")) {
-        res.setHeader("Cache-Control", "no-store");
-      }
-    },
-  })
-);
+// serve static files (index.html, etc.)
+app.use(express.static(__dirname, { extensions: ["html"] }));
 
 app.get("/health", (req, res) => {
   res.json({
@@ -282,6 +267,25 @@ function prettifyTranscript(raw) {
   return lines.join("\n");
 }
 
+// ✅ FIX: robust speaker id extraction (handles numbers, numeric strings, A/B, etc.)
+function speakerLabelFromUtterance(u) {
+  const sp = u?.speaker;
+
+  // number (including 0)
+  if (typeof sp === "number" && Number.isFinite(sp)) return `Speaker ${sp}`;
+
+  // string ("0", "1", "A", "B", etc.)
+  if (typeof sp === "string") {
+    const s = sp.trim();
+    if (!s) return "Speaker X";
+    if (/^\d+$/.test(s)) return `Speaker ${parseInt(s, 10)}`;
+    if (/^[A-Za-z]$/.test(s)) return `Speaker ${s.toUpperCase()}`;
+    return `Speaker ${s}`;
+  }
+
+  return "Speaker X";
+}
+
 async function transcribeWithAssemblyAI(audioBuffer) {
   const apiKey = process.env.ASSEMBLYAI_API_KEY;
   if (!apiKey) throw new Error("Missing ASSEMBLYAI_API_KEY in environment.");
@@ -312,11 +316,11 @@ async function transcribeWithAssemblyAI(audioBuffer) {
 
     if (pollJson.status === "completed") {
       if (Array.isArray(pollJson.utterances) && pollJson.utterances.length) {
-        // Keep the actual diarization speaker id (0/1/2/3...) to avoid skew/lying.
+        // FIX: keep true speaker id (0/1/2... or A/B) — no more collapsing to Speaker X due to numeric-string speakers
         return pollJson.utterances
           .map((u) => {
-            const sid = Number.isFinite(u?.speaker) ? u.speaker : "X";
-            return `Speaker ${sid}: ${(u.text || "").trim()}`.trim();
+            const label = speakerLabelFromUtterance(u);
+            return `${label}: ${(u?.text || "").trim()}`.trim();
           })
           .join("\n");
       }
@@ -406,7 +410,6 @@ app.use("/api", (req, res) => res.status(404).json({ error: "Unknown API route" 
 
 // SPA fallback for non-API routes (works on Render/Node 22; avoids "*" path issues)
 app.get(/^(?!\/api\/).*/, (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(__dirname, "index.html"));
 });
 

@@ -101,23 +101,6 @@
     .banner .txt strong { font-weight: 800; }
 
     .sectionTitle { font-size: 15px; font-weight: 800; margin: 0 0 10px; }
-
-    /* Scorecards (scan-first) */
-    .scoreRow { display:grid; gap: 10px; margin: 10px 0 14px; }
-    @media (min-width: 760px) { .scoreRow { grid-template-columns: repeat(4, 1fr); } }
-    .scoreCard {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: rgba(255,255,255,0.03);
-      padding: 10px 12px;
-      min-width: 0;
-    }
-    .scoreK { color: var(--muted); font-size: 12px; font-weight: 800; margin-bottom: 6px; }
-    .scoreV { font-size: 14px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .scoreV.good { color: var(--good); }
-    .scoreV.warn { color: var(--warn); }
-    .scoreV.bad  { color: var(--bad); }
-
     .kv { display:grid; gap: 8px; }
     .kv .item { display:grid; grid-template-columns: 180px 1fr; gap: 10px; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--line); }
     .kv .k { color: var(--muted); font-size: 13px; }
@@ -132,11 +115,11 @@
       overflow: hidden;
     }
 
-    /* FIX: use grid columns for perfect alignment (no squiggle) */
+    /* ✅ FIX: true uniform alignment via grid columns (no “squiggle”) */
     .tLine{
       display:grid;
-      grid-template-columns: 44px 110px 1fr; /* ln | speaker | text */
-      column-gap: 10px;
+      grid-template-columns: 34px 92px 1fr;
+      gap:10px;
       align-items:start;
       padding: 10px 12px;
       border-top: 1px solid var(--line);
@@ -144,16 +127,9 @@
     }
     .tLine:first-child { border-top: 0; }
 
-    .ln{
-      text-align:right;
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: 12px;
-      padding-top: 2px;
-    }
+    .ln { text-align:right; color: var(--muted); font-family: var(--mono); font-size: 12px; padding-top: 2px; }
 
-    .chip{
-      width: 110px;             /* lock speaker column width */
+    .chip {
       font-size: 12px;
       padding: 4px 8px;
       border-radius: 999px;
@@ -165,23 +141,15 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      justify-self: start;
     }
     .chip.you { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.28); }
     .chip.pro { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.26); }
     .chip.other { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.26); }
-
-    .tText{
+    .tText {
       min-width: 0;
       font-size: 13.5px;
       line-height: 1.35;
       white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-
-    @media (max-width: 520px){
-      .tLine{ grid-template-columns: 34px 92px 1fr; }
-      .chip{ width: 92px; }
     }
 
     .reportGrid { display:grid; gap: 10px; }
@@ -346,9 +314,6 @@
       <div id="results" class="card hidden" style="margin-top:14px;">
         <div id="banners"></div>
 
-        <!-- Scan-first scorecards -->
-        <div id="scoreRow" class="scoreRow"></div>
-
         <h3 class="sectionTitle">Summary</h3>
         <div class="kv" id="summaryKV"></div>
 
@@ -381,9 +346,6 @@
       </div>
 
       <div id="runBanners" style="margin-top:12px;"></div>
-
-      <!-- Scan-first scorecards -->
-      <div id="scoreRow2" class="scoreRow"></div>
 
       <h3 class="sectionTitle" style="margin-top:14px;">Summary</h3>
       <div class="kv" id="summaryKV2"></div>
@@ -563,7 +525,7 @@
       return sections;
     }
 
-    // Safe speaker remap ONLY when we truly have 2 diarized speakers; otherwise keep Speaker 0/1/2...
+    // FIX: safe speaker remap ONLY when we truly have 2 diarized speakers; otherwise keep Speaker 0/1/2...
     function computeSpeakerDisplayMap(parsedLines) {
       const labels = [...new Set(parsedLines.map(x => x.speaker).filter(Boolean))];
 
@@ -657,18 +619,12 @@
           /^prospect$/i.test(displaySpeaker) ? "pro" :
           "other";
 
-        // Clean text to prevent “visual squiggle” from invisible/leading whitespace
-        const cleanedText = String(p.text || "")
-          .replace(/\u00A0/g, " ")
-          .replace(/[ \t]+/g, " ")
-          .trim();
-
         const row = document.createElement("div");
         row.className = "tLine";
         row.innerHTML = `
           <div class="ln">${idx + 1}</div>
           <span class="chip ${chipClass}">${escapeHtml(displaySpeaker)}</span>
-          <div class="tText">${escapeHtml(cleanedText)}</div>
+          <div class="tText">${escapeHtml(p.text || "")}</div>
         `;
         transcriptBoxEl.appendChild(row);
       });
@@ -709,44 +665,6 @@
         card.appendChild(body);
         reportGridEl.appendChild(card);
       });
-    }
-
-    function renderScorecardsInto(resp, opts) {
-      const el = opts.el;
-      const createdAt = opts.createdAt || "";
-      const mismatch = !!opts.mismatch;
-
-      el.innerHTML = "";
-
-      const callOutcome = pick(resp, ["call_outcome", "callOutcome", "outcome"], "—");
-      const enforcer = pick(resp, ["enforcer_version", "enforcer", "enforcerVersion", "ENFORCER_VERSION"], "—");
-      const scriptWords = pick(resp, ["script_words", "scriptWords", "words"], "—");
-      const turns = pick(resp, ["turn_count", "turns", "numTurns", "num_turns"], "—");
-
-      const section5Raw = pick(resp, ["section5", "section_5", "section5Pass", "section_5_pass"], "");
-      const section5 =
-        typeof section5Raw === "object" && section5Raw
-          ? (pick(section5Raw, ["pass", "ok"], "") ? "PASS" : "FAIL")
-          : (String(section5Raw || "") || "—");
-
-      const mk = (k, v, tone = "") => {
-        const card = document.createElement("div");
-        card.className = "scoreCard";
-        card.innerHTML = `
-          <div class="scoreK">${escapeHtml(k)}</div>
-          <div class="scoreV ${tone}">${escapeHtml(v)}</div>
-        `;
-        el.appendChild(card);
-      };
-
-      const secTone = /^pass$/i.test(section5) ? "good" : /^fail$/i.test(section5) ? "bad" : "warn";
-      mk("Outcome", callOutcome || "—", callOutcome && callOutcome !== "—" ? "warn" : "");
-      mk("Section 5", section5, secTone);
-      mk("Script words", String(scriptWords || "—"), "");
-      mk("Turns", String(turns || "—"), "");
-      mk("Mismatch", mismatch ? "Yes" : "No", mismatch ? "warn" : "good");
-      if (createdAt) mk("When", new Date(createdAt).toLocaleString(), "");
-      mk("Enforcer", enforcer || "—", "");
     }
 
     function renderSummaryInto(resp, opts) {
@@ -862,7 +780,6 @@
 
     const resultsEl = document.getElementById("results");
     const bannersEl = document.getElementById("banners");
-    const scoreRowEl = document.getElementById("scoreRow");
     const summaryKVEl = document.getElementById("summaryKV");
     const transcriptBoxEl = document.getElementById("transcriptBox");
     const reportGridEl = document.getElementById("reportGrid");
@@ -872,7 +789,6 @@
     const rawJsonEl = document.getElementById("rawJson");
 
     // run viewer DOM
-    const scoreRowEl2 = document.getElementById("scoreRow2");
     const summaryKVEl2 = document.getElementById("summaryKV2");
     const transcriptBoxEl2 = document.getElementById("transcriptBox2");
     const reportGridEl2 = document.getElementById("reportGrid2");
@@ -1112,7 +1028,6 @@
     async function loadRun(runId) {
       const seq = ++runLoadSeq;
       runBanners.innerHTML = "";
-      scoreRowEl2.innerHTML = "";
       summaryKVEl2.innerHTML = "";
       transcriptBoxEl2.innerHTML = "";
       reportGridEl2.innerHTML = "";
@@ -1137,17 +1052,13 @@
         const resp = Object.assign({}, diag, {
           transcript,
           call_outcome: run.call_outcome || diag.call_outcome || diag.callOutcome || "",
-          enforcer: run.enforcer || diag.enforcer || diag.enforcer_version || "",
         });
 
-        const mismatch = !!(run.mismatch || run.scenario_mismatch);
-
-        renderScorecardsInto(resp, { el: scoreRowEl2, mismatch, createdAt: run.created_at });
         renderSummaryInto(resp, { summaryKVEl: summaryKVEl2, scenarioValue, userContext });
         renderTranscriptInto(transcript, transcriptBoxEl2);
         renderReportInto(reportMd || pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl2);
 
-        if (mismatch) {
+        if (run.mismatch || run.scenario_mismatch) {
           runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
         }
       } catch (e) {
@@ -1204,7 +1115,6 @@
 
       statusEl.textContent = "";
       bannersEl.innerHTML = "";
-      scoreRowEl.innerHTML = "";
       resultsEl.classList.add("hidden");
 
       if (!file) { statusEl.textContent = "Choose an audio file first."; return; }
@@ -1235,17 +1145,13 @@
           return;
         }
 
-        // Normal flow: server returns run_id; route to viewer.
         if (json.run_id) {
           goto("/runs/" + json.run_id);
           return;
         }
 
-        // Fallback (if server ever returns full payload instead)
         resultsEl.classList.remove("hidden");
         renderBanners(json);
-
-        renderScorecardsInto(json, { el: scoreRowEl, mismatch: !!pick(json, ["scenario_mismatch", "scenarioMismatch"], false) });
 
         renderSummaryInto(json, {
           summaryKVEl,
@@ -1325,7 +1231,6 @@
         viewCalibrate.classList.remove("hidden");
         resultsEl.classList.add("hidden");
         bannersEl.innerHTML = "";
-        scoreRowEl.innerHTML = "";
         statusEl.textContent = "";
         if (isDevMode()) diagnosticsDetailsEl.classList.remove("hidden");
         else diagnosticsDetailsEl.classList.add("hidden");
