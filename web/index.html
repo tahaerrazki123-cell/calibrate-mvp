@@ -1,3 +1,4 @@
+<!-- FILE: web/index.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -87,6 +88,13 @@
     .btn.secondary{
       background:rgba(255,255,255,0.86);
       border:1px solid var(--line);
+      color:var(--text);
+      font-weight:900;
+      box-shadow:none;
+    }
+    .btn.ghost{
+      background:rgba(255,255,255,0.70);
+      border:1px solid rgba(120,150,200,0.30);
       color:var(--text);
       font-weight:900;
       box-shadow:none;
@@ -269,9 +277,10 @@
       overflow:hidden;
       text-overflow:ellipsis;
     }
-    .chip.you{background:rgba(37,99,235,0.14);border-color:rgba(37,99,235,0.24)}
-    .chip.pro{background:rgba(22,163,74,0.12);border-color:rgba(22,163,74,0.22)}
-    .chip.other{background:rgba(2,6,23,0.04);border-color:rgba(2,6,23,0.10)}
+    /* Polished chip colors */
+    .chip.you{ background:#eaf2ff; border:1px solid #bcd6ff; color:#0b3b8c; }
+    .chip.pro{ background:#eafff2; border:1px solid #b7f0cf; color:#0b6b2a; }
+    .chip.other{ background:#f3f6fb; border:1px solid #d8e2f2; color:#3a4a66; }
 
     .tText{
       min-width:0;
@@ -334,6 +343,51 @@
     .toast.bad  .dot{background:var(--bad)}
     .toast .txt{font-size:13.5px;line-height:1.35}
     .toast .txt strong{font-weight:950}
+
+    /* Support modal */
+    .support-backdrop{
+      position:fixed; inset:0; z-index:9999;
+      background:rgba(10,20,40,0.45);
+      display:none; align-items:center; justify-content:center;
+      padding:20px;
+    }
+    .support-backdrop.show{display:flex;}
+    .support-modal{
+      width:min(720px, 100%);
+      background:#fff;
+      border-radius:18px;
+      box-shadow:0 30px 90px rgba(0,0,0,0.25);
+      border:1px solid rgba(100,130,200,0.25);
+      overflow:hidden;
+    }
+    .support-modal .hd{
+      padding:16px 18px;
+      display:flex; align-items:center; justify-content:space-between;
+      background:linear-gradient(135deg, rgba(90,150,255,0.12), rgba(130,220,255,0.08));
+      border-bottom:1px solid rgba(100,130,200,0.2);
+      gap:10px;
+    }
+    .support-modal .bd{padding:16px 18px;}
+    .support-modal label{display:block;font-size:12px;opacity:0.85;margin:10px 0 6px;font-weight:900;}
+    .support-modal textarea, .support-modal input{
+      width:100%;
+      border:1px solid rgba(120,150,200,0.35);
+      border-radius:12px;
+      padding:10px 12px;
+      outline:none;
+      background:rgba(245,248,255,0.85);
+      color:var(--text);
+      font-family:var(--sans);
+    }
+    .support-modal textarea{min-height:140px;resize:vertical;}
+    .support-modal .ft{
+      padding:14px 18px;
+      display:flex; gap:10px; justify-content:flex-end; align-items:center;
+      border-top:1px solid rgba(100,130,200,0.2);
+      background:rgba(248,250,255,0.7);
+    }
+    .support-modal .muted{font-size:12px;opacity:0.7;margin-right:auto;}
+    .support-status{font-size:12px;opacity:0.75;margin-top:10px;}
   </style>
 </head>
 
@@ -410,7 +464,7 @@
         <!-- Landing -->
         <div id="viewLanding" class="card hidden">
           <h3 class="sectionTitle">Calibrate MVP</h3>
-          <p style="margin:0 0 10px; color:var(--muted);">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
+          <p style="margin:0 0 10px; color:var(--muted);">Upload a call recording. Get a clean transcript + coaching report.</p>
           <ul class="bullets">
             <li>Transcript line-by-line with speakers</li>
             <li>Call outcome + coaching report</li>
@@ -429,15 +483,15 @@
 
           <div class="grid two" style="display:grid; gap:12px;">
             <div>
-              <label for="email">Email</label>
+              <label for="email" style="font-weight:900;font-size:12px;opacity:.85;">Email</label>
               <input id="email" type="email" placeholder="you@email.com"
                      style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;" />
               <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Magic link (no password). Check your inbox.</div>
             </div>
             <div>
-              <label>&nbsp;</label>
+              <label style="font-weight:900;font-size:12px;opacity:.85;">&nbsp;</label>
               <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Google OAuth button is included too (only works if you set Google provider in Supabase).</div>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Google sign-in works if enabled in your Supabase Auth providers.</div>
             </div>
           </div>
 
@@ -502,7 +556,7 @@
                     <th class="colScenario">Scenario</th>
                     <th class="colOutcome">Outcome</th>
                     <th class="colType">Type</th>
-                    <th>Mismatch</th>
+                    <th id="mismatchHeader">Mismatch</th>
                   </tr>
                 </thead>
                 <tbody id="runsTbody"></tbody>
@@ -517,31 +571,36 @@
         <div id="viewCalibrate" class="card hidden">
           <div class="grid two" style="display:grid; gap:12px;">
             <div>
-              <label for="audio">Audio file</label>
+              <label for="audio" style="font-weight:900;font-size:12px;opacity:.85;">Audio file</label>
               <input id="audio" type="file" accept="audio/*"
                      style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;" />
               <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Limits: audio only • max 25MB • max 30 minutes • formats: mp3/m4a/wav/ogg.</div>
             </div>
 
             <div>
-              <label for="category">Scenario template (optional)</label>
+              <label for="category" style="font-weight:900;font-size:12px;opacity:.85;">Scenario template (optional)</label>
               <select id="category"
                       style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></select>
               <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">This nudges examples and wording. Context + transcript stay the source of truth.</div>
             </div>
 
             <div>
-              <label for="legacyScenario">Legacy scenario (optional)</label>
-              <select id="legacyScenario"
-                      style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></select>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Kept for backwards compatibility during MVP.</div>
-            </div>
-
-            <div>
-              <label for="context">Context (required)</label>
+              <label for="context" style="font-weight:900;font-size:12px;opacity:.85;">Context (required)</label>
               <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."
                         style="width:100%;min-height:92px;resize:vertical;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></textarea>
               <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Keep it short — we infer prospect details from the transcript when possible.</div>
+            </div>
+
+            <!-- Context Assist -->
+            <div class="card" style="padding:14px;">
+              <div class="row" style="justify-content:space-between; gap:10px;">
+                <div style="font-weight:950;">Context Assist</div>
+                <div id="contextAssistPill" class="pill" style="font-size:12px;">Idle</div>
+              </div>
+              <div id="contextAssistBody" style="margin-top:8px; font-size:13px; opacity:.85;">
+                Type context and pick a scenario — I’ll warn you if it looks mismatched.
+              </div>
+              <div id="contextAssistExample" style="margin-top:10px; font-size:12px; opacity:.7;"></div>
             </div>
           </div>
 
@@ -600,6 +659,33 @@
           <div class="reportGrid" id="reportGrid2"></div>
         </div>
       </main>
+    </div>
+  </div>
+
+  <!-- Support Modal -->
+  <div id="supportBackdrop" class="support-backdrop" role="dialog" aria-modal="true" aria-label="Contact Support">
+    <div class="support-modal">
+      <div class="hd">
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <div style="font-weight:950;">Contact Support</div>
+          <div style="font-size:12px; opacity:.75;">Sends a message stored in Supabase (reliable).</div>
+        </div>
+        <button id="supportCloseBtn" class="btn ghost" type="button">Close</button>
+      </div>
+      <div class="bd">
+        <label for="supportMessage">Message</label>
+        <textarea id="supportMessage" placeholder="What happened? Include scenario + what you expected vs what you saw."></textarea>
+
+        <label for="supportContact">Reply contact (optional)</label>
+        <input id="supportContact" placeholder="Email or handle (so we can reply)" />
+
+        <div id="supportStatus" class="support-status"></div>
+      </div>
+      <div class="ft">
+        <div class="muted">Tip: mention which run + what page you were on.</div>
+        <button id="supportCancelBtn" class="btn secondary" type="button">Cancel</button>
+        <button id="supportSendBtn" class="btn" type="button">Send</button>
+      </div>
     </div>
   </div>
 
@@ -671,13 +757,43 @@
         "Use offer clarity + lead gen + conversion language. Qualify niche, price point, lead source, and propose a low-friction audit (funnel/offer).",
     };
 
-    const legacyScenarios = [
-      ["", "None"],
-      ["dentist", "Dentist (legacy)"],
-      ["barber", "Barber (legacy)"],
-      ["seo", "SEO (legacy)"],
-      ["roofing", "Roofing (legacy)"],
-    ];
+    const contextAssistRules = {
+      b2b_service_software: {
+        want: ["demo","pipeline","crm","subscription","retainer","decision maker","roi","workflow","platform","saas","software"],
+        avoid: ["appointments","front desk","patients","dental","clinic","receptionist"],
+        example: "Example: “We sell a SaaS that reduces inbound lead response time; calling to book a 10-min demo.”",
+      },
+      agency_services: {
+        want: ["seo","ads","agency","marketing","traffic","rank","google","backlinks","roas","creative","content"],
+        avoid: ["appointments","front desk","patients","dental","clinic"],
+        example: "Example: “We help ecommerce brands increase organic traffic with SEO (content + technical fixes).”",
+      },
+      ecommerce: {
+        want: ["shopify","ecommerce","dtc","checkout","aov","cac","roas","product page","conversion rate"],
+        avoid: ["appointments","front desk","patients","dental","clinic"],
+        example: "Example: “DTC Shopify brand—calling about improving conversion rate and email flows.”",
+      },
+      local_service: {
+        want: ["service area","booked jobs","estimates","calls","local","lead","jobs","appointments"],
+        avoid: ["shopify","aov","roas","backlinks","rank"],
+        example: "Example: “Local roofing company—calling about increasing booked estimates from missed calls.”",
+      },
+      recruiting_staffing: {
+        want: ["hiring","roles","candidates","time-to-hire","staffing","recruiting","pipeline","open roles"],
+        avoid: ["shopify","aov","backlinks","rank"],
+        example: "Example: “Recruiting agency—calling about filling 10 open roles faster with a vetted slate.”",
+      },
+      real_estate: {
+        want: ["listings","buyers","sellers","appointments","showings","pipeline","leads","market"],
+        avoid: ["backlinks","rank","shopify","aov"],
+        example: "Example: “Real estate team—calling about converting Zillow/FB leads into booked appointments.”",
+      },
+      coaching_consulting: {
+        want: ["coaching","consulting","offer","funnel","clients","calls","lead gen","conversion"],
+        avoid: ["patients","front desk","dental","clinic"],
+        example: "Example: “High-ticket coaching—calling about improving funnel conversion and booked calls.”",
+      },
+    };
 
     function fillSelect(el, options) {
       el.innerHTML = "";
@@ -1046,13 +1162,13 @@
     const homeBanners = document.getElementById("homeBanners");
     const homeStatus = document.getElementById("homeStatus");
     const runsTbody = document.getElementById("runsTbody");
+    const mismatchHeader = document.getElementById("mismatchHeader");
 
     const btnBackHome = document.getElementById("btnBackHome");
     const runBanners = document.getElementById("runBanners");
 
     // calibrate DOM
     const categoryEl = document.getElementById("category");
-    const legacyEl = document.getElementById("legacyScenario");
     const audioEl = document.getElementById("audio");
     const contextEl = document.getElementById("context");
     const runBtn = document.getElementById("run");
@@ -1073,8 +1189,21 @@
     const transcriptBoxEl2 = document.getElementById("transcriptBox2");
     const reportGridEl2 = document.getElementById("reportGrid2");
 
+    // support modal DOM
+    const supportBackdrop = document.getElementById("supportBackdrop");
+    const supportCloseBtn = document.getElementById("supportCloseBtn");
+    const supportCancelBtn = document.getElementById("supportCancelBtn");
+    const supportSendBtn = document.getElementById("supportSendBtn");
+    const supportMessageEl = document.getElementById("supportMessage");
+    const supportContactEl = document.getElementById("supportContact");
+    const supportStatusEl = document.getElementById("supportStatus");
+
+    // context assist DOM
+    const contextAssistPill = document.getElementById("contextAssistPill");
+    const contextAssistBody = document.getElementById("contextAssistBody");
+    const contextAssistExample = document.getElementById("contextAssistExample");
+
     fillSelect(categoryEl, scenarioTemplates);
-    fillSelect(legacyEl, legacyScenarios);
 
     // ---- Supabase init ----
     let sb = null;
@@ -1195,6 +1324,149 @@
       return { ok: r2.ok, status: r2.status, json: j2 };
     }
 
+    // ---- Support modal ----
+    function openSupport(prefill = "") {
+      supportStatusEl.textContent = "";
+      if (prefill) supportMessageEl.value = prefill;
+
+      // Pre-fill contact with signed-in email (best effort)
+      const email = (session?.user?.email || "").trim();
+      if (email && !supportContactEl.value.trim()) supportContactEl.value = email;
+
+      supportBackdrop.classList.add("show");
+      setTimeout(() => supportMessageEl.focus(), 0);
+    }
+
+    function closeSupport() {
+      supportBackdrop.classList.remove("show");
+    }
+
+    async function submitSupport() {
+      const message = (supportMessageEl.value || "").trim();
+      const contact = (supportContactEl.value || "").trim();
+
+      if (message.length < 5) {
+        supportStatusEl.textContent = "Message is too short.";
+        return;
+      }
+      if (message.length > 4000) {
+        supportStatusEl.textContent = "Message is too long (max 4000 chars).";
+        return;
+      }
+      if (contact.length > 200) {
+        supportStatusEl.textContent = "Contact is too long.";
+        return;
+      }
+
+      supportSendBtn.disabled = true;
+      supportStatusEl.textContent = "Sending…";
+
+      try {
+        const { ok, json } = await fetchJsonAuthed("/api/support", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            message,
+            contact: contact || null,
+            page: window.location.pathname + window.location.search + window.location.hash,
+          }),
+        });
+
+        if (!ok) {
+          supportStatusEl.textContent = (json?.error || "Failed to send.") + (json?.detail ? (" — " + json.detail) : "");
+          supportSendBtn.disabled = false;
+          return;
+        }
+
+        supportStatusEl.textContent = "Sent ✅ Thanks.";
+        setTimeout(() => {
+          closeSupport();
+          supportSendBtn.disabled = false;
+        }, 650);
+      } catch (e) {
+        supportStatusEl.textContent = "Network error sending support message.";
+        supportSendBtn.disabled = false;
+      }
+    }
+
+    supportBackdrop.addEventListener("click", (e) => {
+      if (e.target === supportBackdrop) closeSupport();
+    });
+    supportCloseBtn.addEventListener("click", closeSupport);
+    supportCancelBtn.addEventListener("click", closeSupport);
+    supportSendBtn.addEventListener("click", submitSupport);
+
+    // ---- Context Assist ----
+    function setAssistPill(text, kind) {
+      contextAssistPill.textContent = text;
+      if (kind === "good") {
+        contextAssistPill.style.background = "rgba(90,220,160,.16)";
+        contextAssistPill.style.border = "1px solid rgba(90,220,160,.28)";
+      } else if (kind === "warn") {
+        contextAssistPill.style.background = "rgba(255,190,90,.18)";
+        contextAssistPill.style.border = "1px solid rgba(255,190,90,.30)";
+      } else if (kind === "bad") {
+        contextAssistPill.style.background = "rgba(255,120,120,.16)";
+        contextAssistPill.style.border = "1px solid rgba(255,120,120,.28)";
+      } else {
+        contextAssistPill.style.background = "rgba(120,150,200,.12)";
+        contextAssistPill.style.border = "1px solid rgba(120,150,200,.25)";
+      }
+    }
+
+    function updateContextAssist() {
+      const scenario = (categoryEl.value || "").trim();
+      const ctx = (contextEl.value || "").toLowerCase().trim();
+
+      if (!ctx) {
+        setAssistPill("Idle", "idle");
+        contextAssistBody.textContent = "Type context and pick a scenario — I’ll warn you if it looks mismatched.";
+        contextAssistExample.textContent = "";
+        return;
+      }
+
+      if (!scenario) {
+        setAssistPill("OK", "good");
+        contextAssistBody.textContent = "Scenario is optional. If mismatch shows later, pick a scenario that matches the offer in the call.";
+        contextAssistExample.textContent = "";
+        return;
+      }
+
+      const guidance = templateGuidance[scenario] || "";
+      const rule = contextAssistRules[scenario] || null;
+
+      if (!rule) {
+        setAssistPill("OK", "good");
+        contextAssistBody.textContent = guidance || "Scenario selected. Keep context aligned with what the call is actually about.";
+        contextAssistExample.textContent = "";
+        return;
+      }
+
+      const wantHits = rule.want.filter(w => ctx.includes(w)).length;
+      const avoidHits = rule.avoid.filter(a => ctx.includes(a)).length;
+
+      if (avoidHits >= 2 && wantHits === 0) {
+        setAssistPill("Mismatch?", "bad");
+        contextAssistBody.textContent = "Your context strongly suggests a different scenario. Either switch the scenario template or rewrite the context to match the call.";
+        contextAssistExample.textContent = rule.example + (guidance ? ("  Template hint: " + guidance) : "");
+        return;
+      }
+
+      if (wantHits === 0 && avoidHits >= 1) {
+        setAssistPill("Check", "warn");
+        contextAssistBody.textContent = "Your context might not match the selected scenario. Add 1–2 specifics (who you sell to + offer keywords).";
+        contextAssistExample.textContent = rule.example + (guidance ? ("  Template hint: " + guidance) : "");
+        return;
+      }
+
+      setAssistPill("Looks good", "good");
+      contextAssistBody.textContent = guidance || "Scenario and context look consistent.";
+      contextAssistExample.textContent = "";
+    }
+
+    categoryEl.addEventListener("change", updateContextAssist);
+    contextEl.addEventListener("input", updateContextAssist);
+
     // ---- Nav buttons ----
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
@@ -1219,7 +1491,7 @@
     navUpload.addEventListener("click", () => goto("/calibrate"));
     navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
     navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
-    navSupport.addEventListener("click", () => toast("good", "Support:", "Add your support email later (placeholder for now)."));
+    navSupport.addEventListener("click", () => openSupport());
 
     qaUpload.addEventListener("click", () => goto("/calibrate"));
     qaRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
@@ -1268,6 +1540,17 @@
     // ---- History ----
     let runsLoadSeq = 0;
 
+    function hideMismatchColumnIfEmpty(anyMismatch) {
+      // reset to visible
+      mismatchHeader.classList.remove("hidden");
+      document.querySelectorAll(".mismatchCell").forEach(td => td.classList.remove("hidden"));
+
+      if (anyMismatch) return;
+
+      mismatchHeader.classList.add("hidden");
+      document.querySelectorAll(".mismatchCell").forEach(td => td.classList.add("hidden"));
+    }
+
     async function loadRuns() {
       const seq = ++runsLoadSeq;
       homeBanners.innerHTML = "";
@@ -1288,10 +1571,13 @@
 
         if (!runs.length) {
           homeStatus.textContent = "No runs yet.";
+          hideMismatchColumnIfEmpty(false);
           return;
         }
 
         homeStatus.textContent = "";
+
+        let anyMismatch = false;
 
         for (const run of runs) {
           const tr = document.createElement("tr");
@@ -1299,19 +1585,23 @@
           const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
           const outcome = run.call_outcome || "—";
           const type = (run.type || run.run_type || "Upload").toString();
-          const mismatch = (run.mismatch || run.scenario_mismatch) ? "Yes" : "No";
+          const mismatchBool = !!(run.mismatch || run.scenario_mismatch);
+          const mismatch = mismatchBool ? "Yes" : "No";
+          if (mismatchBool) anyMismatch = true;
 
           tr.innerHTML = `
             <td>${escapeHtml(when)}</td>
             <td>${escapeHtml(scenario)}</td>
             <td>${escapeHtml(outcome)}</td>
             <td>${escapeHtml(type)}</td>
-            <td>${escapeHtml(mismatch)}</td>
+            <td class="mismatchCell">${escapeHtml(mismatch)}</td>
           `;
 
           tr.addEventListener("click", () => goto("/runs/" + run.id));
           runsTbody.appendChild(tr);
         }
+
+        hideMismatchColumnIfEmpty(anyMismatch);
       } catch (e) {
         if (seq !== runsLoadSeq) return;
         homeBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
@@ -1427,7 +1717,6 @@
       fd.append("audio", file);
       fd.append("context", ctx);
       fd.append("category", categoryEl.value || "");
-      fd.append("legacyScenario", legacyEl.value || "");
 
       try {
         const { ok, status, json } = await fetchJsonAuthed("/api/run", { method: "POST", body: fd });
@@ -1537,6 +1826,7 @@
         resultsEl.classList.add("hidden");
         bannersEl.innerHTML = "";
         statusEl.textContent = "";
+        updateContextAssist();
         if (isDevMode()) diagnosticsDetailsEl.classList.remove("hidden");
         else diagnosticsDetailsEl.classList.add("hidden");
         return;

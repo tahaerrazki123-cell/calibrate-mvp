@@ -12,11 +12,14 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.set("trust proxy", 1);
-app.use(express.json());
+app.use(express.json({ limit: "200kb" }));
 
 // ---- Limits (server truth) ----
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
 const MAX_RUNS_PER_24H = 10;
+
+// Support anti-spam
+const MAX_SUPPORT_PER_24H = 20;
 
 // One-run-at-a-time per user (simple in-memory lock)
 const activeRunByUser = new Map(); // userId -> startedAtMs
@@ -79,6 +82,21 @@ async function requireUserId(req) {
   return data?.user?.id || null;
 }
 
+async function requireUserInfo(req) {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
+
+  const sb = supabaseAnon();
+  const { data, error } = await sb.auth.getUser(token);
+  if (error) return null;
+
+  const user = data?.user || null;
+  if (!user?.id) return null;
+
+  return { userId: user.id, email: user.email || null };
+}
+
 function pick(obj, keys, fallback = null) {
   for (const k of keys) {
     if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
@@ -96,22 +114,6 @@ function normalizeScenarioMismatch(row) {
   if ("scenario_mismatch_text" in row) return Boolean(row.scenario_mismatch_text);
   if ("context_conflict_banner" in row) return Boolean(row.context_conflict_banner);
   return null;
-}
-
-function transcriptToLines(transcript) {
-  const lines = String(transcript || "")
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  return lines.map((line) => {
-    const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
-    if (!m) return { speaker: "Other", text: line };
-    const speakerRaw = (m[1] || "Other").replace(/\s+/g, " ").trim();
-    const speaker = speakerRaw.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
-    return { speaker, text: (m[2] || "").trim() };
-  });
 }
 
 // Insert, and if DB schema is missing a column, drop it and retry
@@ -141,6 +143,69 @@ async function insertRunResilient(sb, payload) {
 
   throw new Error("Insert failed after retries (schema mismatch).");
 }
+
+// -------------------- Support API (reliable) --------------------
+app.post("/api/support", async (req, res) => {
+  try {
+    const info = await requireUserInfo(req);
+    if (!info) return res.status(401).json({ error: "Unauthorized" });
+
+    const message = String(req.body?.message ?? "").trim();
+    const contact = String(req.body?.contact ?? "").trim();
+    const page = String(req.body?.page ?? "").trim();
+
+    if (message.length < 5) return res.status(400).json({ error: "Message too short" });
+    if (message.length > 4000) return res.status(400).json({ error: "Message too long" });
+    if (contact.length > 200) return res.status(400).json({ error: "Contact too long" });
+    if (page.length > 300) return res.status(400).json({ error: "Page too long" });
+
+    const sb = supabaseService();
+
+    // rate limit: max N per 24h
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count, error: countErr } = await sb
+      .from("support_tickets")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", info.userId)
+      .gte("created_at", since);
+
+    if (countErr) {
+      return res.status(500).json({
+        error: "Support storage not ready",
+        detail: countErr.message || String(countErr),
+      });
+    }
+
+    if ((count || 0) >= MAX_SUPPORT_PER_24H) {
+      return res.status(429).json({ error: `Too many support messages today (${MAX_SUPPORT_PER_24H}/24h).` });
+    }
+
+    const payload = {
+      user_id: info.userId,
+      user_email: info.email,
+      contact: contact || null,
+      message,
+      page: page || null,
+      user_agent: req.headers["user-agent"] || null,
+      app_version: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null,
+      status: "new",
+    };
+
+    const { data: inserted, error: insErr } = await sb
+      .from("support_tickets")
+      .insert(payload)
+      .select("id, created_at")
+      .single();
+
+    if (insErr) {
+      return res.status(500).json({ error: "Failed to save support message", detail: insErr.message || String(insErr) });
+    }
+
+    return res.json({ ok: true, ticket_id: inserted.id, created_at: inserted.created_at });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
 
 // -------------------- Runs API (history + details) --------------------
 
@@ -256,7 +321,6 @@ function inferYouProspectMap(lines) {
     /\bdo you have (a moment|a minute)\b/i,
     /\bcan i\b/i,
     /\bwould you\b/i,
-    /\bhow are you\b/i,
     /\bnext step\b/i,
     /\bbook\b/i,
     /\bschedule\b/i,
@@ -418,7 +482,10 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
 
     const userContext = (req.body?.context || "").trim();
     const category = (req.body?.category || "").trim();
-    const legacyScenario = (req.body?.legacyScenario || "").trim();
+
+    // Legacy scenarios removed from MVP
+    const legacyScenario = null;
+
     if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
     const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -435,7 +502,7 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       return res.status(429).json({ error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Try again later.` });
     }
 
-    // NEW: stable diarized transcript + structured transcript_lines
+    // Stable diarized transcript + structured transcript_lines
     const asr = await transcribeWithAssemblyAI(file.buffer);
     const transcript = asr.transcript;         // "Speaker A: ..." or "You/Prospect: ..."
     const transcriptLines = asr.lines;         // [{speaker,text}, ...]
@@ -451,10 +518,9 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
 
     const row = {
       user_id: userId,
-      run_type: "upload", // safe: insertRunResilient will drop if column doesn't exist yet
+      run_type: "upload",
       user_context: userContext,
       scenario_template: category || null,
-      legacy_scenario: legacyScenario || null,
       transcript_lines: transcriptLines,
       report_text: reportText,
       diagnostics: { ...result, _transcript_meta: asr.meta },
