@@ -1,3 +1,4 @@
+<!-- FILE: web/index.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -117,6 +118,20 @@
       .sidebar{position:relative;top:auto}
     }
 
+    /* Unauthed experience: center primary card */
+    body.unauth .appLayout{ grid-template-columns: 1fr; }
+    body.unauth main{
+      display:flex;
+      justify-content:center;
+      align-items:flex-start;
+      padding-top:34px;
+      min-height: calc(100vh - 140px);
+    }
+    body.unauth main > .card{
+      width:100%;
+      max-width:680px;
+    }
+
     .sidebar{
       position:sticky;
       top:16px;
@@ -160,26 +175,17 @@
       white-space:nowrap;
     }
 
-    /* NEW: subtle “currently viewing report” indicator under Home */
+    /* Sub-item under Home to show current report */
     .navSub{
-      margin-left:14px;
-      margin-top:-4px;
-      margin-bottom:8px;
+      margin:-2px 0 6px 14px;
       padding:6px 10px;
       border-radius:12px;
-      border:1px dashed rgba(37,99,235,0.20);
-      background:rgba(37,99,235,0.05);
-      color:rgba(37,99,235,0.95);
-      font-weight:900;
-      font-size:11.5px;
-      display:flex;
-      align-items:center;
-      gap:8px;
-      max-width: calc(100% - 18px);
-    }
-    .navSub .arrow{opacity:0.7}
-    .navSub .txt{
-      min-width:0;
+      border:1px solid rgba(37,99,235,0.14);
+      background:rgba(37,99,235,0.06);
+      color:rgba(15,23,42,0.78);
+      font-size:12px;
+      font-weight:850;
+      max-width: calc(100% - 22px);
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
@@ -232,24 +238,26 @@
 
     /* Table */
     .tableWrap{overflow:auto;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,0.92)}
-    .table{
-      width:100%;
-      border-collapse:collapse;
-      table-layout:fixed; /* critical: prevents long report titles from forcing horizontal scroll */
-    }
+    .table{width:100%;border-collapse:collapse}
     .table th,.table td{
       padding:12px 10px;border-top:1px solid var(--line);
       font-size:13.5px;text-align:left;
       white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
     }
     .table th{color:var(--muted);font-weight:950;background:rgba(15,23,42,0.02)}
     .table tr:hover td{background:rgba(37,99,235,0.05);cursor:pointer}
 
-    .colReport{min-width:320px}
-    .colScenario{min-width:200px}
-    .colResult{min-width:140px}
+    /* History column sizing (prevents horizontal scrollbar) */
+    .colReport{min-width:360px; max-width:520px;}
+    .colScenario{min-width:210px}
+    .colResult{min-width:150px}
+
+    .titleCell{
+      max-width:520px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
 
     /* Banners */
     .banner{
@@ -343,6 +351,18 @@
     .mono{font-family:var(--mono);font-size:12px;white-space:pre-wrap;color:var(--muted);margin-top:10px}
     .footerNote{color:var(--muted);font-size:12px;margin-top:10px}
 
+    .runTitleBig{
+      margin:10px 0 2px;
+      font-size:18px;
+      font-weight:950;
+      letter-spacing:0.1px;
+    }
+    .runTitleSub{
+      margin:0 0 10px;
+      color:var(--muted);
+      font-size:12.5px;
+    }
+
     /* Toast */
     .toastHost{
       position:fixed;right:18px;bottom:18px;z-index:9999;
@@ -410,12 +430,7 @@
           <button id="navDashboard" class="navItem">
             <span>Home</span>
           </button>
-
-          <!-- NEW: shows current report name when inside /runs/:id -->
-          <div id="navReportSub" class="navSub hidden" title="">
-            <span class="arrow">↳</span>
-            <span id="navReportSubText" class="txt"></span>
-          </div>
+          <div id="navReportSub" class="navSub hidden" title=""></div>
 
           <button id="navUpload" class="navItem">
             <span>Upload Call</span>
@@ -450,7 +465,7 @@
           <p style="margin:0 0 10px; color:var(--muted);">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
           <ul class="bullets">
             <li>Transcript line-by-line with speakers</li>
-            <li>Call outcome + coaching report</li>
+            <li>Call result + coaching report</li>
             <li>Script gate (PASS/FAIL) capped ~90 words</li>
           </ul>
           <div class="row" style="margin-top:12px;">
@@ -533,14 +548,9 @@
 
             <div class="tableWrap">
               <table class="table">
-                <colgroup>
-                  <col style="width:58%">
-                  <col style="width:26%">
-                  <col style="width:16%">
-                </colgroup>
                 <thead>
                   <tr>
-                    <th class="colReport">Report</th>
+                    <th class="colReport">Call Analysis</th>
                     <th class="colScenario">Scenario</th>
                     <th class="colResult">Call Result</th>
                   </tr>
@@ -549,7 +559,7 @@
               </table>
             </div>
 
-            <div class="footerNote">Click a row to open that report.</div>
+            <div class="footerNote">Click a row to open that run.</div>
           </div>
         </div>
 
@@ -570,7 +580,7 @@
               <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">This nudges examples and wording. Context + transcript stay the source of truth.</div>
             </div>
 
-            <div>
+            <div style="grid-column:1 / -1;">
               <label for="context">Context (required)</label>
               <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."
                         style="width:100%;min-height:92px;resize:vertical;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></textarea>
@@ -583,6 +593,7 @@
             <span id="status" class="status"></span>
           </div>
 
+          <!-- Back-compat inline results (normally we navigate to /runs/:id) -->
           <div id="results" class="card hidden" style="margin-top:14px;">
             <div id="banners"></div>
 
@@ -612,13 +623,13 @@
 
         <!-- Run viewer -->
         <div id="viewRun" class="card hidden">
-          <div class="row" style="justify-content:space-between; align-items:flex-start;">
-            <div style="min-width:0;">
-              <h3 id="runTitleH" class="sectionTitle" style="margin:0; font-size:16px; font-weight:950; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></h3>
-              <div id="runTitleMeta" style="margin-top:4px; color:var(--muted); font-size:12.5px;"></div>
-            </div>
+          <div class="row" style="justify-content:space-between;">
+            <h3 class="sectionTitle" style="margin:0;">Call Analysis</h3>
             <button id="btnBackHome" class="btn secondary">Back</button>
           </div>
+
+          <div id="runTitleText" class="runTitleBig"></div>
+          <div id="runTitleMeta" class="runTitleSub"></div>
 
           <div id="runBanners" style="margin-top:12px;"></div>
 
@@ -705,6 +716,15 @@
         "Use appointments + listings + pipeline framing. Qualify market area, lead channels, current follow-up process, and offer a small proof asset (lead gap audit).",
       coaching_consulting:
         "Use offer clarity + lead gen + conversion language. Qualify niche, price point, lead source, and propose a low-friction audit (funnel/offer).",
+    };
+
+    const CALL_RESULT_DEFS = {
+      "Connected": "You reached a real person (the call connected).",
+      "No Answer": "No live contact (missed/voicemail/no pickup).",
+      "Voicemail": "Reached voicemail (no live conversation).",
+      "Rejected": "Prospect clearly declined (explicit no / not interested).",
+      "Booked Meeting": "Prospect agreed to a scheduled next step (meeting/call).",
+      "Closed Deal": "Confirmed purchase / signed / paid (won).",
     };
 
     function fillSelect(el, options) {
@@ -963,60 +983,11 @@
       });
     }
 
-    // ---- Title helpers (fix width + remove redundant suffix) ----
-    function cleanTitleRaw(s) {
-      return String(s || "")
-        .replace(/\s+/g, " ")
-        .replace(/\u2014/g, "—")
-        .trim();
-    }
-
-    function stripOutcomeSuffix(title, callResult) {
-      let t = cleanTitleRaw(title);
-      if (!t) return "";
-
-      // If it ends with “— Something”, drop it if it looks like an outcome.
-      // Also handles “- Something” / “– Something”.
-      const knownOutcomes = new Set([
-        "booked meeting","booked call","scheduled","closed","closed deal","won",
-        "rejected","declined","no answer","voicemail","follow up","follow-up",
-        "connected","not interested","bad timing","gatekeeper","call back","callback",
-        "hung up","hang up","disqualified"
-      ]);
-
-      const candidate = (callResult || "").toString().trim();
-      const candidateLower = candidate.toLowerCase();
-
-      const m = t.match(/^(.*?)(\s*[—–-]\s*)([^—–-]{2,50})\s*$/);
-      if (m) {
-        const suffix = (m[3] || "").trim();
-        const suffixLower = suffix.toLowerCase();
-
-        const shouldStrip =
-          (candidate && suffixLower === candidateLower) ||
-          knownOutcomes.has(suffixLower);
-
-        if (shouldStrip) t = (m[1] || "").trim();
-      }
-
-      return t;
-    }
-
-    function truncateAtWord(s, maxLen) {
-      const t = cleanTitleRaw(s);
-      if (t.length <= maxLen) return t;
-      const cut = t.slice(0, Math.max(0, maxLen - 1));
-      const lastSpace = cut.lastIndexOf(" ");
-      const nice = (lastSpace > Math.floor(maxLen * 0.6)) ? cut.slice(0, lastSpace) : cut;
-      return nice.trimEnd() + "…";
-    }
-
-    // ---- Summary renderer ----
     function renderSummaryInto(resp, opts) {
       const summaryKVEl = opts.summaryKVEl;
       const scenarioValue = opts.scenarioValue || "";
       const userContext = opts.userContext || "";
-      const createdAt = opts.createdAt || "";
+      const submittedAt = opts.submittedAt || "";
 
       summaryKVEl.innerHTML = "";
 
@@ -1061,7 +1032,7 @@
         summaryKVEl.appendChild(item);
       };
 
-      if (createdAt) addKV("Analyzed at", createdAt);
+      if (submittedAt) addKV("Submitted at", submittedAt);
 
       addKV("Scenario (selected)", scenarioLabel);
       addKV("User Context", userContext);
@@ -1094,7 +1065,6 @@
     const sidebar = document.getElementById("sidebar");
     const navDashboard = document.getElementById("navDashboard");
     const navReportSub = document.getElementById("navReportSub");
-    const navReportSubText = document.getElementById("navReportSubText");
     const navUpload = document.getElementById("navUpload");
     const navRecord = document.getElementById("navRecord");
     const navPractice = document.getElementById("navPractice");
@@ -1130,7 +1100,8 @@
     const btnBackHome = document.getElementById("btnBackHome");
     const runBanners = document.getElementById("runBanners");
 
-    const runTitleH = document.getElementById("runTitleH");
+    // run header
+    const runTitleText = document.getElementById("runTitleText");
     const runTitleMeta = document.getElementById("runTitleMeta");
 
     // calibrate DOM
@@ -1165,10 +1136,6 @@
     let sessionExpiredMessage = "";
     let sessionExpiredHandled = false;
 
-    // Track which report we’re inside (for sidebar indicator)
-    let currentRunTitle = "";
-    let currentRunId = "";
-
     async function initSupabase() {
       const r = await fetch("/api/config");
       config = await r.json();
@@ -1197,6 +1164,23 @@
       viewRun.classList.add("hidden");
     }
 
+    let currentRunTitle = "";
+
+    function setReportIndicator(title) {
+      const t = String(title || "").trim();
+      currentRunTitle = t;
+
+      if (!t) {
+        navReportSub.classList.add("hidden");
+        navReportSub.textContent = "";
+        navReportSub.title = "";
+        return;
+      }
+      navReportSub.classList.remove("hidden");
+      navReportSub.textContent = t;
+      navReportSub.title = t;
+    }
+
     function setActiveNav(path) {
       const btns = [navDashboard, navUpload, navRecord, navPractice];
       btns.forEach(b => b.classList.remove("active"));
@@ -1204,10 +1188,16 @@
       if (path === "/home") navDashboard.classList.add("active");
       else if (path === "/calibrate") navUpload.classList.add("active");
       else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
+
+      // If not on a run, hide the report indicator
+      if (!path.startsWith("/runs/")) setReportIndicator("");
     }
 
     function updateTopNav() {
       const loggedIn = !!session;
+
+      document.body.classList.toggle("unauth", !loggedIn);
+
       btnSignIn.classList.toggle("hidden", loggedIn);
       btnSignOut.classList.toggle("hidden", !loggedIn);
       btnHome.classList.toggle("hidden", !loggedIn);
@@ -1280,21 +1270,6 @@
       return { ok: r2.ok, status: r2.status, json: j2 };
     }
 
-    function setSidebarReportIndicator(title) {
-      const t = cleanTitleRaw(title || "");
-      if (!t) {
-        navReportSub.classList.add("hidden");
-        navReportSubText.textContent = "";
-        navReportSub.title = "";
-        return;
-      }
-      // Sidebar should be short + subtle
-      const short = truncateAtWord(t, 30);
-      navReportSubText.textContent = short;
-      navReportSub.title = t;
-      navReportSub.classList.remove("hidden");
-    }
-
     // ---- Nav buttons ----
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
@@ -1319,7 +1294,7 @@
     navUpload.addEventListener("click", () => goto("/calibrate"));
     navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
     navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
-    navSupport.addEventListener("click", () => toast("good", "Support:", "Contact Support is still placeholder for now."));
+    navSupport.addEventListener("click", () => toast("good", "Support:", "Contact Support will be wired next (email or tickets)."));
 
     qaUpload.addEventListener("click", () => goto("/calibrate"));
     qaRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
@@ -1387,7 +1362,7 @@
         runsTbody.innerHTML = "";
 
         if (!runs.length) {
-          homeStatus.textContent = "No reports yet.";
+          homeStatus.textContent = "No runs yet.";
           return;
         }
 
@@ -1396,19 +1371,17 @@
         for (const run of runs) {
           const tr = document.createElement("tr");
 
+          const title = (run.run_title || run.title || run.name || run.user_context || "Untitled").toString();
           const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
           const callResult = (run.call_result || run.call_outcome || run.outcome || "—").toString();
-
-          const rawTitle = run.run_title || run.report_title || run.title || "";
-          // Ensure we never display “— Booked Meeting” suffix in the name
-          const cleaned = stripOutcomeSuffix(rawTitle, callResult);
-          // Keep table title readable; still allows tooltip for full title
-          const tableTitle = truncateAtWord(cleaned || "Untitled report", 64);
+          const reason = (run.outcome_reason || "").toString().trim();
+          const def = CALL_RESULT_DEFS[callResult] || "Call Result = how the call ended (highest-confidence classification).";
+          const resultTip = reason ? `${def} Reason: ${reason}` : def;
 
           tr.innerHTML = `
-            <td title="${escapeHtml(cleaned || tableTitle)}">${escapeHtml(tableTitle)}</td>
+            <td class="titleCell" title="${escapeHtml(title)}">${escapeHtml(title)}</td>
             <td title="${escapeHtml(scenario)}">${escapeHtml(scenario)}</td>
-            <td title="${escapeHtml(callResult)}">${escapeHtml(callResult)}</td>
+            <td title="${escapeHtml(resultTip)}">${escapeHtml(callResult)}</td>
           `;
 
           tr.addEventListener("click", () => goto("/runs/" + run.id));
@@ -1430,58 +1403,54 @@
       summaryKVEl2.innerHTML = "";
       transcriptBoxEl2.innerHTML = "";
       reportGridEl2.innerHTML = "";
-
-      // Show placeholder indicator immediately
-      currentRunId = runId;
-      currentRunTitle = "";
-      setSidebarReportIndicator("Viewing report…");
+      runTitleText.textContent = "";
+      runTitleMeta.textContent = "";
 
       try {
         const { ok, status, json } = await fetchJsonAuthed("/api/runs/" + encodeURIComponent(runId));
         if (seq !== runLoadSeq) return;
 
         if (!ok) {
-          if (status !== 401) runBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load report."));
-          setSidebarReportIndicator("");
+          if (status !== 401) runBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load run."));
           return;
         }
 
         const run = json.run;
 
-        const scenarioValue = run.scenario_template || "";
-        const scenarioLabel = scenarioTemplates.find(([v]) => v === scenarioValue)?.[1] || "None";
+        const title = (run.run_title || run.title || run.name || run.user_context || "Untitled").toString();
+        const submittedAt = run.created_at ? new Date(run.created_at).toLocaleString() : "";
+        const callResult = (run.call_result || run.call_outcome || "—").toString();
+        const outcomeReason = (run.outcome_reason || "").toString().trim();
 
-        const callResult = (run.call_result || run.call_outcome || run.outcome || "").toString();
-        const createdAtStr = run.created_at ? new Date(run.created_at).toLocaleString() : "";
+        runTitleText.textContent = title;
+        runTitleMeta.textContent = submittedAt ? `Submitted at ${submittedAt}` : "";
 
-        // Title (strip any suffix, then keep it reasonable everywhere)
-        const rawTitle = run.run_title || run.report_title || run.title || "";
-        const cleaned = stripOutcomeSuffix(rawTitle, callResult);
-        const showTitle = truncateAtWord(cleaned || "Untitled report", 72);
-
-        currentRunTitle = cleaned || showTitle;
-        setSidebarReportIndicator(currentRunTitle);
-
-        runTitleH.textContent = showTitle;
-        runTitleH.title = cleaned || showTitle;
-        runTitleMeta.textContent = `${scenarioLabel}${callResult ? " • " + callResult : ""}`;
+        setReportIndicator(title);
 
         const diag = run.diagnostics || {};
         const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : [];
         const transcriptText = transcriptLines.map(x => `${x.speaker}: ${x.text}`).join("\n");
 
         const reportMd = run.report_text || "";
+        const scenarioValue = run.scenario_template || "";
         const userContext = run.user_context || "";
 
         const resp = Object.assign({}, diag, {
           transcript: transcriptText,
           call_result: callResult,
-          call_outcome: callResult,
+          outcome_reason: outcomeReason,
         });
 
-        renderSummaryInto(resp, { summaryKVEl: summaryKVEl2, scenarioValue, userContext, createdAt: createdAtStr });
+        renderSummaryInto(resp, { summaryKVEl: summaryKVEl2, scenarioValue, userContext, submittedAt });
+
         renderTranscriptInto(transcriptLines, transcriptBoxEl2);
         renderReportInto(reportMd || pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl2);
+
+        const def = CALL_RESULT_DEFS[callResult] || "";
+        if (def) {
+          const tip = outcomeReason ? `${def} Reason: ${outcomeReason}` : def;
+          runBanners.appendChild(banner("good", "Call Result:", tip));
+        }
 
         if (run.mismatch || run.scenario_mismatch) {
           runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
@@ -1489,7 +1458,6 @@
       } catch (e) {
         if (seq !== runLoadSeq) return;
         runBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
-        setSidebarReportIndicator("");
       }
     }
 
@@ -1575,6 +1543,7 @@
           return;
         }
 
+        // Back-compat if server ever returns inline results
         resultsEl.classList.remove("hidden");
         renderBanners(json);
 
@@ -1582,7 +1551,7 @@
           summaryKVEl,
           scenarioValue: categoryEl.value || "",
           userContext: ctx,
-          createdAt: "",
+          submittedAt: "",
         });
 
         const transcriptPayload = json.transcript_lines || json.transcriptLines || json.transcript || "";
@@ -1629,13 +1598,6 @@
       if (needsAuth && !loggedIn) {
         goto("/login");
         return;
-      }
-
-      // Hide report indicator unless we’re in /runs/:id
-      if (!path.startsWith("/runs/")) {
-        currentRunId = "";
-        currentRunTitle = "";
-        setSidebarReportIndicator("");
       }
 
       if (path === "/") {
