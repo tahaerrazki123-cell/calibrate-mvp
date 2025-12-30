@@ -14,7 +14,7 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(express.json());
 
-// ---- Limits (server truth) ----
+// ---- Limits ----
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
 const MAX_RUNS_PER_24H = 10;
 
@@ -26,7 +26,6 @@ const upload = multer({
   limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
-// serve static files (index.html, etc.)
 app.use(express.static(__dirname, { extensions: ["html"] }));
 
 app.get("/health", (req, res) => {
@@ -37,7 +36,6 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Expose anon config for frontend (SAFE: anon key is meant for browser use)
 app.get("/api/config", (req, res) => {
   res.json({
     supabaseUrl: process.env.SUPABASE_URL || "",
@@ -46,7 +44,7 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-// ---- Supabase clients (lazy singletons) ----
+// ---- Supabase clients ----
 let _sbAnon = null;
 let _sbService = null;
 
@@ -86,7 +84,6 @@ function pick(obj, keys, fallback = null) {
   return fallback;
 }
 
-// Normalize mismatch across shapes
 function normalizeScenarioMismatch(row) {
   if (!row || typeof row !== "object") return null;
   if ("scenario_mismatch" in row) return row.scenario_mismatch;
@@ -98,27 +95,26 @@ function normalizeScenarioMismatch(row) {
   return null;
 }
 
-// Insert, and if DB schema is missing a column, drop it and retry
-async function insertRunResilient(sb, payload) {
+// Generic resilient insert for schema drift (drops unknown columns)
+async function insertResilient(sb, table, payload) {
   let p = { ...payload };
 
   for (let i = 0; i < 20; i++) {
-    const { data, error } = await sb.from("runs").insert([p]).select("id").maybeSingle();
+    const { data, error } = await sb.from(table).insert([p]).select("id").maybeSingle();
     if (!error) return data;
 
     const msg = String(error.message || "");
 
-    let m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
-    if (m && m[1]) {
-      delete p[m[1]];
-      continue;
+    // table missing
+    if (/relation .* does not exist/i.test(msg) || /schema cache/i.test(msg) && /does not exist/i.test(msg)) {
+      throw new Error(`Missing table "${table}". Create it in Supabase first.`);
     }
 
+    let m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
+    if (m && m[1]) { delete p[m[1]]; continue; }
+
     m = msg.match(/Could not find the '(\w+)' column of '(\w+)' in the schema cache/i);
-    if (m && m[1]) {
-      delete p[m[1]];
-      continue;
-    }
+    if (m && m[1]) { delete p[m[1]]; continue; }
 
     throw new Error(msg);
   }
@@ -127,22 +123,17 @@ async function insertRunResilient(sb, payload) {
 }
 
 // -------------------- Title generation --------------------
-
-function cleanSpaces(s) {
-  return String(s || "").replace(/\s+/g, " ").trim();
-}
+function cleanSpaces(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
 
 function stripOutcomeSuffix(title) {
   let t = cleanSpaces(title);
   if (!t) return t;
 
-  // common separators used by UI: " — Booked Meeting", "- Connected", "| Rejected", etc.
   const outcomeWords = [
     "booked meeting","booked demo","booked call","connected","rejected","hostile","voicemail","no answer","callback","gatekeeper"
   ];
   const re = new RegExp(`\\s*(—|\\-|\\||:)+\\s*(${outcomeWords.join("|")})\\s*$`, "i");
   t = t.replace(re, "");
-
   return cleanSpaces(t);
 }
 
@@ -153,13 +144,7 @@ function clampTitle(title, maxLen = 62) {
 }
 
 function extractInferred(diagnostics) {
-  const inferred = pick(diagnostics, [
-    "inferred_from_transcript",
-    "inferredFromTranscript",
-    "inferred",
-    "inferred_lines",
-    "inferredLines",
-  ], null);
+  const inferred = pick(diagnostics, ["inferred_from_transcript","inferredFromTranscript","inferred","inferred_lines","inferredLines"], null);
 
   let prospectType = "";
   let offerKeywords = [];
@@ -188,33 +173,18 @@ function titleFromContextAndInference({ userContext, diagnostics, scenarioTempla
   const offer = offerKeywords[0] || "";
   const pt = prospectType || "";
 
-  // if we have both offer + prospect type => "SEO → Ecommerce brand"
   if (offer && pt) return `${offer.toUpperCase()} → ${pt}`;
-
-  // if only one inferred field, blend with context
   if (offer && ctx) return `${offer.toUpperCase()} → ${ctx}`;
   if (pt && ctx) return `${pt} → ${ctx}`;
 
-  // otherwise attempt a compact rewrite of context
   const c = cleanSpaces(ctx);
   if (!c) return "Call Analysis";
 
-  // heuristic: remove filler openings
-  let compact = c
-    .replace(/^(selling|offering|pitched|offered|calling)\s+/i, "")
-    .replace(/\bto\s+this\b/i, "to")
-    .replace(/\bfor\s+this\b/i, "for");
-
-  // If scenario chosen, prefix small hint
+  let compact = c.replace(/^(selling|offering|pitched|offered|calling)\s+/i, "");
   if (scenarioTemplate) {
-    const prefix = scenarioTemplate
-      .toLowerCase()
-      .split("_")
-      .map(w => w ? (w[0].toUpperCase() + w.slice(1)) : "")
-      .join(" ");
+    const prefix = scenarioTemplate.toLowerCase().split("_").map(w => w ? (w[0].toUpperCase() + w.slice(1)) : "").join(" ");
     compact = `${prefix}: ${compact}`;
   }
-
   return compact;
 }
 
@@ -224,8 +194,45 @@ function buildTitleShapes({ userContext, diagnostics, scenarioTemplate }) {
   return { title_full: full, title_short: short, title: short };
 }
 
-// -------------------- Runs API (history + details) --------------------
+// -------------------- Outcome override (booked meeting fix) --------------------
+function normalizeKey(s) {
+  const t = String(s || "").trim();
+  if (!t) return "";
+  if (/^[A-Z0-9_]+$/.test(t)) return t;
+  return t.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_").replace(/-+/g, "_").toUpperCase();
+}
 
+function detectBookedMeeting(transcript) {
+  const t = String(transcript || "").toLowerCase();
+
+  const hasInvite = /\b(calendar|calendly|invite)\b/.test(t) && /\b(send|sent|shoot)\b/.test(t);
+  const hasZoom = /\bzoom\b/.test(t);
+  const hasMeetingWords = /\b(meeting|demo|walkthrough|call)\b/.test(t);
+  const hasSchedule = /\b(schedule|book|set up|lock in)\b/.test(t);
+
+  // "what time works" + "tomorrow/next week" etc.
+  const hasTimeNegotiation =
+    /\b(what time works|does (?:tomorrow|monday|tuesday|wednesday|thursday|friday|next week) work|how about)\b/.test(t) ||
+    /\b(\d{1,2}:\d{2}|\d{1,2}\s?(am|pm))\b/.test(t);
+
+  // Acceptance language
+  const hasAgreement = /\b(yeah|sure|sounds good|that works|perfect|okay|ok)\b/.test(t);
+
+  // Strong booking if they mention invite/zoom + scheduling + agreement OR time negotiation
+  const strong =
+    (hasInvite && (hasAgreement || hasTimeNegotiation)) ||
+    (hasZoom && hasSchedule && (hasAgreement || hasTimeNegotiation)) ||
+    (hasMeetingWords && hasSchedule && hasTimeNegotiation && hasAgreement);
+
+  if (!strong) return null;
+
+  return {
+    key: "BOOKED_MEETING",
+    reason: "Transcript includes meeting scheduling language (invite/zoom/time agreement).",
+  };
+}
+
+// -------------------- Runs API --------------------
 app.get("/api/runs", async (req, res) => {
   try {
     const userId = await requireUserId(req);
@@ -243,10 +250,8 @@ app.get("/api/runs", async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
 
     const runs = (data || []).map((r) => {
-      const runTypeRaw = r.run_type ?? r.runType ?? r.type ?? "upload";
       const scenarioTemplate = r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null;
 
-      // IMPORTANT: mismatch should only matter if scenario selected
       const mismatchRaw = Boolean(normalizeScenarioMismatch(r));
       const mismatch = Boolean(scenarioTemplate) && mismatchRaw;
 
@@ -266,8 +271,8 @@ app.get("/api/runs", async (req, res) => {
         call_outcome: callOutcome,
         mismatch,
         scenario_mismatch: mismatch,
+        mismatch_reason: r.mismatch_reason ?? null,
 
-        // title payload for UI
         title: titles.title,
         title_short: titles.title_short,
         title_full: titles.title_full,
@@ -299,8 +304,6 @@ app.get("/api/runs/:id", async (req, res) => {
     if (!data) return res.status(404).json({ error: "Run not found" });
 
     const scenarioTemplate = data.scenario_template ?? data.scenarioTemplate ?? data.category ?? null;
-
-    // mismatch only if scenario selected
     const mismatchRaw = Boolean(normalizeScenarioMismatch(data));
     const mismatch = Boolean(scenarioTemplate) && mismatchRaw;
 
@@ -313,7 +316,9 @@ app.get("/api/runs/:id", async (req, res) => {
 
     const callOutcome = data.call_outcome ?? data.callOutcome ?? data.outcome ?? null;
     const callOutcomeReason =
-      pick(diag, ["call_outcome_reason","outcomeReason","outcome_reason"], "") || null;
+      data.call_outcome_reason ??
+      pick(diag, ["call_outcome_reason","outcomeReason","outcome_reason"], "") ??
+      null;
 
     const run = {
       ...data,
@@ -335,9 +340,46 @@ app.get("/api/runs/:id", async (req, res) => {
   }
 });
 
-// -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
+// -------------------- Contact Support (real) --------------------
+app.post("/api/support", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-// Stable speaker labeling + optional You/Prospect inference
+    const message = String(req.body?.message || "").trim();
+    const page = String(req.body?.page || "").trim();
+
+    if (message.length < 10) return res.status(400).json({ error: "Message too short (10+ chars)." });
+
+    const sb = supabaseService();
+
+    // Email is useful, but we can also derive it from auth token if needed later; store what we have.
+    const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    let email = null;
+
+    try {
+      const sbAnon = supabaseAnon();
+      const { data } = await sbAnon.auth.getUser(token);
+      email = data?.user?.email || null;
+    } catch { /* ignore */ }
+
+    const payload = {
+      user_id: userId,
+      email,
+      message,
+      page,
+      status: "open",
+    };
+
+    const inserted = await insertResilient(sb, "support_tickets", payload);
+    return res.json({ ok: true, ticket_id: inserted?.id || null });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+// -------------------- Calibrate endpoint --------------------
 const SPEAKER_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 function normalizeSpeakerKey(raw) {
@@ -347,52 +389,31 @@ function normalizeSpeakerKey(raw) {
 }
 
 function cleanText(s) {
-  return String(s || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(s || "").replace(/\s+/g, " ").trim();
 }
 
-// Heuristic role inference: only if exactly 2 speakers and confidence is decent.
 function inferYouProspectMap(lines) {
   const speakers = [...new Set(lines.map(l => l.speaker).filter(Boolean))];
   if (speakers.length !== 2) return null;
 
-  const textFor = (sp) =>
-    lines.filter(l => l.speaker === sp).map(l => l.text || "").join(" ").slice(0, 5000);
+  const textFor = (sp) => lines.filter(l => l.speaker === sp).map(l => l.text || "").join(" ").slice(0, 5000);
 
   const repSignals = [
-    /\bmy name is\b/i,
-    /\bthis is\b/i,
-    /\bi['’]?m calling\b/i,
-    /\breaching out\b/i,
-    /\bquick (one|question|thing)\b/i,
-    /\bdo you have (a moment|a minute)\b/i,
-    /\bcan i\b/i,
-    /\bwould you\b/i,
-    /\bnext step\b/i,
-    /\bbook\b/i,
-    /\bschedule\b/i,
-    /\bcalendar\b/i,
-    /\bwalkthrough\b/i,
-    /\b15 minutes\b/i,
+    /\bmy name is\b/i, /\bthis is\b/i, /\bi['’]?m calling\b/i, /\breaching out\b/i,
+    /\bquick\b/i, /\bdo you have\b/i, /\bnext step\b/i, /\bbook\b/i, /\bschedule\b/i,
+    /\bcalendar\b/i, /\bwalkthrough\b/i, /\bdemo\b/i
   ];
 
   const prospectSignals = [
-    /\bwho is this\b/i,
-    /\bnot interested\b/i,
-    /\bstop calling\b/i,
-    /\bjust email\b/i,
-    /\bhow much\b/i,
-    /\bwe already\b/i,
-    /\bwe're good\b/i,
-    /\bbusy\b/i,
+    /\bwho is this\b/i, /\bnot interested\b/i, /\bstop calling\b/i, /\bjust email\b/i,
+    /\bhow much\b/i, /\bwe already\b/i, /\bwe're good\b/i, /\bbusy\b/i
   ];
 
   const score = (txt) => {
     let rep = 0, pro = 0;
     for (const r of repSignals) if (r.test(txt)) rep++;
     for (const p of prospectSignals) if (p.test(txt)) pro++;
-    return { rep, pro, net: rep - pro };
+    return { net: rep - pro };
   };
 
   const aSp = speakers[0];
@@ -405,10 +426,7 @@ function inferYouProspectMap(lines) {
   if (diff < 2) return null;
 
   const aIsYou = a.net > b.net;
-  return {
-    [aSp]: aIsYou ? "You" : "Prospect",
-    [bSp]: aIsYou ? "Prospect" : "You",
-  };
+  return { [aSp]: aIsYou ? "You" : "Prospect", [bSp]: aIsYou ? "Prospect" : "You" };
 }
 
 function normalizeAssemblyUtterances(utterances) {
@@ -419,10 +437,7 @@ function normalizeAssemblyUtterances(utterances) {
   for (const u of utterances || []) {
     const key = normalizeSpeakerKey(u?.speaker);
     if (!speakerMap.has(key)) {
-      const label =
-        idx < SPEAKER_LETTERS.length
-          ? `Speaker ${SPEAKER_LETTERS[idx]}`
-          : `Speaker ${idx + 1}`;
+      const label = idx < SPEAKER_LETTERS.length ? `Speaker ${SPEAKER_LETTERS[idx]}` : `Speaker ${idx + 1}`;
       speakerMap.set(key, label);
       idx++;
     }
@@ -435,11 +450,7 @@ function normalizeAssemblyUtterances(utterances) {
   }
 
   const map = inferYouProspectMap(lines);
-  if (map) {
-    for (const l of lines) {
-      l.speaker = map[l.speaker] || l.speaker;
-    }
-  }
+  if (map) for (const l of lines) l.speaker = map[l.speaker] || l.speaker;
 
   const transcript = lines.map(l => `${l.speaker}: ${l.text}`).join("\n");
 
@@ -524,7 +535,7 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     if (!file?.buffer) return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
 
     const userContext = (req.body?.context || "").trim();
-    const category = (req.body?.category || "").trim(); // scenario template (optional)
+    const category = (req.body?.category || "").trim();
     if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
     const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -549,16 +560,29 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       transcript,
       userContext,
       category,
-      legacyScenario: "", // legacy removed
+      legacyScenario: "",
     });
 
     const reportText = pick(result, ["report", "coachingReport", "report_md", "reportMarkdown"], "") || "";
-    const callOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], null);
 
-    // IMPORTANT: mismatch only matters when scenario selected
-    const mismatchReasonRaw =
-      pick(result, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "") || "";
+    // Pull outcome from any common key (this was likely part of the mis-display)
+    let callOutcome = pick(result, ["call_outcome","callOutcome","outcome","call_result","callResult","result"], null);
+    let callOutcomeReason = pick(result, ["call_outcome_reason","outcomeReason","outcome_reason"], "") || "";
 
+    // HARD FIX: if transcript clearly books a meeting, override bad "CONNECTED"
+    const booked = detectBookedMeeting(transcript);
+    if (booked) {
+      const currentKey = normalizeKey(callOutcome);
+      if (currentKey !== "BOOKED_MEETING") {
+        callOutcome = booked.key;
+        callOutcomeReason = booked.reason;
+        // also inject into diagnostics so UI always has it even if column missing
+        result.call_outcome = callOutcome;
+        result.call_outcome_reason = callOutcomeReason;
+      }
+    }
+
+    const mismatchReasonRaw = pick(result, ["context_conflict_banner","contextConflictBanner","scenarioMismatch","scenario_mismatch"], "") || "";
     const mismatchReason = category ? mismatchReasonRaw : "";
     const mismatch = Boolean(category) && Boolean(mismatchReason);
 
@@ -576,16 +600,18 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       transcript_lines: transcriptLines,
       report_text: reportText,
       diagnostics: { ...result, _transcript_meta: asr.meta },
+
       call_outcome: callOutcome,
+      call_outcome_reason: callOutcomeReason || null,
+
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
       mismatch_reason: mismatchReason || null,
 
-      // optional column if exists; harmless if it doesn't
       run_title: titles.title_full,
     };
 
-    const inserted = await insertRunResilient(sb, row);
+    const inserted = await insertResilient(sb, "runs", row);
     return res.json({ run_id: inserted?.id || null });
   } catch (err) {
     console.error(err);
@@ -595,10 +621,8 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
   }
 });
 
-// If someone hits an unknown /api route, return JSON (NOT index.html)
 app.use("/api", (req, res) => res.status(404).json({ error: "Unknown API route" }));
 
-// SPA fallback for non-API routes
 app.get(/^(?!\/api\/).*/, (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });

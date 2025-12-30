@@ -1,3 +1,4 @@
+<!-- FILE: web/index.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -5,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Calibrate</title>
 
-  <!-- Inline SVG favicon (Calibrate mark) -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231d4ed8'/%3E%3Cstop offset='1' stop-color='%2338bdf8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M32 6a26 26 0 1 0 18.38 7.62' fill='none' stroke='url(%23g)' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M28 33l6 6 14-14' fill='none' stroke='url(%23g)' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 
   <style>
@@ -105,7 +105,6 @@
       padding:16px;
     }
 
-    /* Centered cards (landing/login/session expired) */
     .centerCard{
       max-width:720px;
       margin:0 auto;
@@ -118,9 +117,12 @@
       gap:16px;
       align-items:start;
     }
+    /* CRITICAL FIX: when sidebar is hidden (logged out), don't reserve 260px */
+    .appLayout.noSidebar{
+      grid-template-columns: 1fr;
+    }
     @media (max-width: 960px){
       .appLayout{grid-template-columns:1fr;}
-      .sidebar{position:relative;top:auto}
     }
 
     .sidebar{
@@ -167,37 +169,24 @@
       white-space:nowrap;
     }
 
-    /* Sub-indicator under Home when viewing a report */
+    /* Current report indicator (UNDER the Home button, subtle + indented) */
     .navSub{
       margin-top:6px;
-      margin-left:14px;  /* indent */
-      font-size:11.5px;
-      font-weight:900;
+      margin-left:14px;
+      font-size:11px;
+      font-weight:850;
       color:rgba(15,23,42,0.72);
-      padding:4px 8px;
+      padding:3px 8px;
       border-radius:999px;
-      border:1px solid rgba(37,99,235,0.18);
-      background:rgba(37,99,235,0.07);
+      border:1px solid rgba(37,99,235,0.16);
+      background:rgba(37,99,235,0.06);
       display:inline-block;
-      max-width:180px;
+      max-width:200px;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
     }
-    .navStack{
-      display:flex;
-      flex-direction:column;
-      min-width:0;
-    }
-    .navMainRow{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      min-width:0;
-    }
 
-    /* Quick actions */
     .sectionTitle{font-size:15px;font-weight:950;margin:0 0 10px}
     .actionGrid{
       display:grid;
@@ -242,7 +231,6 @@
       pointer-events:none;
     }
 
-    /* Table */
     .tableWrap{overflow:auto;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,0.92)}
     .table{width:100%;border-collapse:collapse}
     .table th,.table td{
@@ -269,7 +257,6 @@
       .truncate{max-width:360px;}
     }
 
-    /* Banners */
     .banner{
       border-radius:14px;padding:10px 12px;border:1px solid var(--line);
       margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;
@@ -282,7 +269,6 @@
     .banner .txt{font-size:13.5px;line-height:1.35;color:var(--text)}
     .banner .txt strong{font-weight:950}
 
-    /* Transcript (grid layout = no squiggles) */
     .transcriptBox{border:1px solid var(--line);border-radius:14px;background:rgba(15,23,42,0.02);overflow:hidden}
 
     .tLine{
@@ -331,7 +317,6 @@
       word-break:break-word;
     }
 
-    /* Report */
     .reportGrid{display:grid;gap:10px}
     .reportCard{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.90);overflow:hidden}
     .reportHead{
@@ -344,7 +329,6 @@
     .reportBody li{margin:4px 0;font-size:13.5px;line-height:1.35}
     .reportBody strong{font-weight:950}
 
-    /* Key/Value */
     .kv{display:grid;gap:8px}
     .kv .item{
       display:grid;grid-template-columns:180px 1fr;gap:10px;padding:10px 12px;
@@ -361,7 +345,6 @@
     .mono{font-family:var(--mono);font-size:12px;white-space:pre-wrap;color:var(--muted);margin-top:10px}
     .footerNote{color:var(--muted);font-size:12px;margin-top:10px}
 
-    /* Assist box */
     .assistBox{
       border:1px solid rgba(37,99,235,0.18);
       background:rgba(37,99,235,0.06);
@@ -411,7 +394,6 @@
     }
     .assistBtn:hover{background:rgba(37,99,235,0.06)}
 
-    /* Toast */
     .toastHost{
       position:fixed;right:18px;bottom:18px;z-index:9999;
       display:flex;flex-direction:column;gap:10px;
@@ -467,22 +449,19 @@
       </div>
     </div>
 
-    <div class="appLayout">
-      <!-- Sidebar (only visible when authed) -->
+    <div class="appLayout" id="appLayout">
+      <!-- Sidebar -->
       <aside id="sidebar" class="card sidebar hidden">
         <div class="sideHead">
           <p class="sideTitle">Dashboard</p>
         </div>
 
         <div class="navList">
-          <button id="navDashboard" class="navItem">
-            <div class="navStack">
-              <div class="navMainRow">
-                <span>Home</span>
-              </div>
-              <span id="navCurrentRun" class="navSub hidden" title=""></span>
-            </div>
-          </button>
+          <!-- Home button stays compact; current report label is BELOW it -->
+          <div>
+            <button id="navDashboard" class="navItem"><span>Home</span></button>
+            <div id="navCurrentRun" class="navSub hidden" title=""></div>
+          </div>
 
           <button id="navUpload" class="navItem">
             <span>Upload Call</span>
@@ -509,7 +488,7 @@
         </div>
       </aside>
 
-      <!-- Main content -->
+      <!-- Main -->
       <main>
         <!-- Landing -->
         <div id="viewLanding" class="card centerCard hidden">
@@ -531,7 +510,7 @@
           <h3 class="sectionTitle">Sign in</h3>
           <div id="loginBanners"></div>
 
-          <div class="grid two" style="display:grid; gap:12px;">
+          <div style="display:grid; gap:12px;">
             <div>
               <label for="email">Email</label>
               <input id="email" type="email" placeholder="you@email.com"
@@ -539,9 +518,8 @@
               <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Magic link (no password). Check your inbox.</div>
             </div>
             <div>
-              <label>&nbsp;</label>
               <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Google OAuth button works only if Google provider is enabled in Supabase.</div>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Google OAuth works only if provider is enabled in Supabase.</div>
             </div>
           </div>
 
@@ -564,7 +542,7 @@
           </div>
         </div>
 
-        <!-- Home / History -->
+        <!-- Home -->
         <div id="viewHome" class="hidden">
           <div class="card">
             <h3 class="sectionTitle" style="margin:0;">Quick Actions</h3>
@@ -615,9 +593,30 @@
           </div>
         </div>
 
-        <!-- Calibrate (new run) -->
+        <!-- Support -->
+        <div id="viewSupport" class="card hidden">
+          <h3 class="sectionTitle" style="margin:0;">Contact Support</h3>
+          <p style="margin:8px 0 0; color:var(--muted); font-size:13.5px;">
+            Describe the issue and click Send. It will create a support ticket tied to your account.
+          </p>
+
+          <div id="supportBanners" style="margin-top:12px;"></div>
+
+          <div style="margin-top:12px;">
+            <label for="supportMsg" style="font-weight:900; font-size:13px;">Message</label>
+            <textarea id="supportMsg" placeholder="What happened? What did you expect? Any details that help reproduce it?"
+              style="width:100%;min-height:140px;resize:vertical;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></textarea>
+          </div>
+
+          <div class="row" style="margin-top:10px;">
+            <button id="btnSendSupport" class="btn">Send</button>
+            <span id="supportStatus" class="status"></span>
+          </div>
+        </div>
+
+        <!-- Calibrate -->
         <div id="viewCalibrate" class="card hidden">
-          <div class="grid two" style="display:grid; gap:12px;">
+          <div style="display:grid; gap:12px;">
             <div>
               <label for="audio">Audio file</label>
               <input id="audio" type="file" accept="audio/*"
@@ -649,7 +648,7 @@
                 <p id="assistBody" class="assistBody">(Type context to get guidance.)</p>
                 <div id="assistActions" class="assistActions hidden"></div>
               </div>
-              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">This is a fast rules-based helper (not a model call).</div>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Fast rules-based helper (no model call).</div>
             </div>
           </div>
 
@@ -680,7 +679,7 @@
               <summary>Diagnostics (internal)</summary>
               <div class="mono" id="diagnosticsMono"></div>
               <div class="mono" id="rawJson"></div>
-              <div class="footerNote">Dev mode only. Add <span style="font-family:var(--mono)">?dev=1</span> to the URL.</div>
+              <div class="footerNote">Dev mode only. Add <span style="font-family:var(--mono)">?dev=1</span>.</div>
             </details>
           </div>
         </div>
@@ -716,19 +715,21 @@
 
   <div id="toastHost" class="toastHost"></div>
 
-  <!-- Supabase JS (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
-    // ---- Router helpers ----
-    function goto(path) {
-      history.pushState({}, "", path);
-      renderRoute();
-    }
+    function goto(path) { history.pushState({}, "", path); renderRoute(); }
     window.addEventListener("popstate", renderRoute);
 
-    // ---- Toast ----
     const toastHost = document.getElementById("toastHost");
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
     function toast(type, title, msg, ms = 2600) {
       const t = document.createElement("div");
       t.className = "toast " + (type || "warn");
@@ -737,23 +738,9 @@
         <div class="txt"><strong>${escapeHtml(title || "Note:")}</strong> ${escapeHtml(msg || "")}</div>
       `;
       toastHost.appendChild(t);
-      setTimeout(() => {
-        try { t.remove(); } catch {}
-      }, ms);
+      setTimeout(() => { try { t.remove(); } catch {} }, ms);
     }
 
-    // ---- Dev mode ----
-    function isDevMode() {
-      const url = new URL(window.location.href);
-      const qp = url.searchParams.get("dev");
-      if (qp === "1" || qp === "true") {
-        localStorage.setItem("calibrate_dev", "1");
-        return true;
-      }
-      return localStorage.getItem("calibrate_dev") === "1";
-    }
-
-    // ---- Scenario data ----
     const scenarioTemplates = [
       ["", "None"],
       ["b2b_service_software", "B2B service / software"],
@@ -766,44 +753,23 @@
     ];
 
     const templateGuidance = {
-      b2b_service_software:
-        "Use ROI/time-saved/pipeline language. Qualify decision-maker, current tool/process, measurable outcome, and a low-friction next step (10-min walkthrough).",
-      local_service:
-        "Use local intent language (calls, booked jobs, service areas). Qualify service area, lead source, seasonality, and a low-friction proof offer (quick audit / 2 examples).",
-      ecommerce:
-        "Use revenue + CAC framing. Qualify platform (Shopify), hero products, current ad spend, and a proof-first deliverable (keyword gap + technical fixes).",
-      agency_services:
-        "Position as outcomes + proof. Qualify current vendor, KPI targets, decision-maker, and offer a diagnostic deliverable (audit + quick wins).",
-      recruiting_staffing:
-        "Use time-to-hire and cost-of-vacancy language. Qualify hiring volume, roles, urgency, and propose a short calibration call + sample slate/pipeline plan.",
-      real_estate:
-        "Use appointments + listings + pipeline framing. Qualify market area, lead channels, current follow-up process, and offer a small proof asset (lead gap audit).",
-      coaching_consulting:
-        "Use offer clarity + lead gen + conversion language. Qualify niche, price point, lead source, and propose a low-friction audit (funnel/offer).",
+      b2b_service_software: "Use ROI/time-saved/pipeline language. Qualify decision-maker, current tool/process, measurable outcome, and a low-friction next step (10-min walkthrough).",
+      local_service: "Use local intent language (calls, booked jobs, service areas). Qualify service area, lead source, seasonality, and a low-friction proof offer (quick audit / 2 examples).",
+      ecommerce: "Use revenue + CAC framing. Qualify platform (Shopify), hero products, current ad spend, and a proof-first deliverable (keyword gap + technical fixes).",
+      agency_services: "Position as outcomes + proof. Qualify current vendor, KPI targets, decision-maker, and offer a diagnostic deliverable (audit + quick wins).",
+      recruiting_staffing: "Use time-to-hire and cost-of-vacancy language. Qualify hiring volume, roles, urgency, and propose a short calibration call + sample slate/pipeline plan.",
+      real_estate: "Use appointments + listings + pipeline framing. Qualify market area, lead channels, current follow-up process, and offer a small proof asset (lead gap audit).",
+      coaching_consulting: "Use offer clarity + lead gen + conversion language. Qualify niche, price point, lead source, and propose a low-friction audit (funnel/offer).",
     };
 
     const scenarioKeywords = {
-      b2b_service_software: [
-        "saas","software","crm","demo","pipeline","integrat","subscription","seats","users","it","security","api","platform"
-      ],
-      local_service: [
-        "dentist","dental","clinic","roof","plumb","hvac","contractor","barber","salon","repair","home service","appointment","booked","front desk"
-      ],
-      ecommerce: [
-        "shopify","ecom","e-commerce","d2c","product","cart","checkout","conversion","aov","cac","roas","brand","store","sku"
-      ],
-      agency_services: [
-        "seo","ads","google ads","meta ads","facebook ads","creative","agency","marketing","leads","rank","keywords","content","landing page"
-      ],
-      recruiting_staffing: [
-        "recruit","staff","hiring","candidates","talent","roles","job","positions","headcount","time-to-hire"
-      ],
-      real_estate: [
-        "real estate","realtor","listing","buyer","seller","property","home","house","mortgage","investor","motivated seller"
-      ],
-      coaching_consulting: [
-        "coach","coaching","consult","consulting","program","clients","retainer","offer","funnel","course","mastermind"
-      ],
+      b2b_service_software: ["saas","software","crm","demo","pipeline","integrat","subscription","seats","users","it","security","api","platform"],
+      local_service: ["dentist","dental","clinic","roof","plumb","hvac","contractor","barber","salon","repair","home service","appointment","booked","front desk"],
+      ecommerce: ["shopify","ecom","e-commerce","d2c","product","cart","checkout","conversion","aov","cac","roas","brand","store","sku"],
+      agency_services: ["seo","ads","google ads","meta ads","facebook ads","creative","agency","marketing","leads","rank","keywords","content","landing page"],
+      recruiting_staffing: ["recruit","staff","hiring","candidates","talent","roles","job","positions","headcount","time-to-hire"],
+      real_estate: ["real estate","realtor","listing","buyer","seller","property","home","house","mortgage","investor","motivated seller"],
+      coaching_consulting: ["coach","coaching","consult","consulting","program","clients","retainer","offer","funnel","course","mastermind"],
     };
 
     const outcomeHelp = {
@@ -817,6 +783,23 @@
       GATEKEEPER: "You spoke to a gatekeeper rather than the decision maker.",
     };
 
+    function normalizeOutcomeKey(outcomeRaw) {
+      const s = String(outcomeRaw || "").trim();
+      if (!s) return "";
+      if (/^[A-Z0-9_]+$/.test(s)) return s;
+      return s.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_").replace(/-+/g, "_").toUpperCase();
+    }
+    function outcomeLabel(outcomeRaw) {
+      const key = normalizeOutcomeKey(outcomeRaw);
+      if (!key) return "—";
+      return key.toLowerCase().split("_").map(w => w ? (w[0].toUpperCase() + w.slice(1)) : "").join(" ");
+    }
+    function outcomeTooltip(outcomeRaw) {
+      const key = normalizeOutcomeKey(outcomeRaw);
+      if (!key) return "";
+      return outcomeHelp[key] || "Auto-classified call result.";
+    }
+
     function fillSelect(el, options) {
       el.innerHTML = "";
       for (const [value, label] of options) {
@@ -827,29 +810,10 @@
       }
     }
 
-    function pick(obj, keys, fallback = "") {
-      for (const k of keys) {
-        if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
-      }
-      return fallback;
-    }
-
-    function escapeHtml(s) {
-      return String(s)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
     function banner(type, title, msg) {
       const wrap = document.createElement("div");
       wrap.className = "banner " + type;
-      wrap.innerHTML = `
-        <div class="dot"></div>
-        <div class="txt"><strong>${escapeHtml(title)}</strong> ${escapeHtml(msg)}</div>
-      `;
+      wrap.innerHTML = `<div class="dot"></div><div class="txt"><strong>${escapeHtml(title)}</strong> ${escapeHtml(msg)}</div>`;
       return wrap;
     }
 
@@ -896,9 +860,7 @@
     function splitReportIntoSections(reportMd) {
       const text = String(reportMd || "").trim();
       if (!text) return [];
-
       const cleaned = text.replace(/^\uFEFF/, "").trim();
-
       if (cleaned.startsWith("##")) {
         const normalized = cleaned.replace(/^##\s+/, "");
         return normalized.split(/\n##\s+/g).map((chunk) => chunk.trim()).filter(Boolean).map((chunk) => {
@@ -906,10 +868,8 @@
           return { title: titleLine.trim(), body: rest.join("\n").trim() };
         });
       }
-
       const parts = cleaned.split(/\n##\s+/g);
       if (parts.length === 1) return [{ title: "Report", body: cleaned }];
-
       const sections = [];
       if (parts[0].trim()) sections.push({ title: "Report", body: parts[0].trim() });
       for (let i = 1; i < parts.length; i++) {
@@ -921,10 +881,37 @@
       return sections;
     }
 
-    // Keep remap conservative (only when truly 2 diarized speakers)
+    function renderReportInto(reportMd, reportGridEl) {
+      reportGridEl.innerHTML = "";
+      const sections = splitReportIntoSections(reportMd);
+      if (!sections.length) {
+        const card = document.createElement("div");
+        card.className = "reportCard";
+        card.innerHTML = `<div class="reportHead">Report</div><div class="reportBody"><p>(empty)</p></div>`;
+        reportGridEl.appendChild(card);
+        return;
+      }
+      sections.forEach((s, i) => {
+        const card = document.createElement("div");
+        card.className = "reportCard";
+        const head = document.createElement("div");
+        head.className = "reportHead";
+        head.textContent = s.title || `Section ${i + 1}`;
+        const body = document.createElement("div");
+        body.className = "reportBody";
+        body.innerHTML = renderMiniMarkdown(s.body || "");
+        let open = (i < 2);
+        body.style.display = open ? "block" : "none";
+        head.addEventListener("click", () => { open = !open; body.style.display = open ? "block" : "none"; });
+        card.appendChild(head);
+        card.appendChild(body);
+        reportGridEl.appendChild(card);
+      });
+    }
+
+    // transcript renderer (kept stable)
     function computeSpeakerDisplayMap(parsedLines) {
       const labels = [...new Set(parsedLines.map(x => x.speaker).filter(Boolean))];
-
       if (labels.some(l => /^you$/i.test(l) || /^prospect$/i.test(l))) return null;
 
       const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
@@ -938,70 +925,42 @@
       const aLabel = labels[0];
       const bLabel = labels[1];
 
-      const textFor = (label) => parsedLines
-        .filter(x => x.speaker === label)
-        .map(x => x.text || "")
-        .join(" ")
-        .slice(0, 4000);
+      const textFor = (label) => parsedLines.filter(x => x.speaker === label).map(x => x.text || "").join(" ").slice(0, 4000);
 
-      const repSignals = [
-        /\bhey\b/i, /\bhi\b/i, /\bthis\s+is\b/i, /\bmy\s+name\s+is\b/i, /\bi['’]?m\b/i,
-        /\bcalling\b/i, /\breaching\s+out\b/i, /\bquick\b/i, /\bseconds?\b/i, /\bcan\s+i\b/i, /\bdo\s+you\s+have\b/i
-      ];
-      const prospectSignals = [
-        /\bnot\s+interested\b/i, /\bprobably\s+not\b/i, /\bjust\s+email\b/i, /\bhow\s+much\b/i,
-        /\bwe\s+already\b/i, /\bwe['’]?re\s+good\b/i, /\bstop\s+calling\b/i, /\bwho\s+is\s+this\b/i
-      ];
+      const repSignals = [/\bmy name's\b/i,/\bmy name is\b/i,/\bi['’]?m\b/i,/\bcalling\b/i,/\bquick\b/i,/\bcan i\b/i,/\bdo you have\b/i];
+      const prospectSignals = [/\bnot interested\b/i,/\bjust email\b/i,/\bwe already\b/i,/\bwe['’]?re good\b/i,/\bstop calling\b/i];
 
       const score = (txt) => {
         let rep = 0, pro = 0;
         for (const r of repSignals) if (r.test(txt)) rep++;
         for (const p of prospectSignals) if (p.test(txt)) pro++;
-        return { rep, pro, net: rep - pro };
+        return { net: rep - pro };
       };
 
       const a = score(textFor(aLabel));
       const b = score(textFor(bLabel));
-
-      const diff = Math.abs(a.net - b.net);
-      if (diff < 2) return null;
+      if (Math.abs(a.net - b.net) < 2) return null;
 
       const aIsYou = a.net > b.net;
-      return {
-        [aLabel]: aIsYou ? "You" : "Prospect",
-        [bLabel]: aIsYou ? "Prospect" : "You",
-      };
+      return { [aLabel]: aIsYou ? "You" : "Prospect", [bLabel]: aIsYou ? "Prospect" : "You" };
     }
 
-    // accepts either transcript string OR transcript_lines array
     function renderTranscriptInto(transcriptOrLines, transcriptBoxEl) {
       transcriptBoxEl.innerHTML = "";
-
       let parsed = [];
 
       if (Array.isArray(transcriptOrLines)) {
-        parsed = transcriptOrLines
-          .map(x => ({
-            speaker: String(x?.speaker || "Other").trim() || "Other",
-            text: String(x?.text || "").trim(),
-          }))
-          .filter(x => x.text);
+        parsed = transcriptOrLines.map(x => ({
+          speaker: String(x?.speaker || "Other").trim() || "Other",
+          text: String(x?.text || "").trim(),
+        })).filter(x => x.text);
       } else {
-        const rawLines = String(transcriptOrLines || "")
-          .split("\n")
-          .map(s => s.trim())
-          .filter(Boolean);
-
+        const rawLines = String(transcriptOrLines || "").split("\n").map(s => s.trim()).filter(Boolean);
         parsed = rawLines.map((line) => {
           let speaker = "Other";
           let text = line;
-
           const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
-          if (m) {
-            speaker = (m[1] || "Other").replace(/\s+/g, " ").trim();
-            text = (m[2] || "").trim();
-          }
-
+          if (m) { speaker = (m[1] || "Other").replace(/\s+/g, " ").trim(); text = (m[2] || "").trim(); }
           speaker = speaker.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
           return { speaker, text };
         }).filter(x => x.text);
@@ -1019,12 +978,7 @@
 
       parsed.forEach((p, idx) => {
         const displaySpeaker = remap?.[p.speaker] || p.speaker;
-
-        const chipClass =
-          /^you$/i.test(displaySpeaker) ? "you" :
-          /^prospect$/i.test(displaySpeaker) ? "pro" :
-          "other";
-
+        const chipClass = /^you$/i.test(displaySpeaker) ? "you" : /^prospect$/i.test(displaySpeaker) ? "pro" : "other";
         const row = document.createElement("div");
         row.className = "tLine";
         row.innerHTML = `
@@ -1036,68 +990,9 @@
       });
     }
 
-    function renderReportInto(reportMd, reportGridEl) {
-      reportGridEl.innerHTML = "";
-      const sections = splitReportIntoSections(reportMd);
-
-      if (!sections.length) {
-        const card = document.createElement("div");
-        card.className = "reportCard";
-        card.innerHTML = `<div class="reportHead">Report</div><div class="reportBody"><p>(empty)</p></div>`;
-        reportGridEl.appendChild(card);
-        return;
-      }
-
-      sections.forEach((s, i) => {
-        const card = document.createElement("div");
-        card.className = "reportCard";
-
-        const head = document.createElement("div");
-        head.className = "reportHead";
-        head.textContent = s.title || `Section ${i + 1}`;
-
-        const body = document.createElement("div");
-        body.className = "reportBody";
-        body.innerHTML = renderMiniMarkdown(s.body || "");
-
-        let open = (i < 2);
-        body.style.display = open ? "block" : "none";
-        head.addEventListener("click", () => {
-          open = !open;
-          body.style.display = open ? "block" : "none";
-        });
-
-        card.appendChild(head);
-        card.appendChild(body);
-        reportGridEl.appendChild(card);
-      });
-    }
-
-    function normalizeOutcomeKey(outcomeRaw) {
-      const s = String(outcomeRaw || "").trim();
-      if (!s) return "";
-      if (/^[A-Z0-9_]+$/.test(s)) return s;
-      return s
-        .replace(/[^\w\s-]/g, "")
-        .replace(/\s+/g, "_")
-        .replace(/-+/g, "_")
-        .toUpperCase();
-    }
-
-    function outcomeLabel(outcomeRaw) {
-      const key = normalizeOutcomeKey(outcomeRaw);
-      if (!key) return "—";
-      return key
-        .toLowerCase()
-        .split("_")
-        .map(w => w ? (w[0].toUpperCase() + w.slice(1)) : "")
-        .join(" ");
-    }
-
-    function outcomeTooltip(outcomeRaw) {
-      const key = normalizeOutcomeKey(outcomeRaw);
-      if (!key) return "";
-      return outcomeHelp[key] || "Auto-classified call result.";
+    function pick(obj, keys, fallback = "") {
+      for (const k of keys) { if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k]; }
+      return fallback;
     }
 
     function renderSummaryInto(resp, opts) {
@@ -1114,7 +1009,6 @@
       })();
 
       const inferredList = pick(resp, ["inferred_lines", "inferredLines", "inferred", "inferredFromTranscript", "inferred_from_transcript"], null);
-
       let inferredItems = [];
       if (Array.isArray(inferredList)) inferredItems = inferredList.map(String);
       else if (inferredList && typeof inferredList === "object") {
@@ -1129,8 +1023,7 @@
         if (scenarioValue && templateGuidance[scenarioValue]) derivedTemplate = templateGuidance[scenarioValue];
       }
 
-      const callOutcomeRaw = pick(resp, ["call_outcome", "callOutcome", "outcome"], "");
-      const callOutcomeKey = normalizeOutcomeKey(callOutcomeRaw);
+      const callOutcomeRaw = pick(resp, ["call_outcome", "callOutcome", "outcome", "call_result", "callResult"], "");
       const callOutcome = callOutcomeRaw ? outcomeLabel(callOutcomeRaw) : "(unknown)";
       const callOutcomeReason = pick(resp, ["call_outcome_reason","outcomeReason","outcome_reason"], "");
 
@@ -1143,7 +1036,6 @@
 
         const vEl = document.createElement("div");
         vEl.className = "v";
-
         if (vNodeOrText instanceof Node) vEl.appendChild(vNodeOrText);
         else vEl.textContent = String(vNodeOrText || "");
 
@@ -1159,11 +1051,7 @@
       if (inferredItems.length) {
         const ul = document.createElement("ul");
         ul.className = "bullets";
-        inferredItems.forEach((x) => {
-          const li = document.createElement("li");
-          li.textContent = x;
-          ul.appendChild(li);
-        });
+        inferredItems.forEach((x) => { const li = document.createElement("li"); li.textContent = x; ul.appendChild(li); });
         addKV("Inferred from Transcript", ul);
       } else {
         addKV("Inferred from Transcript", "(none)");
@@ -1173,13 +1061,13 @@
 
       const outcomeSpan = document.createElement("span");
       outcomeSpan.textContent = callOutcome;
-      outcomeSpan.title = outcomeTooltip(callOutcomeKey || callOutcomeRaw);
+      outcomeSpan.title = outcomeTooltip(callOutcomeRaw);
       addKV("Call Result", outcomeSpan);
 
       if (callOutcomeReason) addKV("Why this result", callOutcomeReason);
     }
 
-    // ---- AI assistance ----
+    // AI assistance (keep "good enough" state)
     const assistPill = document.getElementById("assistPill");
     const assistBody = document.getElementById("assistBody");
     const assistActions = document.getElementById("assistActions");
@@ -1188,112 +1076,52 @@
       const t = String(text || "").toLowerCase();
       const words = scenarioKeywords[key] || [];
       let score = 0;
-      for (const kw of words) {
-        if (!kw) continue;
-        if (t.includes(kw)) score++;
-      }
+      for (const kw of words) if (kw && t.includes(kw)) score++;
       return score;
     }
 
     function bestScenarioForContext(ctx) {
-      const scores = scenarioTemplates
-        .map(([k]) => k)
-        .filter(Boolean)
-        .map((k) => ({ k, score: scoreScenario(ctx, k) }))
+      const scores = scenarioTemplates.map(([k]) => k).filter(Boolean).map((k) => ({ k, score: scoreScenario(ctx, k) }))
         .sort((a, b) => b.score - a.score);
-
-      const top = scores[0] || { k: "", score: 0 };
-      const second = scores[1] || { k: "", score: 0 };
-      return { top, second, scores };
+      return { top: scores[0] || { k: "", score: 0 }, scores };
     }
 
-    function setAssist(state, pillText, bodyText) {
+    function setAssist(pillText, bodyText, border) {
       assistPill.textContent = pillText;
       assistBody.textContent = bodyText;
       assistActions.classList.add("hidden");
       assistActions.innerHTML = "";
-
-      if (state === "good") assistPill.style.borderColor = "rgba(22,163,74,0.22)";
-      else if (state === "warn") assistPill.style.borderColor = "rgba(245,158,11,0.28)";
-      else if (state === "bad") assistPill.style.borderColor = "rgba(239,68,68,0.28)";
-      else assistPill.style.borderColor = "rgba(15,23,42,0.10)";
-    }
-
-    function addAssistAction(label, onClick) {
-      assistActions.classList.remove("hidden");
-      const b = document.createElement("button");
-      b.className = "assistBtn";
-      b.textContent = label;
-      b.addEventListener("click", onClick);
-      assistActions.appendChild(b);
+      assistPill.style.borderColor = border || "rgba(15,23,42,0.10)";
     }
 
     function updateAssist() {
       const ctx = (contextEl.value || "").trim();
       const selected = categoryEl.value || "";
 
-      if (ctx.length < 10) {
-        setAssist("neutral", "Waiting…", "Type a short context (10+ chars) to get guidance.");
-        return;
-      }
+      if (ctx.length < 10) { setAssist("Waiting…", "Type a short context (10+ chars) to get guidance."); return; }
 
       if (!selected) {
         const { top } = bestScenarioForContext(ctx);
-        if (top.score >= 2) {
-          const suggestedLabel = scenarioTemplates.find(([v]) => v === top.k)?.[1] || top.k;
-          setAssist("warn", "Pick a scenario", `Your context strongly matches: ${suggestedLabel}.\nPick it to reduce mismatches and improve report wording.`);
-          addAssistAction("Use suggested scenario", () => {
-            categoryEl.value = top.k;
-            updateAssist();
-          });
-        } else {
-          setAssist("neutral", "No scenario", "Scenario is optional. If you pick one, the report will use tighter examples and language.");
-        }
+        if (top.score >= 2) setAssist("Suggestion", `Your context strongly matches: ${scenarioTemplates.find(([v]) => v === top.k)?.[1] || top.k}.`, "rgba(245,158,11,0.28)");
+        else setAssist("Optional", "Scenario is optional. Pick one if you want tighter wording.");
         return;
       }
 
-      const { top, second } = bestScenarioForContext(ctx);
-
-      const selectedScore = scoreScenario(ctx, selected);
-      const topLabel = scenarioTemplates.find(([v]) => v === top.k)?.[1] || top.k;
-      const selectedLabel = scenarioTemplates.find(([v]) => v === selected)?.[1] || selected;
-
-      // Stricter mismatch: if we have a strong top match and selected is weak OR different
-      const strongTop = top.score >= 2;
-      const mismatch =
-        strongTop &&
-        top.k !== selected &&
-        (top.score - selectedScore >= 2 || selectedScore === 0);
-
-      if (mismatch) {
-        setAssist("bad", "Mismatch likely", `Your context looks more like: ${topLabel}\nBut you selected: ${selectedLabel}\nThis will reduce accuracy. Either change scenario or rewrite context to match.`);
-        addAssistAction("Switch to suggested", () => {
-          categoryEl.value = top.k;
-          updateAssist();
-        });
-        addAssistAction("Show rewrite example", () => {
-          const ex = `Rewrite example for ${selectedLabel}:\n"Calling a ${selectedLabel.toLowerCase()} prospect about [your offer]. Goal: book a short next step."`;
-          toast("good","Example:", ex, 3800);
-        });
-        return;
-      }
-
-      // If selected is strong enough, call it good; else warn.
-      if (selectedScore >= 2) {
-        const nudge = templateGuidance[selected] ? `\n\nTemplate nudge: ${templateGuidance[selected]}` : "";
-        setAssist("good", "Looks aligned", `Context matches your selected scenario.${nudge}`);
-      } else {
-        setAssist("warn", "Weak match", `Your scenario is "${selectedLabel}" but the context doesn't include strong signals.\nAdd 1–2 specifics (offer + prospect type) to improve accuracy.`);
-      }
+      const s = scoreScenario(ctx, selected);
+      if (s >= 2) setAssist("Looks aligned", `Context matches your selected scenario.\n\nTemplate nudge: ${templateGuidance[selected] || ""}`, "rgba(22,163,74,0.22)");
+      else setAssist("Weak match", "Add 1–2 specifics (offer + prospect type) to improve accuracy.", "rgba(245,158,11,0.28)");
     }
 
-    // ---- DOM ----
+    // DOM
+    const appLayout = document.getElementById("appLayout");
+
     const viewLanding = document.getElementById("viewLanding");
     const viewLogin = document.getElementById("viewLogin");
     const viewSessionExpired = document.getElementById("viewSessionExpired");
     const viewHome = document.getElementById("viewHome");
     const viewCalibrate = document.getElementById("viewCalibrate");
     const viewRun = document.getElementById("viewRun");
+    const viewSupport = document.getElementById("viewSupport");
 
     const sidebar = document.getElementById("sidebar");
     const navDashboard = document.getElementById("navDashboard");
@@ -1335,7 +1163,6 @@
     const runTitleEl = document.getElementById("runTitle");
     const runSubtitleEl = document.getElementById("runSubtitle");
 
-    // calibrate DOM
     const categoryEl = document.getElementById("category");
     const audioEl = document.getElementById("audio");
     const contextEl = document.getElementById("context");
@@ -1352,21 +1179,28 @@
     const diagnosticsMonoEl = document.getElementById("diagnosticsMono");
     const rawJsonEl = document.getElementById("rawJson");
 
-    // run viewer DOM
     const summaryKVEl2 = document.getElementById("summaryKV2");
     const transcriptBoxEl2 = document.getElementById("transcriptBox2");
     const reportGridEl2 = document.getElementById("reportGrid2");
 
+    const supportBanners = document.getElementById("supportBanners");
+    const supportMsg = document.getElementById("supportMsg");
+    const btnSendSupport = document.getElementById("btnSendSupport");
+    const supportStatus = document.getElementById("supportStatus");
+
     fillSelect(categoryEl, scenarioTemplates);
 
     categoryEl.addEventListener("change", updateAssist);
-    contextEl.addEventListener("input", () => {
-      // debounce-ish
-      clearTimeout(window.__assistT);
-      window.__assistT = setTimeout(updateAssist, 120);
-    });
+    contextEl.addEventListener("input", () => { clearTimeout(window.__assistT); window.__assistT = setTimeout(updateAssist, 120); });
 
-    // ---- Supabase init ----
+    function isDevMode() {
+      const url = new URL(window.location.href);
+      const qp = url.searchParams.get("dev");
+      if (qp === "1" || qp === "true") { localStorage.setItem("calibrate_dev", "1"); return true; }
+      return localStorage.getItem("calibrate_dev") === "1";
+    }
+
+    // Supabase
     let sb = null;
     let session = null;
     let config = null;
@@ -1378,19 +1212,12 @@
       const r = await fetch("/api/config");
       config = await r.json();
       if (!config?.supabaseUrl || !config?.supabaseAnonKey) throw new Error("Missing Supabase config from /api/config");
-
       const createClient = window.supabase?.createClient;
       if (!createClient) throw new Error("Supabase JS not loaded");
-
       sb = createClient(config.supabaseUrl, config.supabaseAnonKey);
-
       const { data } = await sb.auth.getSession();
       session = data.session;
-
-      sb.auth.onAuthStateChange((_event, newSession) => {
-        session = newSession;
-        renderRoute();
-      });
+      sb.auth.onAuthStateChange((_event, newSession) => { session = newSession; renderRoute(); });
     }
 
     function hideAllViews() {
@@ -1400,40 +1227,38 @@
       viewHome.classList.add("hidden");
       viewCalibrate.classList.add("hidden");
       viewRun.classList.add("hidden");
+      viewSupport.classList.add("hidden");
     }
 
     function setActiveNav(path) {
-      const btns = [navDashboard, navUpload, navRecord, navPractice];
+      const btns = [navDashboard, navUpload, navRecord, navPractice, navSupport];
       btns.forEach(b => b.classList.remove("active"));
-
       if (path === "/home") navDashboard.classList.add("active");
       else if (path === "/calibrate") navUpload.classList.add("active");
       else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
+      else if (path === "/support") navSupport.classList.add("active");
     }
 
     function updateTopNav() {
       const loggedIn = !!session;
+
       btnSignIn.classList.toggle("hidden", loggedIn);
       btnSignOut.classList.toggle("hidden", !loggedIn);
       btnHome.classList.toggle("hidden", !loggedIn);
       btnNew.classList.toggle("hidden", !loggedIn);
       who.classList.toggle("hidden", !loggedIn);
-
       sidebar.classList.toggle("hidden", !loggedIn);
+
+      // CRITICAL: prevent landing/login from being offset by invisible sidebar column
+      appLayout.classList.toggle("noSidebar", !loggedIn);
 
       if (loggedIn) who.textContent = session.user?.email || "Signed in";
       else who.textContent = "";
     }
 
-    function authHeader() {
-      if (!session?.access_token) return {};
-      return { Authorization: "Bearer " + session.access_token };
-    }
+    function authHeader() { return session?.access_token ? { Authorization: "Bearer " + session.access_token } : {}; }
 
-    async function safeJson(r) {
-      try { return await r.json(); }
-      catch { return {}; }
-    }
+    async function safeJson(r) { try { return await r.json(); } catch { return {}; } }
 
     async function trySilentRefresh() {
       if (!sb) return null;
@@ -1442,9 +1267,7 @@
         if (error) return null;
         session = data?.session || null;
         return session;
-      } catch {
-        return null;
-      }
+      } catch { return null; }
     }
 
     function handleSessionExpired(msg) {
@@ -1464,10 +1287,7 @@
       const opts1 = { ...options, headers: { ...(options.headers || {}), ...authHeader() } };
       const r1 = await fetch(url, opts1);
 
-      if (r1.status !== 401) {
-        const j1 = await safeJson(r1);
-        return { ok: r1.ok, status: r1.status, json: j1 };
-      }
+      if (r1.status !== 401) return { ok: r1.ok, status: r1.status, json: await safeJson(r1) };
 
       const refreshed = await trySilentRefresh();
       if (!refreshed?.access_token) {
@@ -1479,85 +1299,92 @@
       const opts2 = { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + refreshed.access_token } };
       const r2 = await fetch(url, opts2);
       const j2 = await safeJson(r2);
-
       if (r2.status === 401) handleSessionExpired(j2?.error || "Session expired. Please sign in again.");
-
       return { ok: r2.ok, status: r2.status, json: j2 };
     }
 
-    // ---- Nav buttons ----
+    // Top buttons
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
     btnSignIn.addEventListener("click", () => goto("/login"));
-    btnSignOut.addEventListener("click", async () => {
-      if (!sb) return;
-      await sb.auth.signOut();
-      goto("/");
-    });
+    btnSignOut.addEventListener("click", async () => { if (!sb) return; await sb.auth.signOut(); goto("/"); });
 
-    btnGetStarted.addEventListener("click", () => {
-      if (session) goto("/home");
-      else goto("/login");
-    });
-
+    btnGetStarted.addEventListener("click", () => { if (session) goto("/home"); else goto("/login"); });
     btnBackHome.addEventListener("click", () => goto("/home"));
     btnGoSignIn.addEventListener("click", () => goto("/login"));
     btnGoLanding.addEventListener("click", () => goto("/"));
 
-    // Sidebar + quick actions
+    // Sidebar nav
     navDashboard.addEventListener("click", () => goto("/home"));
     navUpload.addEventListener("click", () => goto("/calibrate"));
     navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
     navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
-    navSupport.addEventListener("click", () => toast("good", "Support:", "Contact Support endpoint can be added next (currently placeholder)."));
+    navSupport.addEventListener("click", () => goto("/support"));
 
     qaUpload.addEventListener("click", () => goto("/calibrate"));
     qaRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
     qaPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
 
-    // ---- Login actions ----
+    // Login actions
     btnMagicLink.addEventListener("click", async () => {
-      loginBanners.innerHTML = "";
-      loginStatus.textContent = "";
-
+      loginBanners.innerHTML = ""; loginStatus.textContent = "";
       const email = (emailEl.value || "").trim();
       if (!email) { loginBanners.appendChild(banner("bad", "Error:", "Enter an email.")); return; }
 
       try {
         btnMagicLink.disabled = true;
         loginStatus.textContent = "Sending magic link…";
-
-        await sb.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: window.location.origin + "/home" },
-        });
-
+        await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin + "/home" }});
         loginBanners.appendChild(banner("good", "Sent:", "Check your email for the magic link."));
         loginStatus.textContent = "";
       } catch (e) {
         loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
         loginStatus.textContent = "";
-      } finally {
-        btnMagicLink.disabled = false;
-      }
+      } finally { btnMagicLink.disabled = false; }
     });
 
     btnGoogle.addEventListener("click", async () => {
-      loginBanners.innerHTML = "";
-      loginStatus.textContent = "";
+      loginBanners.innerHTML = ""; loginStatus.textContent = "";
       try {
-        await sb.auth.signInWithOAuth({
-          provider: "google",
-          options: { redirectTo: window.location.origin + "/home" },
-        });
+        await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + "/home" }});
       } catch (e) {
         loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
       }
     });
 
-    // ---- History ----
-    let runsLoadSeq = 0;
+    // Support send
+    btnSendSupport.addEventListener("click", async () => {
+      supportBanners.innerHTML = "";
+      supportStatus.textContent = "";
+      const msg = (supportMsg.value || "").trim();
+      if (msg.length < 10) { supportBanners.appendChild(banner("bad", "Error:", "Write at least 10 characters.")); return; }
 
+      try {
+        btnSendSupport.disabled = true;
+        supportStatus.textContent = "Sending…";
+        const { ok, status, json } = await fetchJsonAuthed("/api/support", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: msg, page: window.location.pathname }),
+        });
+        if (!ok) {
+          if (status !== 401) supportBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to send."));
+          supportStatus.textContent = "";
+          return;
+        }
+        supportMsg.value = "";
+        supportBanners.appendChild(banner("good", "Sent:", "Support ticket created. We’ll follow up by email."));
+        supportStatus.textContent = "";
+      } catch (e) {
+        supportBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
+        supportStatus.textContent = "";
+      } finally {
+        btnSendSupport.disabled = false;
+      }
+    });
+
+    // History
+    let runsLoadSeq = 0;
     async function loadRuns() {
       const seq = ++runsLoadSeq;
       homeBanners.innerHTML = "";
@@ -1576,35 +1403,25 @@
         const runs = json.runs || [];
         runsTbody.innerHTML = "";
 
-        if (!runs.length) {
-          homeStatus.textContent = "No runs yet.";
-          return;
-        }
-
+        if (!runs.length) { homeStatus.textContent = "No runs yet."; return; }
         homeStatus.textContent = "";
 
         for (const run of runs) {
           const tr = document.createElement("tr");
 
-          const title = run.title || run.run_title || "Call Analysis";
-          const titleFull = run.title_full || title;
-          const titleShort = run.title_short || title;
+          const titleFull = run.title_full || run.title || "Call Analysis";
+          const titleShort = run.title_short || run.title || titleFull;
 
           const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
 
           const outcomeRaw = run.call_outcome || "—";
-          const oKey = normalizeOutcomeKey(outcomeRaw);
           const oLabel = outcomeLabel(outcomeRaw);
           const oTip = outcomeTooltip(outcomeRaw);
 
           tr.innerHTML = `
-            <td class="colReport">
-              <span class="truncate" title="${escapeHtml(titleFull)}">${escapeHtml(titleShort)}</span>
-            </td>
+            <td class="colReport"><span class="truncate" title="${escapeHtml(titleFull)}">${escapeHtml(titleShort)}</span></td>
             <td>${escapeHtml(scenario)}</td>
-            <td>
-              <span title="${escapeHtml(oTip)}">${escapeHtml(oLabel)}</span>
-            </td>
+            <td><span title="${escapeHtml(oTip)}">${escapeHtml(oLabel)}</span></td>
           `;
 
           tr.addEventListener("click", () => goto("/runs/" + run.id));
@@ -1617,9 +1434,8 @@
       }
     }
 
-    // ---- Run viewer ----
+    // Run viewer
     let runLoadSeq = 0;
-
     async function loadRun(runId) {
       const seq = ++runLoadSeq;
       runBanners.innerHTML = "";
@@ -1637,7 +1453,6 @@
         }
 
         const run = json.run;
-
         const createdAt = run.created_at ? new Date(run.created_at).toLocaleString() : "";
         const titleFull = run.title_full || run.title || run.run_title || "Call Analysis";
         const titleShort = run.title_short || run.title || titleFull;
@@ -1646,12 +1461,10 @@
         runTitleEl.title = titleFull || "";
         runSubtitleEl.textContent = createdAt ? `Submitted at ${createdAt}` : "";
 
-        // sidebar sub-indicator
-        if (navCurrentRun) {
-          navCurrentRun.textContent = titleShort || "Viewing report";
-          navCurrentRun.title = titleFull || "";
-          navCurrentRun.classList.remove("hidden");
-        }
+        // show sidebar indicator (below Home)
+        navCurrentRun.textContent = titleShort || "Viewing report";
+        navCurrentRun.title = titleFull || "";
+        navCurrentRun.classList.remove("hidden");
 
         const diag = run.diagnostics || {};
         const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : [];
@@ -1667,17 +1480,10 @@
           call_outcome_reason: run.call_outcome_reason || pick(diag, ["call_outcome_reason","outcomeReason","outcome_reason"], ""),
         });
 
-        renderSummaryInto(resp, {
-          summaryKVEl: summaryKVEl2,
-          scenarioValue,
-          userContext,
-          submittedAt: createdAt ? createdAt : "",
-        });
-
+        renderSummaryInto(resp, { summaryKVEl: summaryKVEl2, scenarioValue, userContext, submittedAt: createdAt || "" });
         renderTranscriptInto(transcriptLines, transcriptBoxEl2);
         renderReportInto(reportMd || pick(resp, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl2);
 
-        // mismatch banner only if scenario selected (NOT None)
         if (scenarioValue && (run.mismatch || run.scenario_mismatch)) {
           runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
         }
@@ -1687,39 +1493,32 @@
       }
     }
 
-    // ---- Calibrate (new run) ----
+    // Calibrate (new run)
     function renderBanners(resp) {
       bannersEl.innerHTML = "";
-
       const selectedScenario = categoryEl.value || "";
-      const conflict = pick(resp, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "");
-      const outcomeBanner = pick(resp, ["call_outcome_banner", "callOutcomeBanner"], "");
-      const warn = pick(resp, ["warning", "warnings", "banner", "bannerText"], null);
-
-      // Only show mismatch banner when scenario is actually selected
+      const conflict = pick(resp, ["context_conflict_banner","contextConflictBanner","scenarioMismatch","scenario_mismatch"], "");
+      const warn = pick(resp, ["warning","warnings","banner","bannerText"], null);
       if (selectedScenario && conflict) bannersEl.appendChild(banner("warn", "Scenario mismatch:", String(conflict)));
-      if (outcomeBanner) bannersEl.appendChild(banner("warn", "Outcome:", String(outcomeBanner)));
-
       if (warn) {
         if (Array.isArray(warn)) warn.forEach((w) => bannersEl.appendChild(banner("warn", "Note:", String(w))));
         else bannersEl.appendChild(banner("warn", "Note:", String(warn)));
       }
-
       const err = pick(resp, ["error"], "");
       if (err) bannersEl.appendChild(banner("bad", "Error:", String(err)));
     }
 
     function renderDiagnostics(resp) {
-      const section5Raw = pick(resp, ["section5", "section_5", "section5Pass", "section_5_pass"], "");
+      const section5Raw = pick(resp, ["section5","section_5","section5Pass","section_5_pass"], "");
       const section5 =
         typeof section5Raw === "object" && section5Raw
-          ? (pick(section5Raw, ["pass", "ok"], "") ? "PASS" : "FAIL")
+          ? (pick(section5Raw, ["pass","ok"], "") ? "PASS" : "FAIL")
           : String(section5Raw || "");
 
-      const scriptWords = pick(resp, ["script_words", "scriptWords", "words"], "");
-      const turns = pick(resp, ["turn_count", "turns", "numTurns", "num_turns"], "");
-      const enforcer = pick(resp, ["enforcer_version", "enforcer", "enforcerVersion", "ENFORCER_VERSION"], "");
-      const outcomeReason = pick(resp, ["call_outcome_reason", "outcomeReason", "outcome_reason"], "");
+      const scriptWords = pick(resp, ["script_words","scriptWords","words"], "");
+      const turns = pick(resp, ["turn_count","turns","numTurns","num_turns"], "");
+      const enforcer = pick(resp, ["enforcer_version","enforcer","enforcerVersion","ENFORCER_VERSION"], "");
+      const outcomeReason = pick(resp, ["call_outcome_reason","outcomeReason","outcome_reason"], "");
 
       diagnosticsMonoEl.textContent =
         `Section 5: ${section5 || "(n/a)"}\n` +
@@ -1758,42 +1557,22 @@
           if (status !== 401) {
             resultsEl.classList.remove("hidden");
             bannersEl.appendChild(banner("bad", "Error:", json?.error || "Request failed."));
-            if (isDevMode()) {
-              diagnosticsDetailsEl.classList.remove("hidden");
-              renderDiagnostics(json || {});
-            }
+            if (isDevMode()) { diagnosticsDetailsEl.classList.remove("hidden"); renderDiagnostics(json || {}); }
           }
           return;
         }
 
-        if (json.run_id) {
-          goto("/runs/" + json.run_id);
-          return;
-        }
+        if (json.run_id) { goto("/runs/" + json.run_id); return; }
 
-        // Back-compat if server ever returns inline results
+        // back-compat
         resultsEl.classList.remove("hidden");
         renderBanners(json);
-
-        renderSummaryInto(json, {
-          summaryKVEl,
-          scenarioValue: categoryEl.value || "",
-          userContext: ctx,
-          submittedAt: "",
-        });
-
+        renderSummaryInto(json, { summaryKVEl, scenarioValue: categoryEl.value || "", userContext: ctx, submittedAt: "" });
         const transcriptPayload = json.transcript_lines || json.transcriptLines || json.transcript || "";
         renderTranscriptInto(transcriptPayload, transcriptBoxEl);
-
-        renderReportInto(pick(json, ["report", "coachingReport", "report_md", "reportMarkdown"], ""), reportGridEl);
-
-        if (isDevMode()) {
-          diagnosticsDetailsEl.classList.remove("hidden");
-          renderDiagnostics(json);
-        } else {
-          diagnosticsDetailsEl.classList.add("hidden");
-        }
-
+        renderReportInto(pick(json, ["report","coachingReport","report_md","reportMarkdown"], ""), reportGridEl);
+        if (isDevMode()) { diagnosticsDetailsEl.classList.remove("hidden"); renderDiagnostics(json); }
+        else diagnosticsDetailsEl.classList.add("hidden");
         statusEl.textContent = "Done ✅";
       } catch (e) {
         resultsEl.classList.remove("hidden");
@@ -1806,7 +1585,9 @@
 
     runBtn.addEventListener("click", onRun);
 
-    // ---- Routing ----
+    // Routing
+    function hideRunIndicator() { navCurrentRun.classList.add("hidden"); navCurrentRun.textContent = ""; navCurrentRun.title = ""; }
+
     async function renderRoute() {
       if (!sb) return;
 
@@ -1817,19 +1598,10 @@
       const loggedIn = !!session;
 
       setActiveNav(path);
+      hideRunIndicator();
 
-      // hide current run indicator unless in run viewer
-      if (navCurrentRun) navCurrentRun.classList.add("hidden");
-
-      const needsAuth =
-        path === "/home" ||
-        path === "/calibrate" ||
-        path.startsWith("/runs/");
-
-      if (needsAuth && !loggedIn) {
-        goto("/login");
-        return;
-      }
+      const needsAuth = path === "/home" || path === "/calibrate" || path === "/support" || path.startsWith("/runs/");
+      if (needsAuth && !loggedIn) { goto("/login"); return; }
 
       if (path === "/") {
         if (loggedIn) { goto("/home"); return; }
@@ -1857,13 +1629,19 @@
         return;
       }
 
+      if (path === "/support") {
+        viewSupport.classList.remove("hidden");
+        supportBanners.innerHTML = "";
+        supportStatus.textContent = "";
+        return;
+      }
+
       if (path === "/calibrate") {
         viewCalibrate.classList.remove("hidden");
         resultsEl.classList.add("hidden");
         bannersEl.innerHTML = "";
         statusEl.textContent = "";
         updateAssist();
-
         if (isDevMode()) diagnosticsDetailsEl.classList.remove("hidden");
         else diagnosticsDetailsEl.classList.add("hidden");
         return;
@@ -1872,10 +1650,7 @@
       if (path.startsWith("/runs/")) {
         viewRun.classList.remove("hidden");
         const runId = path.split("/runs/")[1] || "";
-        if (!runId) {
-          runBanners.appendChild(banner("bad", "Error:", "Missing run id."));
-          return;
-        }
+        if (!runId) { runBanners.appendChild(banner("bad", "Error:", "Missing run id.")); return; }
         await loadRun(runId);
         return;
       }
@@ -1883,16 +1658,9 @@
       goto("/");
     }
 
-    // Boot
     (async () => {
-      try {
-        await initSupabase();
-        renderRoute();
-      } catch (e) {
-        hideAllViews();
-        viewLanding.classList.remove("hidden");
-        landingStatus.textContent = "Init error: " + (e?.message || String(e));
-      }
+      try { await initSupabase(); renderRoute(); }
+      catch (e) { hideAllViews(); viewLanding.classList.remove("hidden"); landingStatus.textContent = "Init error: " + (e?.message || String(e)); }
     })();
   </script>
 </body>
