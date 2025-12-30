@@ -302,50 +302,130 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   }
 }
 
-// -------------------- Titles --------------------
+// -------------------- Titles (AI: 3–5 words) --------------------
 
 function stripOutcomeSuffix(title) {
   const s = String(title || "").trim();
-  // remove "— Booked Meeting" / "- Booked Meeting" / "| Booked Meeting" etc
   return s.replace(/\s*(—|-|\|)\s*(booked meeting|connected|rejected|hostile|voicemail|no answer)\s*$/i, "").trim();
 }
 
-function shortenTitle(title, maxLen = 64) {
-  const t = stripOutcomeSuffix(String(title || "").replace(/\s+/g, " ").trim());
-  if (!t) return "";
-  if (t.length <= maxLen) return t;
-  return t.slice(0, maxLen - 1).trimEnd() + "…";
+function toTitleCase(s) {
+  return String(s || "")
+    .toLowerCase()
+    .split(/\s+/g)
+    .filter(Boolean)
+    .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
 }
 
-function deriveTopicFromTranscript(transcriptText) {
-  const t = String(transcriptText || "");
-  const patterns = [
-    /\bcalling about (your|the)\s+([a-z0-9][a-z0-9 \-]{3,50})/i,
-    /\breaching out about (your|the)\s+([a-z0-9][a-z0-9 \-]{3,50})/i,
-    /\bregarding (your|the)\s+([a-z0-9][a-z0-9 \-]{3,50})/i,
-    /\babout (your|the)\s+([a-z0-9][a-z0-9 \-]{3,50})/i,
-  ];
-  for (const p of patterns) {
-    const m = t.match(p);
-    if (m && m[2]) return m[2].trim();
+function enforce3to5Words(raw) {
+  const cleaned = stripOutcomeSuffix(String(raw || ""))
+    .replace(/[“”"]/g, "")
+    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  let words = cleaned.split(" ").filter(Boolean);
+  if (words.length > 5) words = words.slice(0, 5);
+
+  // If model gives 1–2 words, we still accept, but we try to expand via fallback caller
+  return toTitleCase(words.join(" "));
+}
+
+function fallbackShortTitle({ userContext, category }) {
+  const base = stripOutcomeSuffix(String(userContext || "")).trim() || String(category || "").replace(/_/g, " ").trim() || "Call Analysis";
+  const cleaned = base
+    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = cleaned.split(" ").filter(Boolean);
+  const picked = (words.length >= 3 ? words.slice(0, 5) : words.slice(0, 5));
+  return toTitleCase(picked.join(" ")) || "Call Analysis";
+}
+
+function titleLLMConfig() {
+  // You can set any OpenAI-compatible provider here.
+  // Recommended env:
+  // TITLE_LLM_API_KEY, TITLE_LLM_BASE_URL, TITLE_LLM_MODEL
+  // If not set, we try DEEPSEEK_API_KEY (OpenAI-compatible) as a fallback.
+  const apiKey = process.env.TITLE_LLM_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || "";
+  const baseUrl =
+    process.env.TITLE_LLM_BASE_URL ||
+    process.env.DEEPSEEK_BASE_URL ||
+    process.env.OPENAI_BASE_URL ||
+    ""; // if empty -> no LLM call
+
+  const model =
+    process.env.TITLE_LLM_MODEL ||
+    process.env.DEEPSEEK_MODEL ||
+    process.env.OPENAI_MODEL ||
+    "deepseek-chat";
+
+  return { apiKey, baseUrl, model };
+}
+
+async function generateAiShortTitle({ userContext, transcript, category }) {
+  const { apiKey, baseUrl, model } = titleLLMConfig();
+
+  // If not configured, never break runs — just fallback.
+  if (!apiKey || !baseUrl) return fallbackShortTitle({ userContext, category });
+
+  const t = String(transcript || "");
+  const ctx = String(userContext || "");
+
+  // Keep payload small + focused.
+  const transcriptSnippet = t.split("\n").slice(0, 40).join("\n").slice(0, 3500);
+
+  const prompt = [
+    "Create a SHORT title for this call analysis.",
+    "Rules:",
+    "- Output ONLY the title text (no quotes, no bullets, no punctuation at the end).",
+    "- 3 to 5 words maximum.",
+    "- Title Case.",
+    "- Do NOT include the call result/outcome words (Booked/Connected/Rejected/Hostile/etc).",
+    "",
+    `Scenario (optional): ${String(category || "None")}`,
+    "",
+    `User context: ${ctx}`,
+    "",
+    "Transcript (excerpt):",
+    transcriptSnippet,
+  ].join("\n");
+
+  try {
+    const url = baseUrl.replace(/\/+$/, "") + "/v1/chat/completions";
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_tokens: 24,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You write ultra-short, high-signal titles for call analyses. Follow the rules exactly.",
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
+
+    const j = await r.json().catch(() => ({}));
+    const raw = j?.choices?.[0]?.message?.content || j?.choices?.[0]?.text || "";
+
+    const enforced = enforce3to5Words(raw);
+    if (enforced && enforced.split(/\s+/g).filter(Boolean).length >= 3) return enforced;
+
+    // If too short, fall back (still safe)
+    return fallbackShortTitle({ userContext, category });
+  } catch {
+    return fallbackShortTitle({ userContext, category });
   }
-  return "";
-}
-
-function generateRunTitle({ userContext, transcript, category }) {
-  const ctx = shortenTitle(userContext || "", 80);
-  const topic = shortenTitle(deriveTopicFromTranscript(transcript || ""), 40);
-
-  // If context is already decent, use it
-  if (ctx) return shortenTitle(ctx, 72);
-
-  // fallback to topic + category
-  const cat = category ? String(category).replace(/_/g, " ").trim() : "";
-  if (topic && cat) return shortenTitle(`${topic} (${cat})`, 72);
-  if (topic) return shortenTitle(topic, 72);
-  if (cat) return shortenTitle(`Call about ${cat}`, 72);
-
-  return "Call Analysis";
 }
 
 // -------------------- Outcome detection (override for Booked Meeting accuracy) --------------------
@@ -424,19 +504,14 @@ function detectBookedMeeting(transcriptLower) {
     /\blet['’]?s do it\b/i,
   ]);
 
-  // scoring
   let score = 0;
   if (platform) score += 2;
   if (scheduling) score += 2;
   if (acceptance) score += 1;
 
-  // Strong enough if platform+scheduling, or platform+acceptance+some scheduling cue in nearby text
   const hit = score >= 4;
-
   let evidence = "";
-  if (hit) {
-    evidence = [platform, scheduling, acceptance].filter(Boolean).join(" • ");
-  }
+  if (hit) evidence = [platform, scheduling, acceptance].filter(Boolean).join(" • ");
   return { hit, evidence };
 }
 
@@ -481,7 +556,6 @@ function computeOutcome({ llmOutcome, transcript }) {
   const raw = String(transcript || "");
   const lower = raw.toLowerCase();
 
-  // deterministic overrides (these should win)
   const booked = detectBookedMeeting(lower);
   if (booked.hit) {
     return {
@@ -518,10 +592,8 @@ function computeOutcome({ llmOutcome, transcript }) {
     };
   }
 
-  // fallback to model output, normalized
   const norm = normalizeOutcomeKey(llmOutcome || "");
   if (norm) {
-    // keep a plain-English reason even when model decides
     return {
       key: norm,
       reason: `Classified as ${norm.replace(/_/g, " ").toLowerCase()} based on overall call content.`,
@@ -594,6 +666,14 @@ app.post("/api/support", async (req, res) => {
 
 // -------------------- Runs API (history + details) --------------------
 
+function enforceShortDisplayTitle(title) {
+  const cleaned = String(title || "").trim();
+  if (!cleaned) return "Call Analysis";
+  const words = cleaned.replace(/[^\p{L}\p{N}\s'-]/gu, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (words.length <= 5) return toTitleCase(words.join(" "));
+  return toTitleCase(words.slice(0, 5).join(" "));
+}
+
 app.get("/api/runs", async (req, res) => {
   try {
     const userId = await requireUserId(req);
@@ -625,10 +705,8 @@ app.get("/api/runs", async (req, res) => {
 
       const scenario_template = r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null;
 
-      const titleComputed =
-        pick(r, ["title", "run_title", "report_title"], "") ||
-        shortenTitle(pick(r, ["user_context", "userContext"], "") || "", 72) ||
-        "Call Analysis";
+      const titleFromDb = pick(r, ["run_title", "title", "report_title"], "");
+      const titleComputed = enforceShortDisplayTitle(titleFromDb || pick(r, ["user_context", "userContext"], "") || "Call Analysis");
 
       const call_outcome = pick(r, ["call_outcome", "callOutcome", "outcome"], null);
       const call_outcome_reason = pick(r, ["call_outcome_reason", "outcome_reason", "callOutcomeReason"], null);
@@ -691,10 +769,8 @@ app.get("/api/runs/:id", async (req, res) => {
 
     const scenario_template = data.scenario_template ?? data.scenarioTemplate ?? data.category ?? null;
 
-    const titleComputed =
-      pick(data, ["title", "run_title", "report_title"], "") ||
-      shortenTitle(pick(data, ["user_context", "userContext"], "") || "", 72) ||
-      "Call Analysis";
+    const titleFromDb = pick(data, ["run_title", "title", "report_title"], "");
+    const titleComputed = enforceShortDisplayTitle(titleFromDb || pick(data, ["user_context", "userContext"], "") || "Call Analysis");
 
     const run = {
       ...data,
@@ -756,8 +832,13 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     const transcript = asr.transcript;
     const transcriptLines = asr.lines;
 
-    // Run model
-    const result = await runCalibrate({ transcript, userContext, category, legacyScenario: "" });
+    // Run model + generate AI title in parallel (title uses transcript+context)
+    const [result, aiTitleRaw] = await Promise.all([
+      runCalibrate({ transcript, userContext, category, legacyScenario: "" }),
+      generateAiShortTitle({ userContext, transcript, category }),
+    ]);
+
+    const computedTitle = enforceShortDisplayTitle(aiTitleRaw || "");
 
     // report text (sanitized)
     const reportRaw = pick(result, ["report", "coachingReport", "report_md", "reportMarkdown"], "") || "";
@@ -770,9 +851,6 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     const mismatchReason = category ? String(mismatchReasonRaw || "").trim() : "";
     const mismatch = Boolean(category && mismatchReason);
 
-    // title generation
-    const computedTitle = generateRunTitle({ userContext, transcript, category });
-
     // outcome: override booked-meeting reliably
     const llmOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], "");
     const outcome = computeOutcome({ llmOutcome, transcript });
@@ -784,7 +862,7 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       user_context: userContext,
       scenario_template: category || null,
 
-      // titles
+      // titles (short AI)
       run_title: computedTitle,
       title: computedTitle,
 
