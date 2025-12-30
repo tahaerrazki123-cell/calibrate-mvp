@@ -12,14 +12,12 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "200kb" }));
+app.use(express.json());
 
 // ---- Limits (server truth) ----
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
 const MAX_RUNS_PER_24H = 10;
-
-// Support anti-spam
-const MAX_SUPPORT_PER_24H = 20;
+const MAX_SUPPORT_MSG_CHARS = 4000;
 
 // One-run-at-a-time per user (simple in-memory lock)
 const activeRunByUser = new Map(); // userId -> startedAtMs
@@ -71,7 +69,7 @@ function supabaseService() {
   return _sbService;
 }
 
-async function requireUserId(req) {
+async function requireUser(req) {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return null;
@@ -79,22 +77,7 @@ async function requireUserId(req) {
   const sb = supabaseAnon();
   const { data, error } = await sb.auth.getUser(token);
   if (error) return null;
-  return data?.user?.id || null;
-}
-
-async function requireUserInfo(req) {
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return null;
-
-  const sb = supabaseAnon();
-  const { data, error } = await sb.auth.getUser(token);
-  if (error) return null;
-
-  const user = data?.user || null;
-  if (!user?.id) return null;
-
-  return { userId: user.id, email: user.email || null };
+  return data?.user || null;
 }
 
 function pick(obj, keys, fallback = null) {
@@ -117,11 +100,11 @@ function normalizeScenarioMismatch(row) {
 }
 
 // Insert, and if DB schema is missing a column, drop it and retry
-async function insertRunResilient(sb, payload) {
+async function insertResilient(sb, table, payload, selectCols = "id") {
   let p = { ...payload };
 
-  for (let i = 0; i < 20; i++) {
-    const { data, error } = await sb.from("runs").insert([p]).select("id").maybeSingle();
+  for (let i = 0; i < 25; i++) {
+    const { data, error } = await sb.from(table).insert([p]).select(selectCols).maybeSingle();
     if (!error) return data;
 
     const msg = String(error.message || "");
@@ -144,82 +127,66 @@ async function insertRunResilient(sb, payload) {
   throw new Error("Insert failed after retries (schema mismatch).");
 }
 
-// -------------------- Support API (reliable) --------------------
-app.post("/api/support", async (req, res) => {
-  try {
-    const info = await requireUserInfo(req);
-    if (!info) return res.status(401).json({ error: "Unauthorized" });
+function cleanText(s) {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
 
-    const message = String(req.body?.message ?? "").trim();
-    const contact = String(req.body?.contact ?? "").trim();
-    const page = String(req.body?.page ?? "").trim();
+function shortContext(ctx) {
+  const s = cleanText(ctx).replace(/[^\w\s\-\/&]+/g, "").trim();
+  if (!s) return "";
+  return s.length > 60 ? s.slice(0, 60).trim() + "…" : s;
+}
 
-    if (message.length < 5) return res.status(400).json({ error: "Message too short" });
-    if (message.length > 4000) return res.status(400).json({ error: "Message too long" });
-    if (contact.length > 200) return res.status(400).json({ error: "Contact too long" });
-    if (page.length > 300) return res.status(400).json({ error: "Page too long" });
+// Simple call-result heuristic (v1). This is intentionally strict + obvious.
+function inferCallResultFromText(transcriptText) {
+  const t = String(transcriptText || "").toLowerCase();
 
-    const sb = supabaseService();
+  const has = (re) => re.test(t);
 
-    // rate limit: max N per 24h
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { count, error: countErr } = await sb
-      .from("support_tickets")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", info.userId)
-      .gte("created_at", since);
+  // Priority order
+  if (has(/\b(book(ed)?|schedule(d)?|calendar|set up|meet(ing)?|zoom|walkthrough|demo)\b/)) return "Booked Meeting";
+  if (has(/\b(send|email)\b.*\b(info|details|it|me|over)\b/) || has(/\bjust\s+email\b/)) return "Asked to Email";
+  if (has(/\bnot interested\b/) || has(/\bno thanks\b/) || has(/\bstop calling\b/) || has(/\bwe'?re good\b/)) return "Rejected";
+  if (has(/\bvoicemail\b/) || has(/\bleave a message\b/) || has(/\bafter the tone\b/)) return "No Answer / Voicemail";
+  if (has(/\bfront desk\b/) || has(/\breception\b/) || has(/\bgatekeeper\b/) || has(/\bwho is this\b/)) return "Gatekeeper";
+  if (has(/\bfollow up\b/) || has(/\bcall me back\b/) || has(/\bcheck back\b/) || has(/\bnot a good time\b/)) return "Follow-up Needed";
+  if (has(/\bprice\b/) || has(/\bcost\b/) || has(/\bhow much\b/)) return "Pricing Question";
 
-    if (countErr) {
-      return res.status(500).json({
-        error: "Support storage not ready",
-        detail: countErr.message || String(countErr),
-      });
-    }
+  return "Connected / Unclear";
+}
 
-    if ((count || 0) >= MAX_SUPPORT_PER_24H) {
-      return res.status(429).json({ error: `Too many support messages today (${MAX_SUPPORT_PER_24H}/24h).` });
-    }
+function generateRunTitle({ userContext, category, callResult }) {
+  const ctx = shortContext(userContext);
+  const cr = String(callResult || "").trim();
+  const cat = String(category || "").trim();
 
-    const payload = {
-      user_id: info.userId,
-      user_email: info.email,
-      contact: contact || null,
-      message,
-      page: page || null,
-      user_agent: req.headers["user-agent"] || null,
-      app_version: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || null,
-      status: "new",
-    };
-
-    const { data: inserted, error: insErr } = await sb
-      .from("support_tickets")
-      .insert(payload)
-      .select("id, created_at")
-      .single();
-
-    if (insErr) {
-      return res.status(500).json({ error: "Failed to save support message", detail: insErr.message || String(insErr) });
-    }
-
-    return res.json({ ok: true, ticket_id: inserted.id, created_at: inserted.created_at });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
+  // Keep it short and human
+  if (ctx) {
+    // Example: "SEO service for beauty ecommerce — Booked Meeting"
+    if (cr && cr !== "Connected / Unclear") return `${ctx} — ${cr}`;
+    return ctx;
   }
-});
+
+  // Fallback if no context somehow
+  if (cat && cr && cr !== "Connected / Unclear") return `${cat} — ${cr}`;
+  if (cat) return cat;
+  if (cr) return cr;
+  return "Call Report";
+}
 
 // -------------------- Runs API (history + details) --------------------
 
 app.get("/api/runs", async (req, res) => {
   try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const user = await requireUser(req);
+    if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const sb = supabaseService();
 
     const { data, error } = await sb
       .from("runs")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -227,22 +194,28 @@ app.get("/api/runs", async (req, res) => {
 
     const runs = (data || []).map((r) => {
       const mismatch = Boolean(normalizeScenarioMismatch(r));
-      const runTypeRaw = r.run_type ?? r.runType ?? r.type ?? "upload";
-      const type =
-        String(runTypeRaw).toLowerCase() === "upload" ? "Upload" :
-        String(runTypeRaw).toLowerCase() === "record" ? "Record" :
-        String(runTypeRaw).toLowerCase() === "practice" ? "Practice" :
-        "Upload";
+      const scenarioTemplate = r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null;
+
+      const transcriptLines = Array.isArray(r.transcript_lines) ? r.transcript_lines : [];
+      const transcriptText = transcriptLines.map((x) => `${x.speaker}: ${x.text}`).join("\n");
+      const callResult = r.call_result || inferCallResultFromText(transcriptText);
+
+      const title =
+        r.title ||
+        generateRunTitle({
+          userContext: r.user_context || "",
+          category: scenarioTemplate || "",
+          callResult,
+        });
 
       return {
         id: r.id,
         created_at: r.created_at,
-        scenario_template: r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null,
-        call_outcome: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
-        type,
-        run_type: runTypeRaw,
+        scenario_template: scenarioTemplate,
+        call_result: callResult,
+        title,
         mismatch,
-        scenario_mismatch: mismatch,
+        mismatch_reason: r.mismatch_reason ?? null,
       };
     });
 
@@ -254,8 +227,8 @@ app.get("/api/runs", async (req, res) => {
 
 app.get("/api/runs/:id", async (req, res) => {
   try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const user = await requireUser(req);
+    if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const runId = req.params.id;
     const sb = supabaseService();
@@ -264,23 +237,80 @@ app.get("/api/runs/:id", async (req, res) => {
       .from("runs")
       .select("*")
       .eq("id", runId)
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: "Run not found" });
 
     const mismatch = Boolean(normalizeScenarioMismatch(data));
-    const runTypeRaw = data.run_type ?? data.runType ?? data.type ?? "upload";
-    const type =
-      String(runTypeRaw).toLowerCase() === "upload" ? "Upload" :
-      String(runTypeRaw).toLowerCase() === "record" ? "Record" :
-      String(runTypeRaw).toLowerCase() === "practice" ? "Practice" :
-      "Upload";
+    const transcriptLines = Array.isArray(data.transcript_lines) ? data.transcript_lines : [];
+    const transcriptText = transcriptLines.map((x) => `${x.speaker}: ${x.text}`).join("\n");
+    const callResult = data.call_result || inferCallResultFromText(transcriptText);
 
-    const run = { ...data, mismatch, scenario_mismatch: mismatch, run_type: runTypeRaw, type };
+    const scenarioTemplate = data.scenario_template ?? data.scenarioTemplate ?? data.category ?? null;
+
+    const title =
+      data.title ||
+      generateRunTitle({
+        userContext: data.user_context || "",
+        category: scenarioTemplate || "",
+        callResult,
+      });
+
+    const run = {
+      ...data,
+      mismatch,
+      scenario_mismatch: mismatch,
+      call_result: callResult,
+      title,
+      scenario_template: scenarioTemplate,
+    };
 
     return res.json({ run });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+// -------------------- Contact Support (write to Supabase) --------------------
+
+app.post("/api/support", async (req, res) => {
+  try {
+    const user = await requireUser(req);
+    if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
+
+    const message = cleanText(req.body?.message || "");
+    const contact = cleanText(req.body?.contact || "");
+    const runId = cleanText(req.body?.run_id || "");
+    const pagePath = cleanText(req.body?.page_path || "");
+
+    if (!message || message.length < 5) {
+      return res.status(400).json({ error: "Message is required (5+ characters)." });
+    }
+    if (message.length > MAX_SUPPORT_MSG_CHARS) {
+      return res.status(400).json({ error: `Message too long (max ${MAX_SUPPORT_MSG_CHARS} chars).` });
+    }
+
+    const sb = supabaseService();
+
+    const payload = {
+      user_id: user.id,
+      user_email: user.email || null,
+      message,
+      contact: contact || null,
+      run_id: runId || null,
+      page_path: pagePath || null,
+      meta: {
+        commit: process.env.RENDER_GIT_COMMIT || null,
+        enforcer: ENFORCER_VERSION,
+        ua: req.headers["user-agent"] || null,
+        ip: req.ip || null,
+      },
+    };
+
+    const inserted = await insertResilient(sb, "support_tickets", payload, "id");
+    return res.json({ ok: true, ticket_id: inserted?.id || null });
   } catch (err) {
     return res.status(500).json({ error: err?.message || String(err) });
   }
@@ -297,20 +327,13 @@ function normalizeSpeakerKey(raw) {
   return s ? s : "unknown";
 }
 
-function cleanText(s) {
-  return String(s || "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 // Heuristic role inference: only if exactly 2 speakers and confidence is decent.
 // Returns a map { "Speaker A": "You", "Speaker B": "Prospect" } or null.
 function inferYouProspectMap(lines) {
-  const speakers = [...new Set(lines.map(l => l.speaker).filter(Boolean))];
+  const speakers = [...new Set(lines.map((l) => l.speaker).filter(Boolean))];
   if (speakers.length !== 2) return null;
 
-  const textFor = (sp) =>
-    lines.filter(l => l.speaker === sp).map(l => l.text || "").join(" ").slice(0, 5000);
+  const textFor = (sp) => lines.filter((l) => l.speaker === sp).map((l) => l.text || "").join(" ").slice(0, 5000);
 
   const repSignals = [
     /\bmy name is\b/i,
@@ -321,6 +344,7 @@ function inferYouProspectMap(lines) {
     /\bdo you have (a moment|a minute)\b/i,
     /\bcan i\b/i,
     /\bwould you\b/i,
+    /\bhow are you\b/i,
     /\bnext step\b/i,
     /\bbook\b/i,
     /\bschedule\b/i,
@@ -341,7 +365,8 @@ function inferYouProspectMap(lines) {
   ];
 
   const score = (txt) => {
-    let rep = 0, pro = 0;
+    let rep = 0,
+      pro = 0;
     for (const r of repSignals) if (r.test(txt)) rep++;
     for (const p of prospectSignals) if (p.test(txt)) pro++;
     return { rep, pro, net: rep - pro };
@@ -373,10 +398,7 @@ function normalizeAssemblyUtterances(utterances) {
   for (const u of utterances || []) {
     const key = normalizeSpeakerKey(u?.speaker);
     if (!speakerMap.has(key)) {
-      const label =
-        idx < SPEAKER_LETTERS.length
-          ? `Speaker ${SPEAKER_LETTERS[idx]}`
-          : `Speaker ${idx + 1}`;
+      const label = idx < SPEAKER_LETTERS.length ? `Speaker ${SPEAKER_LETTERS[idx]}` : `Speaker ${idx + 1}`;
       speakerMap.set(key, label);
       idx++;
     }
@@ -396,7 +418,7 @@ function normalizeAssemblyUtterances(utterances) {
     }
   }
 
-  const transcript = lines.map(l => `${l.speaker}: ${l.text}`).join("\n");
+  const transcript = lines.map((l) => `${l.speaker}: ${l.text}`).join("\n");
 
   return {
     transcript,
@@ -449,11 +471,11 @@ async function transcribeWithAssemblyAI(audioBuffer) {
         return normalizeAssemblyUtterances(pollJson.utterances);
       }
 
-      // Fallback: no utterances (no diarization) — still return something stable
+      // Fallback: no utterances (no diarization)
       const text = cleanText(pollJson.text || "");
       const lines = text ? [{ speaker: "Speaker A", text }] : [];
       return {
-        transcript: lines.map(l => `${l.speaker}: ${l.text}`).join("\n"),
+        transcript: lines.map((l) => `${l.speaker}: ${l.text}`).join("\n"),
         lines,
         meta: { utterances: 0, speakers: lines.length ? 1 : 0, speaker_map: {}, role_map: null },
       };
@@ -467,24 +489,22 @@ async function transcribeWithAssemblyAI(audioBuffer) {
 }
 
 app.post("/api/run", upload.single("audio"), async (req, res) => {
-  const userId = await requireUserId(req);
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const user = await requireUser(req);
+  if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
-  if (activeRunByUser.has(userId)) {
+  if (activeRunByUser.has(user.id)) {
     return res.status(429).json({ error: "A run is already in progress. Please wait." });
   }
 
   try {
-    activeRunByUser.set(userId, Date.now());
+    activeRunByUser.set(user.id, Date.now());
 
     const file = req.file;
     if (!file?.buffer) return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
 
-    const userContext = (req.body?.context || "").trim();
-    const category = (req.body?.category || "").trim();
-
-    // Legacy scenarios removed from MVP
-    const legacyScenario = null;
+    const userContext = cleanText(req.body?.context || "");
+    const category = cleanText(req.body?.category || "");
+    const legacyScenario = cleanText(req.body?.legacyScenario || ""); // legacy tolerated, but UI no longer sends it
 
     if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
@@ -494,7 +514,7 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     const { count, error: countErr } = await sb
       .from("runs")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .gte("created_at", cutoffIso);
 
     if (countErr) return res.status(500).json({ error: countErr.message });
@@ -504,8 +524,8 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
 
     // Stable diarized transcript + structured transcript_lines
     const asr = await transcribeWithAssemblyAI(file.buffer);
-    const transcript = asr.transcript;         // "Speaker A: ..." or "You/Prospect: ..."
-    const transcriptLines = asr.lines;         // [{speaker,text}, ...]
+    const transcript = asr.transcript;
+    const transcriptLines = asr.lines;
 
     const result = await runCalibrate({ transcript, userContext, category, legacyScenario });
 
@@ -513,30 +533,39 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     const callOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], null);
 
     const mismatchReason =
-      pick(result, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "") || "";
+      pick(result, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "") ||
+      "";
     const mismatch = Boolean(mismatchReason);
 
+    const transcriptText = transcriptLines.map((x) => `${x.speaker}: ${x.text}`).join("\n");
+    const callResult = inferCallResultFromText(transcriptText);
+
+    const title = generateRunTitle({ userContext, category, callResult });
+
     const row = {
-      user_id: userId,
+      user_id: user.id,
       run_type: "upload",
       user_context: userContext,
       scenario_template: category || null,
+      legacy_scenario: legacyScenario || null,
       transcript_lines: transcriptLines,
       report_text: reportText,
       diagnostics: { ...result, _transcript_meta: asr.meta },
       call_outcome: callOutcome,
+      call_result: callResult,
+      title,
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
       mismatch_reason: mismatchReason || null,
     };
 
-    const inserted = await insertRunResilient(sb, row);
+    const inserted = await insertResilient(sb, "runs", row, "id");
     return res.json({ run_id: inserted?.id || null });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err?.message || String(err) });
   } finally {
-    activeRunByUser.delete(userId);
+    activeRunByUser.delete(user.id);
   }
 });
 
