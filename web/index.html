@@ -118,11 +118,14 @@
       display:flex; gap: 10px; align-items:flex-start;
       padding: 10px 12px;
       border-top: 1px solid var(--line);
+      min-width: 0;
     }
     .tLine:first-child { border-top: 0; }
     .ln { width: 34px; text-align:right; color: var(--muted); font-family: var(--mono); font-size: 12px; padding-top: 2px; }
+
+    /* FIX: lock speaker chip width so transcript text aligns (no “squiggly” indentation) */
     .chip {
-      flex: 0 0 auto;
+      flex: 0 0 92px;
       font-size: 12px;
       padding: 4px 8px;
       border-radius: 999px;
@@ -130,11 +133,21 @@
       border: 1px solid var(--line);
       color: var(--text);
       font-weight: 700;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .chip.you { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.28); }
     .chip.pro { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.26); }
     .chip.other { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.26); }
-    .tText { font-size: 13.5px; line-height: 1.35; white-space: pre-wrap; }
+    .tText {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 13.5px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+    }
 
     .reportGrid { display:grid; gap: 10px; }
     .reportCard {
@@ -509,11 +522,67 @@
       return sections;
     }
 
+    // FIX: safe speaker remap ONLY when we truly have 2 diarized speakers; otherwise keep Speaker 0/1/2...
+    function computeSpeakerDisplayMap(parsedLines) {
+      const labels = [...new Set(parsedLines.map(x => x.speaker).filter(Boolean))];
+
+      // If transcript already has explicit You/Prospect, don't remap anything.
+      if (labels.some(l => /^you$/i.test(l) || /^prospect$/i.test(l))) return null;
+
+      // Normalize "Speaker0" -> "Speaker 0" etc for matching.
+      const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+      const normLabels = labels.map(norm);
+
+      const speakerish = normLabels.filter(l => /^speaker\s+([a-z]|\d+)$/i.test(l));
+      const uniqueSpeakerish = [...new Set(speakerish.map(s => s.toLowerCase()))];
+
+      // Only remap if the only labels are 2 speaker labels (A/B or 0/1)
+      if (uniqueSpeakerish.length !== 2 || normLabels.length !== 2) return null;
+
+      const aLabel = labels[0];
+      const bLabel = labels[1];
+
+      const textFor = (label) => parsedLines
+        .filter(x => x.speaker === label)
+        .map(x => x.text || "")
+        .join(" ")
+        .slice(0, 4000);
+
+      const repSignals = [
+        /\bhey\b/i, /\bhi\b/i, /\bthis\s+is\b/i, /\bmy\s+name\s+is\b/i, /\bi['’]?m\b/i,
+        /\bcalling\b/i, /\breaching\s+out\b/i, /\bquick\b/i, /\bseconds?\b/i, /\bcan\s+i\b/i, /\bdo\s+you\s+have\b/i
+      ];
+      const prospectSignals = [
+        /\bnot\s+interested\b/i, /\bprobably\s+not\b/i, /\bjust\s+email\b/i, /\bhow\s+much\b/i,
+        /\bwe\s+already\b/i, /\bwe['’]?re\s+good\b/i, /\bstop\s+calling\b/i, /\bwho\s+is\s+this\b/i
+      ];
+
+      const score = (txt) => {
+        let rep = 0, pro = 0;
+        for (const r of repSignals) if (r.test(txt)) rep++;
+        for (const p of prospectSignals) if (p.test(txt)) pro++;
+        return { rep, pro, net: rep - pro };
+      };
+
+      const a = score(textFor(aLabel));
+      const b = score(textFor(bLabel));
+
+      // Only remap when we have a clear signal; otherwise keep speaker labels (trust > guessing).
+      const diff = Math.abs(a.net - b.net);
+      if (diff < 2) return null;
+
+      const aIsYou = a.net > b.net;
+      return {
+        [aLabel]: aIsYou ? "You" : "Prospect",
+        [bLabel]: aIsYou ? "Prospect" : "You",
+      };
+    }
+
     function renderTranscriptInto(transcript, transcriptBoxEl) {
       transcriptBoxEl.innerHTML = "";
-      const lines = String(transcript || "").split("\n").map(s => s.trim()).filter(Boolean);
+      const rawLines = String(transcript || "").split("\n").map(s => s.trim()).filter(Boolean);
 
-      if (!lines.length) {
+      if (!rawLines.length) {
         const empty = document.createElement("div");
         empty.className = "tLine";
         empty.innerHTML = `<div class="ln">–</div><span class="chip other">Transcript</span><div class="tText">(empty)</div>`;
@@ -521,27 +590,38 @@
         return;
       }
 
-      lines.forEach((line, idx) => {
+      const parsed = rawLines.map((line) => {
         let speaker = "Other";
         let text = line;
 
-        const m = line.match(/^([^:]{1,20}):\s*(.*)$/);
+        const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
         if (m) {
-          speaker = m[1].trim();
+          speaker = (m[1] || "Other").replace(/\s+/g, " ").trim();
           text = (m[2] || "").trim();
         }
 
+        // normalize "Speaker0" -> "Speaker 0"
+        speaker = speaker.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+
+        return { speaker, text };
+      });
+
+      const remap = computeSpeakerDisplayMap(parsed);
+
+      parsed.forEach((p, idx) => {
+        const displaySpeaker = remap?.[p.speaker] || p.speaker;
+
         const chipClass =
-          /^you$/i.test(speaker) ? "you" :
-          /^prospect$/i.test(speaker) ? "pro" :
+          /^you$/i.test(displaySpeaker) ? "you" :
+          /^prospect$/i.test(displaySpeaker) ? "pro" :
           "other";
 
         const row = document.createElement("div");
         row.className = "tLine";
         row.innerHTML = `
           <div class="ln">${idx + 1}</div>
-          <span class="chip ${chipClass}">${escapeHtml(speaker)}</span>
-          <div class="tText">${escapeHtml(text || "")}</div>
+          <span class="chip ${chipClass}">${escapeHtml(displaySpeaker)}</span>
+          <div class="tText">${escapeHtml(p.text || "")}</div>
         `;
         transcriptBoxEl.appendChild(row);
       });
@@ -795,7 +875,6 @@
     }
 
     async function fetchJsonAuthed(url, options = {}) {
-      // must have session to call authed endpoints
       if (!session?.access_token) {
         handleSessionExpired("Session missing. Please sign in again.");
         return { ok: false, status: 401, json: { error: "Unauthorized" } };
@@ -809,7 +888,6 @@
         return { ok: r1.ok, status: r1.status, json: j1 };
       }
 
-      // One silent refresh retry
       const refreshed = await trySilentRefresh();
       if (!refreshed?.access_token) {
         const j1 = await safeJson(r1);
@@ -821,9 +899,7 @@
       const r2 = await fetch(url, opts2);
       const j2 = await safeJson(r2);
 
-      if (r2.status === 401) {
-        handleSessionExpired(j2?.error || "Session expired. Please sign in again.");
-      }
+      if (r2.status === 401) handleSessionExpired(j2?.error || "Session expired. Please sign in again.");
 
       return { ok: r2.ok, status: r2.status, json: j2 };
     }
@@ -897,7 +973,6 @@
       homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
 
-      // do NOT clear rows during loading (prevents visual jump)
       try {
         const { ok, status, json } = await fetchJsonAuthed("/api/runs");
         if (seq !== runsLoadSeq) return;
@@ -1056,7 +1131,6 @@
         const { ok, status, json } = await fetchJsonAuthed("/api/run", { method: "POST", body: fd });
 
         if (!ok) {
-          // 401 is handled by fetchJsonAuthed (session expired page)
           if (status !== 401) {
             resultsEl.classList.remove("hidden");
             bannersEl.appendChild(banner("bad", "Error:", json?.error || "Request failed."));
@@ -1068,13 +1142,11 @@
           return;
         }
 
-        // backend returns run_id (persisted run)
         if (json.run_id) {
           goto("/runs/" + json.run_id);
           return;
         }
 
-        // (fallback) show inline if needed
         resultsEl.classList.remove("hidden");
         renderBanners(json);
 
@@ -1116,7 +1188,6 @@
       const path = window.location.pathname || "/";
       const loggedIn = !!session;
 
-      // protected routes
       const needsAuth =
         path === "/home" ||
         path === "/calibrate" ||

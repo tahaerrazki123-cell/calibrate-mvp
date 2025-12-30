@@ -106,9 +106,11 @@ function transcriptToLines(transcript) {
     .filter(Boolean);
 
   return lines.map((line) => {
-    const m = line.match(/^([^:]{1,30}):\s*(.*)$/);
+    const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
     if (!m) return { speaker: "Other", text: line };
-    return { speaker: (m[1] || "Other").trim(), text: (m[2] || "").trim() };
+    const speakerRaw = (m[1] || "Other").replace(/\s+/g, " ").trim();
+    const speaker = speakerRaw.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+    return { speaker, text: (m[2] || "").trim() };
   });
 }
 
@@ -214,8 +216,14 @@ function prettifyTranscript(raw) {
   if (!t) return "";
 
   t = t.replace(/\r\n/g, "\n");
-  t = t.replace(/\s*(Speaker\s*[AB]\s*:)\s*/gi, "\n$1 ");
+
+  // Normalize speaker labels (handles Speaker A/B AND Speaker 0/1/2...)
+  t = t.replace(/\s*(Speaker\s*(?:[A-Za-z]|\d+)\s*:)\s*/gim, "\n$1 ");
+
+  // Normalize common role labels into their own lines
   t = t.replace(/\s*(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "\n$1: ");
+
+  // If sentence continues then hits a label, force a new line
   t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s+(?=[A-Za-z0-9])/gi, "$1\n$2: ");
   t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "$1\n$2: ");
 
@@ -227,19 +235,31 @@ function prettifyTranscript(raw) {
 
   let lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
 
-  const labelRe = /^(Speaker\s*[AB]|Prospect|Rep|Caller|Agent|Customer)\s*:\s*(.*)$/i;
+  // Accept Speaker A/B OR Speaker 0/1/2...
+  const labelRe = /^(Speaker\s*(?:[A-Za-z]|\d+)|Prospect|Rep|Caller|Agent|Customer)\s*:\s*(.*)$/i;
+
   lines = lines.map((line) => {
     const m = line.match(labelRe);
     if (!m) return line;
 
-    const label = (m[1] || "").toLowerCase();
+    let label = (m[1] || "").replace(/\s+/g, " ").trim();
     const text = (m[2] || "").trim();
 
-    if (label.startsWith("speaker")) return `${m[1]}: ${text}`;
-    if (label === "prospect" || label === "customer") return `Prospect: ${text}`;
-    return `You: ${text}`;
+    // Standardize "Speaker0" -> "Speaker 0"
+    label = label.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+
+    const lower = label.toLowerCase();
+
+    // Keep "Speaker X" as-is (frontend may remap ONLY if truly 2 speakers)
+    if (lower.startsWith("speaker")) return `${label}: ${text}`.trim();
+
+    if (lower === "prospect" || lower === "customer") return `Prospect: ${text}`.trim();
+
+    // Rep/Caller/Agent => You
+    return `You: ${text}`.trim();
   });
 
+  // Prevent accidental double-prefixes
   lines = lines.map((l) =>
     l.replace(/^You:\s*Prospect:\s*/i, "Prospect: ").replace(/^Prospect:\s*You:\s*/i, "You: ")
   );
@@ -277,8 +297,13 @@ async function transcribeWithAssemblyAI(audioBuffer) {
 
     if (pollJson.status === "completed") {
       if (Array.isArray(pollJson.utterances) && pollJson.utterances.length) {
+        // FIX: do NOT collapse all non-zero speakers into "Speaker B".
+        // Keep the actual diarization speaker id (0/1/2/3...) to avoid lying/skew.
         return pollJson.utterances
-          .map((u) => `${u.speaker === 0 ? "Speaker A:" : "Speaker B:"} ${(u.text || "").trim()}`)
+          .map((u) => {
+            const sid = Number.isFinite(u?.speaker) ? u.speaker : "X";
+            return `Speaker ${sid}: ${(u.text || "").trim()}`.trim();
+          })
           .join("\n");
       }
       return (pollJson.text || "").trim();
