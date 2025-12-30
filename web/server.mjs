@@ -18,18 +18,6 @@ app.use(express.json());
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
 const MAX_RUNS_PER_24H = 10;
 
-const ALLOWED_EXT = new Set([".mp3", ".m4a", ".wav", ".ogg"]);
-const ALLOWED_MIME = new Set([
-  "audio/mpeg",
-  "audio/mp3",
-  "audio/mp4",
-  "audio/x-m4a",
-  "audio/wav",
-  "audio/x-wav",
-  "audio/ogg",
-  "application/ogg",
-]);
-
 // One-run-at-a-time per user (simple in-memory lock)
 const activeRunByUser = new Map(); // userId -> startedAtMs
 
@@ -128,16 +116,27 @@ function transcriptToLines(transcript) {
 async function insertRunResilient(sb, payload) {
   let p = { ...payload };
 
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 20; i++) {
     const { data, error } = await sb.from("runs").insert([p]).select("id").maybeSingle();
     if (!error) return data;
 
     const msg = String(error.message || "");
-    const m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
+
+    // Postgres style: column runs.foo does not exist
+    let m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
     if (m && m[1]) {
       delete p[m[1]];
       continue;
     }
+
+    // PostgREST schema cache style:
+    // "Could not find the 'transcript_text' column of 'runs' in the schema cache"
+    m = msg.match(/Could not find the '(\w+)' column of '(\w+)' in the schema cache/i);
+    if (m && m[1]) {
+      delete p[m[1]];
+      continue;
+    }
+
     throw new Error(msg);
   }
 
@@ -241,45 +240,6 @@ function prettifyTranscript(raw) {
     return `You: ${text}`;
   });
 
-  const speakerALines = lines.filter((l) => /^Speaker\s*A\s*:/i.test(l));
-  const speakerBLines = lines.filter((l) => /^Speaker\s*B\s*:/i.test(l));
-
-  if (speakerALines.length && speakerBLines.length) {
-    const aText = speakerALines.map((l) => l.replace(/^Speaker\s*A\s*:\s*/i, "")).join(" ");
-    const bText = speakerBLines.map((l) => l.replace(/^Speaker\s*B\s*:\s*/i, "")).join(" ");
-
-    const repSignals = [
-      /\bhey\b/i, /\bhi\b/i, /\bthis\s+is\b/i, /\bmy\s+name\s+is\b/i, /\bi['’]?m\b/i,
-      /\bi\s+help\b/i, /\bwe\s+help\b/i, /\bi['’]?ll\b/i, /\bquick\b/i, /\bseconds?\b/i,
-      /\bcan\s+i\b/i, /\bcalling\b/i,
-    ];
-    const prospectSignals = [
-      /\bwho\s+is\s+this\b/i, /\bhow\s+did\s+you\s+get\b/i, /\bnot\s+interested\b/i,
-      /\bmake\s+it\s+fast\b/i, /\bjust\s+email\b/i, /\bwhat\s+does\s+it\s+cost\b/i,
-      /\bwe['’]?ve\s+tried\b/i, /\bwe\s+already\b/i, /\bwe['’]?ve\s+been\s+burned\b/i,
-    ];
-
-    const score = (txt) => {
-      let rep = 0, pro = 0;
-      for (const r of repSignals) if (r.test(txt)) rep++;
-      for (const p of prospectSignals) if (p.test(txt)) pro++;
-      return { rep, pro, net: rep - pro };
-    };
-
-    const a = score(aText);
-    const b = score(bText);
-
-    const aIsYou = a.net !== b.net ? a.net > b.net : null;
-
-    if (aIsYou !== null) {
-      lines = lines.map((l) => {
-        if (/^Speaker\s*A\s*:/i.test(l)) return l.replace(/^Speaker\s*A\s*:/i, aIsYou ? "You:" : "Prospect:");
-        if (/^Speaker\s*B\s*:/i.test(l)) return l.replace(/^Speaker\s*B\s*:/i, aIsYou ? "Prospect:" : "You:");
-        return l;
-      });
-    }
-  }
-
   lines = lines.map((l) =>
     l.replace(/^You:\s*Prospect:\s*/i, "Prospect: ").replace(/^Prospect:\s*You:\s*/i, "You: ")
   );
@@ -345,18 +305,9 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     const file = req.file;
     if (!file?.buffer) return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
 
-    const ext = path.extname(file.originalname || "").toLowerCase();
-    if (ext && !ALLOWED_EXT.has(ext)) {
-      return res.status(400).json({ error: "Unsupported audio format. Use mp3, m4a, wav, or ogg." });
-    }
-    if (file.mimetype && !ALLOWED_MIME.has(file.mimetype)) {
-      return res.status(400).json({ error: "Unsupported audio format. Use mp3, m4a, wav, or ogg." });
-    }
-
     const userContext = (req.body?.context || "").trim();
     const category = (req.body?.category || "").trim();
     const legacyScenario = (req.body?.legacyScenario || "").trim();
-
     if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
     // per-24h limit
@@ -398,7 +349,7 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
       mismatch_reason: mismatchReason || null,
-      transcript_text: transcript, // will be auto-dropped if column doesn't exist
+      // NOTE: DO NOT send transcript_text unless you actually add that column in Supabase
     };
 
     const inserted = await insertRunResilient(sb, row);
