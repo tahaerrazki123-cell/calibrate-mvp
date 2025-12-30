@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.set("trust proxy", 1); // Render/proxies
+app.set("trust proxy", 1);
 app.use(express.json());
 
 // ---- Limits (server truth) ----
@@ -124,14 +124,12 @@ async function insertRunResilient(sb, payload) {
 
     const msg = String(error.message || "");
 
-    // Postgres style: column runs.foo does not exist
     let m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
     if (m && m[1]) {
       delete p[m[1]];
       continue;
     }
 
-    // PostgREST schema cache style:
     m = msg.match(/Could not find the '(\w+)' column of '(\w+)' in the schema cache/i);
     if (m && m[1]) {
       delete p[m[1]];
@@ -164,19 +162,22 @@ app.get("/api/runs", async (req, res) => {
 
     const runs = (data || []).map((r) => {
       const mismatch = Boolean(normalizeScenarioMismatch(r));
-      const runType =
-        r.run_type ?? r.type ?? r.runType ?? r.run_type_text ?? "upload";
+      const runTypeRaw = r.run_type ?? r.runType ?? r.type ?? "upload";
+      const type =
+        String(runTypeRaw).toLowerCase() === "upload" ? "Upload" :
+        String(runTypeRaw).toLowerCase() === "record" ? "Record" :
+        String(runTypeRaw).toLowerCase() === "practice" ? "Practice" :
+        "Upload";
 
       return {
         id: r.id,
         created_at: r.created_at,
         scenario_template: r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null,
         call_outcome: r.call_outcome ?? r.callOutcome ?? r.outcome ?? null,
-        enforcer: r.enforcer ?? r.enforcer_version ?? r.enforcerVersion ?? ENFORCER_VERSION,
+        type,
+        run_type: runTypeRaw,
         mismatch,
         scenario_mismatch: mismatch,
-        type: runType,       // for the new UI table
-        run_type: runType,   // keep both shapes for safety
       };
     });
 
@@ -205,7 +206,14 @@ app.get("/api/runs/:id", async (req, res) => {
     if (!data) return res.status(404).json({ error: "Run not found" });
 
     const mismatch = Boolean(normalizeScenarioMismatch(data));
-    const run = { ...data, mismatch, scenario_mismatch: mismatch };
+    const runTypeRaw = data.run_type ?? data.runType ?? data.type ?? "upload";
+    const type =
+      String(runTypeRaw).toLowerCase() === "upload" ? "Upload" :
+      String(runTypeRaw).toLowerCase() === "record" ? "Record" :
+      String(runTypeRaw).toLowerCase() === "practice" ? "Practice" :
+      "Upload";
+
+    const run = { ...data, mismatch, scenario_mismatch: mismatch, run_type: runTypeRaw, type };
 
     return res.json({ run });
   } catch (err) {
@@ -221,13 +229,8 @@ function prettifyTranscript(raw) {
 
   t = t.replace(/\r\n/g, "\n");
 
-  // Normalize speaker labels (handles Speaker A/B AND Speaker 0/1/2...)
   t = t.replace(/\s*(Speaker\s*(?:[A-Za-z]|\d+)\s*:)\s*/gim, "\n$1 ");
-
-  // Normalize common role labels into their own lines
   t = t.replace(/\s*(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "\n$1: ");
-
-  // If sentence continues then hits a label, force a new line
   t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s+(?=[A-Za-z0-9])/gi, "$1\n$2: ");
   t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "$1\n$2: ");
 
@@ -239,7 +242,6 @@ function prettifyTranscript(raw) {
 
   let lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
 
-  // Accept Speaker A/B OR Speaker 0/1/2...
   const labelRe = /^(Speaker\s*(?:[A-Za-z]|\d+)|Prospect|Rep|Caller|Agent|Customer)\s*:\s*(.*)$/i;
 
   lines = lines.map((line) => {
@@ -249,21 +251,16 @@ function prettifyTranscript(raw) {
     let label = (m[1] || "").replace(/\s+/g, " ").trim();
     const text = (m[2] || "").trim();
 
-    // Standardize "Speaker0" -> "Speaker 0"
     label = label.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
 
     const lower = label.toLowerCase();
-
-    // Keep "Speaker X" as-is (frontend may remap ONLY if truly 2 speakers)
     if (lower.startsWith("speaker")) return `${label}: ${text}`.trim();
 
     if (lower === "prospect" || lower === "customer") return `Prospect: ${text}`.trim();
 
-    // Rep/Caller/Agent => You
     return `You: ${text}`.trim();
   });
 
-  // Prevent accidental double-prefixes
   lines = lines.map((l) =>
     l.replace(/^You:\s*Prospect:\s*/i, "Prospect: ").replace(/^Prospect:\s*You:\s*/i, "You: ")
   );
@@ -337,7 +334,6 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
     const legacyScenario = (req.body?.legacyScenario || "").trim();
     if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
 
-    // per-24h limit
     const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const sb = supabaseService();
 
@@ -366,6 +362,7 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
 
     const row = {
       user_id: userId,
+      run_type: "upload", // safe: insertRunResilient will drop if column doesn't exist yet
       user_context: userContext,
       scenario_template: category || null,
       legacy_scenario: legacyScenario || null,
@@ -376,9 +373,6 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
       mismatch_reason: mismatchReason || null,
-
-      // Safe: if column doesn't exist, insertRunResilient will drop it.
-      run_type: "upload",
     };
 
     const inserted = await insertRunResilient(sb, row);

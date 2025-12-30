@@ -5,414 +5,330 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Calibrate</title>
 
-  <!-- Inline SVG favicon (no files needed) -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27g%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%271%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%2338bdf8%27/%3E%3Cstop%20offset%3D%27100%25%27%20stop-color%3D%27%232563eb%27/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle%20cx%3D%2732%27%20cy%3D%2732%27%20r%3D%2722%27%20fill%3D%27none%27%20stroke%3D%27url(%23g)%27%20stroke-width%3D%2710%27%20stroke-linecap%3D%27round%27%20stroke-dasharray%3D%27120%2030%27%20stroke-dashoffset%3D%2715%27/%3E%3Cpath%20d%3D%27M26%2034.5%2031.5%2040%2042%2029.5%27%20fill%3D%27none%27%20stroke%3D%27url(%23g)%27%20stroke-width%3D%278%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E"/>
+  <!-- Inline SVG favicon (Calibrate mark) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231d4ed8'/%3E%3Cstop offset='1' stop-color='%2338bdf8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M32 6a26 26 0 1 0 18.38 7.62' fill='none' stroke='url(%23g)' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M28 33l6 6 14-14' fill='none' stroke='url(%23g)' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 
   <style>
     :root{
-      --bg0:#eef5ff;
-      --bg1:#f7fbff;
+      --bg:#f4f8ff;
+      --bg2:#eef6ff;
       --card:#ffffff;
-      --text:#0f172a;
       --muted:#64748b;
-      --line:rgba(15,23,42,.10);
-      --blue:#2563eb;
-      --blue2:#38bdf8;
-      --chip:#eef2ff;
+      --text:#0f172a;
+      --line:rgba(15,23,42,0.10);
       --good:#16a34a;
       --warn:#f59e0b;
       --bad:#ef4444;
-      --shadow:0 16px 40px rgba(2,8,23,.08);
+
+      --blue:#2563eb;
+      --blue2:#38bdf8;
+
+      --shadow:0 18px 45px rgba(2,6,23,0.10);
       --radius:18px;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
     }
+
     *{box-sizing:border-box}
     body{
       margin:0;
       font-family:var(--sans);
       color:var(--text);
       background:
-        radial-gradient(900px 600px at 15% 0%, rgba(56,189,248,.22), transparent 60%),
-        radial-gradient(900px 600px at 90% 10%, rgba(37,99,235,.18), transparent 55%),
-        linear-gradient(180deg, var(--bg0), var(--bg1));
-      min-height:100vh;
+        radial-gradient(900px 500px at 20% -10%, rgba(37,99,235,0.18), transparent 60%),
+        radial-gradient(800px 450px at 100% 0%, rgba(56,189,248,0.18), transparent 55%),
+        linear-gradient(180deg, var(--bg), var(--bg2));
     }
 
-    /* Top bar */
-    .topbar{
-      position:sticky; top:0; z-index:10;
-      background:rgba(255,255,255,.75);
-      backdrop-filter:saturate(140%) blur(10px);
-      border-bottom:1px solid var(--line);
+    .wrap{max-width:1120px;margin:24px auto;padding:0 16px;}
+
+    .header{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;
     }
-    .topInner{
-      max-width:1200px;
-      margin:0 auto;
-      padding:14px 16px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:14px;
-    }
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:12px;
-      min-width:0;
-    }
-    .brandText{min-width:0}
+
+    .brand{display:flex;flex-direction:column;gap:2px}
     .brandTitle{
-      display:flex; align-items:center; gap:10px;
       margin:0;
-      font-size:20px;
-      letter-spacing:.2px;
+      display:flex;align-items:center;gap:10px;
+      font-size:22px;letter-spacing:0.2px;
       font-weight:900;
-      line-height:1.1;
-      white-space:nowrap;
     }
-    .brandSub{
-      margin:4px 0 0;
-      font-size:13.5px;
-      color:var(--muted);
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      max-width:520px;
-    }
-    .mark{
-      width:30px; height:30px;
-      border-radius:10px;
-      display:grid; place-items:center;
-      box-shadow:0 10px 22px rgba(37,99,235,.16);
-      background:linear-gradient(135deg, rgba(56,189,248,.18), rgba(37,99,235,.14));
-      border:1px solid rgba(37,99,235,.12);
-    }
-    .mark svg{display:block}
+    .brandSub{margin:0;color:var(--muted);font-size:13.5px}
 
-    .navRight{
-      display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end;
+    .logoMark{
+      width:28px;height:28px;flex:0 0 28px;
+      display:grid;place-items:center;
+      border-radius:10px;
+      background:rgba(37,99,235,0.08);
+      border:1px solid rgba(37,99,235,0.15);
     }
+    .logoMark svg{width:20px;height:20px;display:block}
+
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
     .pill{
-      font-size:12px;
-      padding:6px 10px;
-      border-radius:999px;
+      font-size:12px;padding:6px 10px;border-radius:999px;
       border:1px solid var(--line);
-      background:rgba(255,255,255,.70);
+      background:rgba(255,255,255,0.80);
       color:var(--text);
       font-weight:800;
-      max-width:260px;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:nowrap;
     }
+
     .btn{
-      appearance:none;
-      border:0;
-      cursor:pointer;
-      padding:9px 12px;
-      border-radius:12px;
+      appearance:none;border:0;
+      background:linear-gradient(135deg, rgba(37,99,235,0.95), rgba(56,189,248,0.85));
+      color:#ffffff;
       font-weight:900;
-      background:linear-gradient(135deg, rgba(37,99,235,.95), rgba(56,189,248,.75));
-      color:white;
-      box-shadow:0 10px 26px rgba(37,99,235,.18);
+      padding:10px 14px;
+      border-radius:12px;
+      cursor:pointer;
+      box-shadow:0 10px 22px rgba(37,99,235,0.18);
     }
     .btn.secondary{
-      background:rgba(255,255,255,.70);
+      background:rgba(255,255,255,0.86);
       border:1px solid var(--line);
       color:var(--text);
+      font-weight:900;
       box-shadow:none;
     }
-    .btn:disabled{opacity:.55; cursor:not-allowed}
+    .btn:disabled{opacity:0.55;cursor:not-allowed}
 
-    /* App layout */
-    .shell{
-      max-width:1200px;
-      margin:18px auto 36px;
-      padding:0 16px;
+    .status{color:var(--muted);font-size:13px}
+    .hidden{display:none !important}
+    .link{color:var(--blue);text-decoration:none;font-weight:900}
+
+    .card{
+      background:rgba(255,255,255,0.86);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:16px;
+    }
+
+    /* Layout (sidebar + main) */
+    .appLayout{
       display:grid;
       grid-template-columns: 260px 1fr;
       gap:16px;
       align-items:start;
     }
-    @media (max-width: 980px){
-      .shell{grid-template-columns:1fr}
-      .sidebar{position:relative}
+    @media (max-width: 960px){
+      .appLayout{grid-template-columns:1fr;}
+      .sidebar{position:relative;top:auto}
     }
 
-    .card{
-      background:var(--card);
-      border:1px solid var(--line);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-    }
-
-    /* Sidebar */
     .sidebar{
       position:sticky;
-      top:78px;
-      padding:12px;
+      top:16px;
+      padding:14px;
+    }
+    .sideHead{
+      display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:10px;
     }
     .sideTitle{
       font-size:12px;
+      letter-spacing:0.12em;
+      text-transform:uppercase;
       color:var(--muted);
       font-weight:900;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-      margin:10px 8px 8px;
+      margin:0;
     }
-    .sideItem{
+    .navList{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+    .navItem{
       width:100%;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
+      display:flex;align-items:center;justify-content:space-between;
       gap:10px;
-      padding:10px 10px;
+      padding:10px 12px;
       border-radius:14px;
-      border:1px solid transparent;
-      background:transparent;
-      color:var(--text);
-      font-weight:850;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.80);
       cursor:pointer;
-      text-decoration:none;
-    }
-    .sideItem:hover{ background:rgba(37,99,235,.06); border-color:rgba(37,99,235,.10); }
-    .sideItem.active{ background:rgba(37,99,235,.10); border-color:rgba(37,99,235,.18); }
-    .tag{
-      font-size:11px;
       font-weight:900;
-      padding:4px 8px;
+      color:var(--text);
+    }
+    .navItem:hover{background:rgba(37,99,235,0.06);border-color:rgba(37,99,235,0.20)}
+    .navItem.active{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.28)}
+    .navItem .tag{
+      font-size:11px;
+      padding:3px 8px;
       border-radius:999px;
-      border:1px solid rgba(37,99,235,.18);
-      background:rgba(37,99,235,.08);
-      color:rgba(37,99,235,.95);
+      border:1px solid rgba(37,99,235,0.18);
+      background:rgba(37,99,235,0.08);
+      color:var(--blue);
+      font-weight:900;
       white-space:nowrap;
     }
-    .sideItem.disabled{
-      opacity:.55;
-    }
 
-    /* Main content */
-    .main{
-      padding:14px;
-    }
-
-    .banner{
-      border-radius:14px;
-      padding:10px 12px;
-      border:1px solid var(--line);
-      background:rgba(2,8,23,.02);
-      display:flex; gap:10px; align-items:flex-start;
-      margin:0 0 10px;
-    }
-    .banner .dot{ width:10px; height:10px; border-radius:999px; margin-top:4px; }
-    .banner.good .dot{ background:var(--good); }
-    .banner.warn .dot{ background:var(--warn); }
-    .banner.bad  .dot{ background:var(--bad); }
-    .banner .txt{ font-size:13.5px; line-height:1.35; }
-    .banner .txt strong{ font-weight:900; }
-
-    .hidden{display:none !important;}
-    label{ display:block; font-size:13px; color:var(--muted); margin-bottom:6px; font-weight:800; }
-    input[type="file"], select, textarea, input[type="email"]{
-      width:100%;
-      background:rgba(2,8,23,.02);
-      color:var(--text);
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:10px 12px;
-      outline:none;
-    }
-    textarea{ min-height:92px; resize:vertical; }
-    .help{ color:var(--muted); font-size:12.5px; margin-top:6px; line-height:1.35; }
-    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .status{ color:var(--muted); font-size:13px; }
-    .sectionTitle{ font-size:14px; font-weight:950; margin:0 0 10px; }
-    .kicker{ color:var(--muted); font-size:13px; margin:0 0 10px; }
-
-    /* Quick Actions */
-    .qaWrap{ padding:12px; }
-    .qaHead{
-      display:flex; align-items:center; justify-content:space-between;
-      padding:6px 6px 10px;
-    }
-    .qaGrid{
+    /* Quick actions */
+    .sectionTitle{font-size:15px;font-weight:950;margin:0 0 10px}
+    .actionGrid{
       display:grid;
+      grid-template-columns: repeat(3, 1fr);
       gap:12px;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top:10px;
     }
-    @media (max-width: 860px){
-      .qaGrid{ grid-template-columns:1fr; }
-    }
-    .qaCard{
+    @media (max-width: 960px){ .actionGrid{grid-template-columns:1fr;} }
+
+    .actionCard{
       border:1px solid var(--line);
-      border-radius:16px;
-      padding:12px 12px;
-      background:linear-gradient(180deg, rgba(37,99,235,.05), rgba(56,189,248,.04));
-      display:flex;
-      gap:12px;
-      align-items:flex-start;
-      text-align:left;
+      background:rgba(255,255,255,0.88);
+      border-radius:18px;
+      padding:14px;
       cursor:pointer;
       position:relative;
       overflow:hidden;
+      min-height:92px;
     }
-    .qaCard:hover{ border-color:rgba(37,99,235,.22); }
-    .qaIcon{
-      width:34px; height:34px; border-radius:12px;
-      background:rgba(37,99,235,.12);
-      border:1px solid rgba(37,99,235,.16);
-      display:grid; place-items:center;
-      flex:0 0 auto;
+    .actionCard:hover{border-color:rgba(37,99,235,0.24); box-shadow:0 16px 34px rgba(37,99,235,0.12)}
+    .actionCard .aTitle{font-weight:950;margin:0 0 6px;font-size:14px}
+    .actionCard .aDesc{margin:0;color:var(--muted);font-size:12.5px;line-height:1.35}
+    .actionCard .aBadge{
+      position:absolute;top:12px;right:12px;
+      font-size:11px;font-weight:950;
+      padding:4px 8px;border-radius:999px;
+      border:1px solid rgba(37,99,235,0.18);
+      background:rgba(37,99,235,0.08);
+      color:var(--blue);
     }
-    .qaTitle{ font-weight:950; margin:0; }
-    .qaDesc{ margin:4px 0 0; color:var(--muted); font-size:13px; line-height:1.35; }
-    .qaSoon{
-      position:absolute; top:10px; right:10px;
-      font-size:11px; font-weight:950;
-      padding:4px 8px; border-radius:999px;
-      border:1px solid rgba(245,158,11,.25);
-      background:rgba(245,158,11,.10);
-      color:rgba(180,83,9,.95);
+    .actionCard.soon .aBadge{
+      border-color:rgba(245,158,11,0.22);
+      background:rgba(245,158,11,0.10);
+      color:#92400e;
+    }
+    .actionCard::after{
+      content:"";
+      position:absolute;inset:-40px -60px auto auto;
+      width:160px;height:160px;border-radius:999px;
+      background:radial-gradient(circle at 30% 30%, rgba(56,189,248,0.30), transparent 60%);
+      transform:rotate(25deg);
+      pointer-events:none;
     }
 
     /* Table */
-    .tableWrap{ padding:12px; }
-    .table{
-      width:100%;
-      border-collapse:collapse;
-      overflow:hidden;
-      border-radius:16px;
+    .tableWrap{overflow:auto;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,0.92)}
+    .table{width:100%;border-collapse:collapse}
+    .table th,.table td{
+      padding:12px 10px;border-top:1px solid var(--line);
+      font-size:13.5px;text-align:left;
+      white-space:nowrap;
     }
-    .table th, .table td{
-      padding:12px 10px;
-      border-top:1px solid var(--line);
-      font-size:13.5px;
-      text-align:left;
-      vertical-align:middle;
-    }
-    .table thead th{
-      color:var(--muted);
-      font-weight:950;
-      background:rgba(2,8,23,.02);
-      border-top:0;
-    }
-    .table tr:hover td{ background:rgba(37,99,235,.04); cursor:pointer; }
+    .table th{color:var(--muted);font-weight:950;background:rgba(15,23,42,0.02)}
+    .table tr:hover td{background:rgba(37,99,235,0.05);cursor:pointer}
 
-    .footerNote{ color:var(--muted); font-size:12px; margin-top:10px; }
+    .colOutcome{min-width:130px}
+    .colType{min-width:120px}
+    .colScenario{min-width:220px}
+
+    /* Banners */
+    .banner{
+      border-radius:14px;padding:10px 12px;border:1px solid var(--line);
+      margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;
+      background:rgba(255,255,255,0.92);
+    }
+    .banner .dot{width:10px;height:10px;border-radius:999px;margin-top:4px}
+    .banner.good .dot{background:var(--good)}
+    .banner.warn .dot{background:var(--warn)}
+    .banner.bad  .dot{background:var(--bad)}
+    .banner .txt{font-size:13.5px;line-height:1.35;color:var(--text)}
+    .banner .txt strong{font-weight:950}
 
     /* Transcript */
-    .transcriptBox{
-      border:1px solid var(--line);
-      border-radius:16px;
-      background:rgba(2,8,23,.02);
-      overflow:hidden;
-    }
-    .tLine{
-      display:flex; gap:10px; align-items:flex-start;
-      padding:10px 12px;
-      border-top:1px solid var(--line);
-      min-width:0;
-    }
-    .tLine:first-child{ border-top:0; }
-    .ln{ width:34px; text-align:right; color:var(--muted); font-family:var(--mono); font-size:12px; padding-top:2px; }
-
+    .transcriptBox{border:1px solid var(--line);border-radius:14px;background:rgba(15,23,42,0.02);overflow:hidden}
+    .tLine{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-top:1px solid var(--line);min-width:0}
+    .tLine:first-child{border-top:0}
+    .ln{width:34px;text-align:right;color:var(--muted);font-family:var(--mono);font-size:12px;padding-top:2px}
     .chip{
       flex:0 0 92px;
-      font-size:12px;
-      padding:4px 8px;
-      border-radius:999px;
-      background:rgba(37,99,235,.08);
-      border:1px solid rgba(37,99,235,.14);
-      color:rgba(37,99,235,.98);
-      font-weight:850;
-      text-align:center;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
+      font-size:12px;padding:4px 8px;border-radius:999px;
+      background:rgba(37,99,235,0.08);
+      border:1px solid rgba(37,99,235,0.16);
+      color:var(--text);font-weight:850;text-align:center;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     }
-    .chip.you{ background:rgba(37,99,235,.10); border-color:rgba(37,99,235,.18); color:rgba(37,99,235,.98); }
-    .chip.pro{ background:rgba(22,163,74,.10); border-color:rgba(22,163,74,.18); color:rgba(22,101,52,.98); }
-    .chip.other{ background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.20); color:rgba(180,83,9,.98); }
-
-    .tText{
-      flex:1 1 auto;
-      min-width:0;
-      font-size:13.5px;
-      line-height:1.35;
-      white-space:pre-wrap;
-      color:var(--text);
-    }
+    .chip.you{background:rgba(37,99,235,0.14);border-color:rgba(37,99,235,0.24)}
+    .chip.pro{background:rgba(22,163,74,0.12);border-color:rgba(22,163,74,0.22)}
+    .chip.other{background:rgba(2,6,23,0.04);border-color:rgba(2,6,23,0.10)}
+    .tText{flex:1 1 auto;min-width:0;font-size:13.5px;line-height:1.35;white-space:pre-wrap}
 
     /* Report */
-    .reportGrid{ display:grid; gap:10px; }
-    .reportCard{
-      border:1px solid var(--line);
-      border-radius:16px;
-      background:rgba(2,8,23,.02);
-      overflow:hidden;
-    }
+    .reportGrid{display:grid;gap:10px}
+    .reportCard{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.90);overflow:hidden}
     .reportHead{
-      padding:10px 12px;
-      font-weight:950;
-      display:flex; align-items:center; justify-content:space-between;
-      cursor:pointer;
-      user-select:none;
-      background:rgba(255,255,255,.60);
+      padding:10px 12px;font-weight:950;display:flex;align-items:center;justify-content:space-between;
+      cursor:pointer;user-select:none;background:rgba(15,23,42,0.02);
     }
-    .reportBody{ padding:10px 12px; border-top:1px solid var(--line); }
-    .reportBody p{ margin:0 0 8px; font-size:13.5px; line-height:1.4; }
-    .reportBody ul, .reportBody ol{ margin:6px 0 10px 18px; }
-    .reportBody li{ margin:4px 0; font-size:13.5px; line-height:1.35; }
-    .reportBody strong{ font-weight:950; }
+    .reportBody{padding:10px 12px;border-top:1px solid var(--line)}
+    .reportBody p{margin:0 0 8px;color:var(--text);font-size:13.5px;line-height:1.4}
+    .reportBody ul,.reportBody ol{margin:6px 0 10px 18px}
+    .reportBody li{margin:4px 0;font-size:13.5px;line-height:1.35}
+    .reportBody strong{font-weight:950}
 
-    details{ border:1px solid var(--line); border-radius:16px; background:rgba(2,8,23,.02); padding:10px 12px; }
-    details summary{ cursor:pointer; font-weight:950; }
-    .mono{ font-family:var(--mono); font-size:12px; white-space:pre-wrap; color:var(--muted); margin-top:10px; }
-
-    .kv{ display:grid; gap:8px; }
+    /* Key/Value */
+    .kv{display:grid;gap:8px}
     .kv .item{
-      display:grid;
-      grid-template-columns: 180px 1fr;
-      gap:10px;
-      padding:10px 10px;
-      border-radius:14px;
-      background:rgba(2,8,23,.02);
-      border:1px solid var(--line);
+      display:grid;grid-template-columns:180px 1fr;gap:10px;padding:10px 12px;
+      border-radius:14px;background:rgba(15,23,42,0.02);border:1px solid var(--line);
     }
-    .kv .k{ color:var(--muted); font-size:13px; font-weight:900; }
-    .kv .v{ font-size:13.5px; white-space:pre-wrap; }
+    .kv .k{color:var(--muted);font-size:13px;font-weight:900}
+    .kv .v{font-size:13.5px;white-space:pre-wrap}
 
-    .bullets{ margin:0; padding-left:18px; }
-    .bullets li{ margin:4px 0; font-size:13.5px; }
+    .bullets{margin:0;padding-left:18px}
+    .bullets li{margin:4px 0;color:var(--text);font-size:13.5px}
 
+    details{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.92);padding:10px 12px}
+    details summary{cursor:pointer;font-weight:950}
+    .mono{font-family:var(--mono);font-size:12px;white-space:pre-wrap;color:var(--muted);margin-top:10px}
+    .footerNote{color:var(--muted);font-size:12px;margin-top:10px}
+
+    /* Toast */
+    .toastHost{
+      position:fixed;right:18px;bottom:18px;z-index:9999;
+      display:flex;flex-direction:column;gap:10px;
+      max-width:min(420px, calc(100vw - 36px));
+      pointer-events:none;
+    }
+    .toast{
+      pointer-events:auto;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.96);
+      box-shadow:0 18px 45px rgba(2,6,23,0.14);
+      padding:10px 12px;
+      display:flex;gap:10px;align-items:flex-start;
+    }
+    .toast .dot{width:10px;height:10px;border-radius:999px;margin-top:4px}
+    .toast.good .dot{background:var(--good)}
+    .toast.warn .dot{background:var(--warn)}
+    .toast.bad  .dot{background:var(--bad)}
+    .toast .txt{font-size:13.5px;line-height:1.35}
+    .toast .txt strong{font-weight:950}
   </style>
 </head>
 
 <body>
-  <div class="topbar">
-    <div class="topInner">
+  <div class="wrap">
+    <div class="header">
       <div class="brand">
-        <div class="mark" aria-hidden="true">
-          <svg width="22" height="22" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#38bdf8"/>
-                <stop offset="1" stop-color="#2563eb"/>
-              </linearGradient>
-            </defs>
-            <circle cx="32" cy="32" r="22" stroke="url(#g2)" stroke-width="10" stroke-linecap="round"
-              stroke-dasharray="120 30" stroke-dashoffset="15"/>
-            <path d="M26 34.5 31.5 40 42 29.5" stroke="url(#g2)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        <div class="brandText">
-          <div class="brandTitle" id="brandTitle">Calibrate</div>
-          <div class="brandSub" id="brandSub">Upload a call. Get a transcript + coaching report.</div>
-        </div>
+        <h1 id="brandTitle" class="brandTitle">
+          <span class="logoMark" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#1d4ed8"/>
+                  <stop offset="1" stop-color="#38bdf8"/>
+                </linearGradient>
+              </defs>
+              <path d="M32 6a26 26 0 1 0 18.38 7.62" stroke="url(#g)" stroke-width="8" stroke-linecap="round"/>
+              <path d="M28 33l6 6 14-14" stroke="url(#g)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          Calibrate
+        </h1>
+        <p id="brandSub" class="brandSub">Upload a call. Get a transcript + coaching report.</p>
       </div>
 
-      <div class="navRight">
+      <div class="row">
         <span id="who" class="pill hidden"></span>
         <button id="btnHome" class="btn secondary hidden">Home</button>
         <button id="btnNew" class="btn secondary hidden">New</button>
@@ -420,238 +336,243 @@
         <button id="btnSignOut" class="btn secondary hidden">Sign out</button>
       </div>
     </div>
+
+    <div class="appLayout">
+      <!-- Sidebar (only visible when authed) -->
+      <aside id="sidebar" class="card sidebar hidden">
+        <div class="sideHead">
+          <p class="sideTitle">Dashboard</p>
+        </div>
+
+        <div class="navList">
+          <button id="navDashboard" class="navItem">
+            <span>Home</span>
+          </button>
+
+          <button id="navUpload" class="navItem">
+            <span>Upload Call</span>
+            <span class="tag">Live</span>
+          </button>
+
+          <button id="navRecord" class="navItem">
+            <span>Record Call</span>
+            <span class="tag">Soon</span>
+          </button>
+
+          <button id="navPractice" class="navItem">
+            <span>AI Call Practice</span>
+            <span class="tag">Soon</span>
+          </button>
+
+          <button id="navSupport" class="navItem">
+            <span>Contact Support</span>
+          </button>
+        </div>
+
+        <div class="footerNote" style="margin-top:12px;">
+          Tip: record + practice are placeholders for user testing.
+        </div>
+      </aside>
+
+      <!-- Main content -->
+      <main>
+        <!-- Landing -->
+        <div id="viewLanding" class="card hidden">
+          <h3 class="sectionTitle">Calibrate MVP</h3>
+          <p style="margin:0 0 10px; color:var(--muted);">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
+          <ul class="bullets">
+            <li>Transcript line-by-line with speakers</li>
+            <li>Call outcome + coaching report</li>
+            <li>Script gate (PASS/FAIL) capped ~90 words</li>
+          </ul>
+          <div class="row" style="margin-top:12px;">
+            <button id="btnGetStarted" class="btn">Get started</button>
+            <span id="landingStatus" class="status"></span>
+          </div>
+        </div>
+
+        <!-- Login -->
+        <div id="viewLogin" class="card hidden">
+          <h3 class="sectionTitle">Sign in</h3>
+          <div id="loginBanners"></div>
+
+          <div class="grid two" style="display:grid; gap:12px;">
+            <div>
+              <label for="email">Email</label>
+              <input id="email" type="email" placeholder="you@email.com"
+                     style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;" />
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Magic link (no password). Check your inbox.</div>
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Google OAuth button is included too (only works if you set Google provider in Supabase).</div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <button id="btnGoogle" class="btn secondary">Continue with Google</button>
+            <span id="loginStatus" class="status"></span>
+          </div>
+        </div>
+
+        <!-- Session expired -->
+        <div id="viewSessionExpired" class="card hidden">
+          <h3 class="sectionTitle">Session expired</h3>
+          <p style="margin:0 0 10px; color:var(--muted);">
+            Your session expired while you were using Calibrate. Please sign in again to continue.
+          </p>
+          <div id="expiredBanners"></div>
+          <div class="row" style="margin-top:12px;">
+            <button id="btnGoSignIn" class="btn">Sign in</button>
+            <button id="btnGoLanding" class="btn secondary">Go to landing</button>
+          </div>
+        </div>
+
+        <!-- Home / History -->
+        <div id="viewHome" class="hidden">
+          <div class="card">
+            <h3 class="sectionTitle" style="margin:0;">Quick Actions</h3>
+            <p style="margin:6px 0 0; color:var(--muted); font-size:13.5px;">Choose a workflow. Record + practice are teasers (coming soon).</p>
+
+            <div class="actionGrid">
+              <div id="qaUpload" class="actionCard">
+                <div class="aBadge">Live</div>
+                <p class="aTitle">Upload a Call</p>
+                <p class="aDesc">Upload an audio file, add context, get transcript + coaching report.</p>
+              </div>
+
+              <div id="qaRecord" class="actionCard soon">
+                <div class="aBadge">Coming soon</div>
+                <p class="aTitle">Record Call</p>
+                <p class="aDesc">Record directly in-app and auto-analyze instantly.</p>
+              </div>
+
+              <div id="qaPractice" class="actionCard soon">
+                <div class="aBadge">Coming soon</div>
+                <p class="aTitle">AI Call Practice</p>
+                <p class="aDesc">Roleplay prospects and get instant coaching + scripts.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px;">
+            <div id="homeBanners"></div>
+            <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+              <h3 class="sectionTitle" style="margin:0;">History</h3>
+              <span id="homeStatus" class="status"></span>
+            </div>
+
+            <div class="tableWrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th class="colScenario">Scenario</th>
+                    <th class="colOutcome">Outcome</th>
+                    <th class="colType">Type</th>
+                    <th>Mismatch</th>
+                  </tr>
+                </thead>
+                <tbody id="runsTbody"></tbody>
+              </table>
+            </div>
+
+            <div class="footerNote">Click a row to open that run.</div>
+          </div>
+        </div>
+
+        <!-- Calibrate (new run) -->
+        <div id="viewCalibrate" class="card hidden">
+          <div class="grid two" style="display:grid; gap:12px;">
+            <div>
+              <label for="audio">Audio file</label>
+              <input id="audio" type="file" accept="audio/*"
+                     style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;" />
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Limits: audio only • max 25MB • max 30 minutes • formats: mp3/m4a/wav/ogg.</div>
+            </div>
+
+            <div>
+              <label for="category">Scenario template (optional)</label>
+              <select id="category"
+                      style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></select>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">This nudges examples and wording. Context + transcript stay the source of truth.</div>
+            </div>
+
+            <div>
+              <label for="legacyScenario">Legacy scenario (optional)</label>
+              <select id="legacyScenario"
+                      style="width:100%;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></select>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Kept for backwards compatibility during MVP.</div>
+            </div>
+
+            <div>
+              <label for="context">Context (required)</label>
+              <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."
+                        style="width:100%;min-height:92px;resize:vertical;background:rgba(15,23,42,0.02);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;outline:none;"></textarea>
+              <div class="help" style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">Keep it short — we infer prospect details from the transcript when possible.</div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top: 10px;">
+            <button id="run" class="btn">Calibrate</button>
+            <span id="status" class="status"></span>
+          </div>
+
+          <div id="results" class="card hidden" style="margin-top:14px;">
+            <div id="banners"></div>
+
+            <h3 class="sectionTitle">Summary</h3>
+            <div class="kv" id="summaryKV"></div>
+
+            <div style="height: 12px;"></div>
+
+            <h3 class="sectionTitle">Transcript</h3>
+            <div class="transcriptBox" id="transcriptBox"></div>
+
+            <div style="height: 12px;"></div>
+
+            <h3 class="sectionTitle">Report</h3>
+            <div class="reportGrid" id="reportGrid"></div>
+
+            <div style="height: 12px;"></div>
+
+            <details id="diagnosticsDetails" class="hidden">
+              <summary>Diagnostics (internal)</summary>
+              <div class="mono" id="diagnosticsMono"></div>
+              <div class="mono" id="rawJson"></div>
+              <div class="footerNote">Dev mode only. Add <span style="font-family:var(--mono)">?dev=1</span> to the URL.</div>
+            </details>
+          </div>
+        </div>
+
+        <!-- Run viewer -->
+        <div id="viewRun" class="card hidden">
+          <div class="row" style="justify-content:space-between;">
+            <h3 class="sectionTitle" style="margin:0;">Run</h3>
+            <button id="btnBackHome" class="btn secondary">Back</button>
+          </div>
+
+          <div id="runBanners" style="margin-top:12px;"></div>
+
+          <h3 class="sectionTitle" style="margin-top:14px;">Summary</h3>
+          <div class="kv" id="summaryKV2"></div>
+
+          <div style="height: 12px;"></div>
+
+          <h3 class="sectionTitle">Transcript</h3>
+          <div class="transcriptBox" id="transcriptBox2"></div>
+
+          <div style="height: 12px;"></div>
+
+          <h3 class="sectionTitle">Report</h3>
+          <div class="reportGrid" id="reportGrid2"></div>
+        </div>
+      </main>
+    </div>
   </div>
 
-  <div class="shell">
-    <!-- Sidebar (only when logged in) -->
-    <aside id="sidebar" class="card sidebar hidden">
-      <div class="sideTitle">Dashboard</div>
-      <button id="sideHistory" class="sideItem">History</button>
-      <button id="sideUpload" class="sideItem">Upload call</button>
-      <button id="sideRecord" class="sideItem disabled">Record call <span class="tag">Coming soon</span></button>
-      <button id="sidePractice" class="sideItem disabled">AI call practice <span class="tag">Coming soon</span></button>
-
-      <div class="sideTitle" style="margin-top:14px;">Support</div>
-      <a class="sideItem" id="sideSupport" href="mailto:support@calibrate.ai?subject=Calibrate%20Support">Contact support</a>
-    </aside>
-
-    <!-- Main content -->
-    <main class="card main">
-      <!-- Landing -->
-      <div id="viewLanding" class="hidden">
-        <div class="sectionTitle">Calibrate MVP</div>
-        <p class="kicker">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
-        <ul class="bullets">
-          <li>Transcript line-by-line with speakers</li>
-          <li>Call outcome + coaching report</li>
-          <li>Script gate (PASS/FAIL) capped ~90 words</li>
-        </ul>
-        <div class="row" style="margin-top:12px;">
-          <button id="btnGetStarted" class="btn">Get started</button>
-          <span id="landingStatus" class="status"></span>
-        </div>
-      </div>
-
-      <!-- Login -->
-      <div id="viewLogin" class="hidden">
-        <div class="sectionTitle">Sign in</div>
-        <div id="loginBanners"></div>
-
-        <div style="display:grid; gap:12px; grid-template-columns: 1fr 1fr;">
-          <div>
-            <label for="email">Email</label>
-            <input id="email" type="email" placeholder="you@email.com" />
-            <div class="help">Magic link (no password). Check your inbox.</div>
-          </div>
-          <div>
-            <label>&nbsp;</label>
-            <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
-            <div class="help">Google OAuth works if enabled in Supabase.</div>
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:12px;">
-          <button id="btnGoogle" class="btn secondary">Continue with Google</button>
-          <span id="loginStatus" class="status"></span>
-        </div>
-      </div>
-
-      <!-- Session expired -->
-      <div id="viewSessionExpired" class="hidden">
-        <div class="sectionTitle">Session expired</div>
-        <p class="kicker">Your session expired while you were using Calibrate. Please sign in again to continue.</p>
-        <div id="expiredBanners"></div>
-        <div class="row" style="margin-top:12px;">
-          <button id="btnGoSignIn" class="btn">Sign in</button>
-          <button id="btnGoLanding" class="btn secondary">Go to landing</button>
-        </div>
-      </div>
-
-      <!-- Home / History -->
-      <div id="viewHome" class="hidden">
-        <div id="homeBanners"></div>
-
-        <div class="card qaWrap" style="box-shadow:none; margin-bottom:12px;">
-          <div class="qaHead">
-            <div class="sectionTitle" style="margin:0;">Quick actions</div>
-          </div>
-          <div class="qaGrid">
-            <button id="qaUpload" class="qaCard" type="button">
-              <div class="qaIcon" aria-hidden="true">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 3v10" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
-                  <path d="M8 7l4-4 4 4" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M5 14v4a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-4" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
-                </svg>
-              </div>
-              <div>
-                <div class="qaTitle">Upload a call</div>
-                <div class="qaDesc">Upload audio and generate a transcript + coaching report.</div>
-              </div>
-            </button>
-
-            <button id="qaRecord" class="qaCard" type="button">
-              <div class="qaIcon" aria-hidden="true">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3Z" stroke="#2563eb" stroke-width="2.4"/>
-                  <path d="M19 11a7 7 0 0 1-14 0" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
-                  <path d="M12 18v3" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
-                </svg>
-              </div>
-              <div>
-                <div class="qaTitle">Record call</div>
-                <div class="qaDesc">Record live calls directly in the app.</div>
-              </div>
-              <div class="qaSoon">Coming soon</div>
-            </button>
-
-            <button id="qaPractice" class="qaCard" type="button">
-              <div class="qaIcon" aria-hidden="true">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M7 11V7a2 2 0 0 1 2-2h8" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
-                  <path d="M17 13v4a2 2 0 0 1-2 2H7" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
-                  <path d="M7 12h10" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
-                  <path d="M16 6l2-2 2 2" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M16 18l2 2 2-2" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </div>
-              <div>
-                <div class="qaTitle">AI call practice</div>
-                <div class="qaDesc">Practice with an AI prospect + get instant feedback.</div>
-              </div>
-              <div class="qaSoon">Coming soon</div>
-            </button>
-          </div>
-        </div>
-
-        <div class="card tableWrap" style="box-shadow:none;">
-          <div id="homeStatus" class="status" style="margin: 0 0 8px;"></div>
-          <div style="overflow:auto;">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Outcome</th>
-                  <th>Scenario</th>
-                  <th>Type</th>
-                  <th>Mismatch</th>
-                </tr>
-              </thead>
-              <tbody id="runsTbody"></tbody>
-            </table>
-          </div>
-          <div class="footerNote">Click a row to open that run.</div>
-        </div>
-      </div>
-
-      <!-- Calibrate (new run) -->
-      <div id="viewCalibrate" class="hidden">
-        <div class="sectionTitle">New run</div>
-        <p class="kicker">Upload an audio file + add context. You’ll get transcript + coaching report.</p>
-
-        <div style="display:grid; gap:12px; grid-template-columns: 1fr 1fr;">
-          <div>
-            <label for="audio">Audio file</label>
-            <input id="audio" type="file" accept="audio/*" />
-            <div class="help">Limits: audio only • max 25MB • formats: mp3/m4a/wav/ogg.</div>
-          </div>
-
-          <div>
-            <label for="category">Scenario template (optional)</label>
-            <select id="category"></select>
-            <div class="help">This nudges examples and wording. Context + transcript stay the source of truth.</div>
-          </div>
-
-          <div>
-            <label for="legacyScenario">Legacy scenario (optional)</label>
-            <select id="legacyScenario"></select>
-            <div class="help">Kept for backwards compatibility during MVP.</div>
-          </div>
-
-          <div>
-            <label for="context">Context (required)</label>
-            <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."></textarea>
-            <div class="help">Keep it short — we infer prospect details from the transcript when possible.</div>
-          </div>
-        </div>
-
-        <div class="row" style="margin-top: 10px;">
-          <button id="run" class="btn">Calibrate</button>
-          <span id="status" class="status"></span>
-        </div>
-
-        <div id="results" class="card hidden" style="margin-top:14px; padding:14px; box-shadow:none;">
-          <div id="banners"></div>
-
-          <div class="sectionTitle" style="margin-top:4px;">Summary</div>
-          <div class="kv" id="summaryKV"></div>
-
-          <div style="height: 12px;"></div>
-
-          <div class="sectionTitle">Transcript</div>
-          <div class="transcriptBox" id="transcriptBox"></div>
-
-          <div style="height: 12px;"></div>
-
-          <div class="sectionTitle">Report</div>
-          <div class="reportGrid" id="reportGrid"></div>
-
-          <div style="height: 12px;"></div>
-
-          <details id="diagnosticsDetails" class="hidden">
-            <summary>Diagnostics (internal)</summary>
-            <div class="mono" id="diagnosticsMono"></div>
-            <div class="mono" id="rawJson"></div>
-            <div class="footerNote">Dev mode only. Add <span style="font-family:var(--mono)">?dev=1</span> to the URL.</div>
-          </details>
-        </div>
-      </div>
-
-      <!-- Run viewer -->
-      <div id="viewRun" class="hidden">
-        <div class="row" style="justify-content:space-between; margin-bottom:10px;">
-          <div class="sectionTitle" style="margin:0;">Run</div>
-          <button id="btnBackHome" class="btn secondary">Back</button>
-        </div>
-
-        <div id="runBanners"></div>
-
-        <div class="sectionTitle" style="margin-top:12px;">Summary</div>
-        <div class="kv" id="summaryKV2"></div>
-
-        <div style="height: 12px;"></div>
-
-        <div class="sectionTitle">Transcript</div>
-        <div class="transcriptBox" id="transcriptBox2"></div>
-
-        <div style="height: 12px;"></div>
-
-        <div class="sectionTitle">Report</div>
-        <div class="reportGrid" id="reportGrid2"></div>
-      </div>
-
-    </main>
-  </div>
+  <div id="toastHost" class="toastHost"></div>
 
   <!-- Supabase JS (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -663,6 +584,21 @@
       renderRoute();
     }
     window.addEventListener("popstate", renderRoute);
+
+    // ---- Toast ----
+    const toastHost = document.getElementById("toastHost");
+    function toast(type, title, msg, ms = 2600) {
+      const t = document.createElement("div");
+      t.className = "toast " + (type || "warn");
+      t.innerHTML = `
+        <div class="dot"></div>
+        <div class="txt"><strong>${escapeHtml(title || "Note:")}</strong> ${escapeHtml(msg || "")}</div>
+      `;
+      toastHost.appendChild(t);
+      setTimeout(() => {
+        try { t.remove(); } catch {}
+      }, ms);
+    }
 
     // ---- Dev mode ----
     function isDevMode() {
@@ -816,21 +752,18 @@
       return sections;
     }
 
-    // FIX: safe speaker remap ONLY when we truly have 2 diarized speakers; otherwise keep Speaker 0/1/2...
+    // Keep remap conservative (only when truly 2 diarized speakers)
     function computeSpeakerDisplayMap(parsedLines) {
       const labels = [...new Set(parsedLines.map(x => x.speaker).filter(Boolean))];
 
-      // If transcript already has explicit You/Prospect, don't remap anything.
       if (labels.some(l => /^you$/i.test(l) || /^prospect$/i.test(l))) return null;
 
-      // Normalize "Speaker0" -> "Speaker 0" etc for matching.
       const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
       const normLabels = labels.map(norm);
 
       const speakerish = normLabels.filter(l => /^speaker\s+([a-z]|\d+)$/i.test(l));
       const uniqueSpeakerish = [...new Set(speakerish.map(s => s.toLowerCase()))];
 
-      // Only remap if the only labels are 2 speaker labels (A/B or 0/1)
       if (uniqueSpeakerish.length !== 2 || normLabels.length !== 2) return null;
 
       const aLabel = labels[0];
@@ -861,7 +794,6 @@
       const a = score(textFor(aLabel));
       const b = score(textFor(bLabel));
 
-      // Only remap when we have a clear signal; otherwise keep speaker labels (trust > guessing).
       const diff = Math.abs(a.net - b.net);
       if (diff < 2) return null;
 
@@ -894,9 +826,7 @@
           text = (m[2] || "").trim();
         }
 
-        // normalize "Speaker0" -> "Speaker 0"
         speaker = speaker.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
-
         return { speaker, text };
       });
 
@@ -1035,10 +965,15 @@
     const viewRun = document.getElementById("viewRun");
 
     const sidebar = document.getElementById("sidebar");
-    const sideHistory = document.getElementById("sideHistory");
-    const sideUpload = document.getElementById("sideUpload");
-    const sideRecord = document.getElementById("sideRecord");
-    const sidePractice = document.getElementById("sidePractice");
+    const navDashboard = document.getElementById("navDashboard");
+    const navUpload = document.getElementById("navUpload");
+    const navRecord = document.getElementById("navRecord");
+    const navPractice = document.getElementById("navPractice");
+    const navSupport = document.getElementById("navSupport");
+
+    const qaUpload = document.getElementById("qaUpload");
+    const qaRecord = document.getElementById("qaRecord");
+    const qaPractice = document.getElementById("qaPractice");
 
     const btnHome = document.getElementById("btnHome");
     const btnNew = document.getElementById("btnNew");
@@ -1058,10 +993,6 @@
     const expiredBanners = document.getElementById("expiredBanners");
     const btnGoSignIn = document.getElementById("btnGoSignIn");
     const btnGoLanding = document.getElementById("btnGoLanding");
-
-    const qaUpload = document.getElementById("qaUpload");
-    const qaRecord = document.getElementById("qaRecord");
-    const qaPractice = document.getElementById("qaPractice");
 
     const homeBanners = document.getElementById("homeBanners");
     const homeStatus = document.getElementById("homeStatus");
@@ -1101,7 +1032,6 @@
     let session = null;
     let config = null;
 
-    // used to prevent multi-handling of expiry
     let sessionExpiredMessage = "";
     let sessionExpiredHandled = false;
 
@@ -1133,14 +1063,13 @@
       viewRun.classList.add("hidden");
     }
 
-    function setActiveSidebar(path) {
-      const clear = () => {
-        [sideHistory, sideUpload].forEach(el => el.classList.remove("active"));
-      };
-      clear();
-      if (path === "/home") sideHistory.classList.add("active");
-      if (path === "/calibrate") sideUpload.classList.add("active");
-      if (path.startsWith("/runs/")) sideHistory.classList.add("active");
+    function setActiveNav(path) {
+      const btns = [navDashboard, navUpload, navRecord, navPractice];
+      btns.forEach(b => b.classList.remove("active"));
+
+      if (path === "/home") navDashboard.classList.add("active");
+      else if (path === "/calibrate") navUpload.classList.add("active");
+      else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
     }
 
     function updateTopNav() {
@@ -1184,8 +1113,6 @@
       sessionExpiredHandled = true;
       sessionExpiredMessage = msg || "Your session expired. Please sign in again.";
       session = null;
-
-      try { expiredBanners.innerHTML = ""; } catch {}
       goto("/session-expired");
     }
 
@@ -1219,11 +1146,6 @@
       return { ok: r2.ok, status: r2.status, json: j2 };
     }
 
-    function comingSoon(targetBannersEl) {
-      targetBannersEl.innerHTML = "";
-      targetBannersEl.appendChild(banner("warn", "Coming soon:", "This feature is on the roadmap — the button is just a teaser for now."));
-    }
-
     // ---- Nav buttons ----
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
@@ -1240,20 +1162,19 @@
     });
 
     btnBackHome.addEventListener("click", () => goto("/home"));
-
     btnGoSignIn.addEventListener("click", () => goto("/login"));
     btnGoLanding.addEventListener("click", () => goto("/"));
 
-    // Sidebar actions
-    sideHistory.addEventListener("click", () => goto("/home"));
-    sideUpload.addEventListener("click", () => goto("/calibrate"));
-    sideRecord.addEventListener("click", () => comingSoon(homeBanners));
-    sidePractice.addEventListener("click", () => comingSoon(homeBanners));
+    // Sidebar + quick actions
+    navDashboard.addEventListener("click", () => goto("/home"));
+    navUpload.addEventListener("click", () => goto("/calibrate"));
+    navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
+    navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
+    navSupport.addEventListener("click", () => toast("good", "Support:", "Add your support email later (placeholder for now)."));
 
-    // Quick actions
     qaUpload.addEventListener("click", () => goto("/calibrate"));
-    qaRecord.addEventListener("click", () => comingSoon(homeBanners));
-    qaPractice.addEventListener("click", () => comingSoon(homeBanners));
+    qaRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
+    qaPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
 
     // ---- Login actions ----
     btnMagicLink.addEventListener("click", async () => {
@@ -1298,20 +1219,10 @@
     // ---- History ----
     let runsLoadSeq = 0;
 
-    function prettifyType(t) {
-      const v = String(t || "").toLowerCase().trim();
-      if (!v) return "Upload";
-      if (v === "upload") return "Upload";
-      if (v === "record") return "Record";
-      if (v === "practice") return "Practice";
-      return v[0].toUpperCase() + v.slice(1);
-    }
-
     async function loadRuns() {
       const seq = ++runsLoadSeq;
+      homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
-      // keep banners unless we explicitly clear them
-      // homeBanners.innerHTML = "";
 
       try {
         const { ok, status, json } = await fetchJsonAuthed("/api/runs");
@@ -1338,13 +1249,13 @@
           const when = new Date(run.created_at).toLocaleString();
           const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
           const outcome = run.call_outcome || "—";
+          const type = (run.type || run.run_type || "Upload").toString();
           const mismatch = (run.mismatch || run.scenario_mismatch) ? "Yes" : "No";
-          const type = prettifyType(run.type || run.run_type || "upload");
 
           tr.innerHTML = `
             <td>${escapeHtml(when)}</td>
-            <td>${escapeHtml(outcome)}</td>
             <td>${escapeHtml(scenario)}</td>
+            <td>${escapeHtml(outcome)}</td>
             <td>${escapeHtml(type)}</td>
             <td>${escapeHtml(mismatch)}</td>
           `;
@@ -1528,6 +1439,8 @@
       const path = window.location.pathname || "/";
       const loggedIn = !!session;
 
+      setActiveNav(path);
+
       const needsAuth =
         path === "/home" ||
         path === "/calibrate" ||
@@ -1537,8 +1450,6 @@
         goto("/login");
         return;
       }
-
-      setActiveSidebar(path);
 
       if (path === "/") {
         if (loggedIn) { goto("/home"); return; }
