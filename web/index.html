@@ -4,195 +4,415 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Calibrate</title>
+
+  <!-- Inline SVG favicon (no files needed) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27g%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%271%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%2338bdf8%27/%3E%3Cstop%20offset%3D%27100%25%27%20stop-color%3D%27%232563eb%27/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle%20cx%3D%2732%27%20cy%3D%2732%27%20r%3D%2722%27%20fill%3D%27none%27%20stroke%3D%27url(%23g)%27%20stroke-width%3D%2710%27%20stroke-linecap%3D%27round%27%20stroke-dasharray%3D%27120%2030%27%20stroke-dashoffset%3D%2715%27/%3E%3Cpath%20d%3D%27M26%2034.5%2031.5%2040%2042%2029.5%27%20fill%3D%27none%27%20stroke%3D%27url(%23g)%27%20stroke-width%3D%278%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27/%3E%3C/svg%3E"/>
+
   <style>
-    :root {
-      --bg: #0b0f17;
-      --card: #111827;
-      --muted: #94a3b8;
-      --text: #e5e7eb;
-      --line: rgba(255,255,255,0.08);
-      --good: #22c55e;
-      --warn: #f59e0b;
-      --bad: #ef4444;
-      --chip: rgba(255,255,255,0.08);
-      --shadow: 0 10px 30px rgba(0,0,0,0.35);
-      --radius: 16px;
+    :root{
+      --bg0:#eef5ff;
+      --bg1:#f7fbff;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --line:rgba(15,23,42,.10);
+      --blue:#2563eb;
+      --blue2:#38bdf8;
+      --chip:#eef2ff;
+      --good:#16a34a;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --shadow:0 16px 40px rgba(2,8,23,.08);
+      --radius:18px;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
     }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: var(--sans);
-      background: radial-gradient(1200px 600px at 20% -10%, rgba(59,130,246,0.18), transparent 55%),
-                  radial-gradient(1000px 500px at 100% 0%, rgba(34,197,94,0.10), transparent 45%),
-                  var(--bg);
-      color: var(--text);
-    }
-    .wrap { max-width: 980px; margin: 28px auto; padding: 0 16px; }
-    .header { display:flex; align-items:flex-end; justify-content:space-between; gap: 12px; margin-bottom: 14px; }
-    .brand h1 { margin: 0; font-size: 22px; letter-spacing: 0.2px; }
-    .brand p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
-    .card {
-      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-    .grid { display:grid; gap: 12px; }
-    @media (min-width: 880px) { .grid.two { grid-template-columns: 1fr 1fr; } }
-    label { display:block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-    input[type="file"], select, textarea, input[type="email"], input[type="password"] {
-      width: 100%;
-      background: rgba(255,255,255,0.03);
-      color: var(--text);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 10px 12px;
-      outline: none;
-    }
-    textarea { min-height: 92px; resize: vertical; }
-    .help { color: var(--muted); font-size: 12.5px; margin-top: 6px; line-height: 1.35; }
-    .row { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
-    .btn {
-      appearance:none; border: 0;
-      background: linear-gradient(135deg, rgba(59,130,246,0.95), rgba(34,197,94,0.75));
-      color: #061018;
-      font-weight: 800;
-      padding: 10px 14px;
-      border-radius: 12px;
-      cursor: pointer;
-    }
-    .btn.secondary {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid var(--line);
-      color: var(--text);
-      font-weight: 800;
-    }
-    .btn:disabled { opacity: 0.55; cursor:not-allowed; }
-    .status { color: var(--muted); font-size: 13px; }
-    .hidden { display:none !important; }
-    .link { color: #93c5fd; text-decoration: none; font-weight: 800; }
-    .pill {
-      font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.06);
-      color: var(--text);
-      font-weight: 800;
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:var(--sans);
+      color:var(--text);
+      background:
+        radial-gradient(900px 600px at 15% 0%, rgba(56,189,248,.22), transparent 60%),
+        radial-gradient(900px 600px at 90% 10%, rgba(37,99,235,.18), transparent 55%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      min-height:100vh;
     }
 
-    .banner {
-      border-radius: 14px;
-      padding: 10px 12px;
-      border: 1px solid var(--line);
-      margin-bottom: 12px;
-      display:flex; gap:10px; align-items:flex-start;
-      background: rgba(255,255,255,0.03);
+    /* Top bar */
+    .topbar{
+      position:sticky; top:0; z-index:10;
+      background:rgba(255,255,255,.75);
+      backdrop-filter:saturate(140%) blur(10px);
+      border-bottom:1px solid var(--line);
     }
-    .banner .dot { width: 10px; height: 10px; border-radius: 999px; margin-top: 4px; }
-    .banner.good .dot { background: var(--good); }
-    .banner.warn .dot { background: var(--warn); }
-    .banner.bad  .dot { background: var(--bad); }
-    .banner .txt { font-size: 13.5px; line-height: 1.35; color: var(--text); }
-    .banner .txt strong { font-weight: 800; }
-
-    .sectionTitle { font-size: 15px; font-weight: 800; margin: 0 0 10px; }
-    .kv { display:grid; gap: 8px; }
-    .kv .item { display:grid; grid-template-columns: 180px 1fr; gap: 10px; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--line); }
-    .kv .k { color: var(--muted); font-size: 13px; }
-    .kv .v { font-size: 13.5px; white-space: pre-wrap; }
-    .bullets { margin: 0; padding-left: 18px; }
-    .bullets li { margin: 4px 0; color: var(--text); font-size: 13.5px; }
-
-    .transcriptBox {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: rgba(0,0,0,0.15);
-      overflow: hidden;
+    .topInner{
+      max-width:1200px;
+      margin:0 auto;
+      padding:14px 16px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
     }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width:0;
+    }
+    .brandText{min-width:0}
+    .brandTitle{
+      display:flex; align-items:center; gap:10px;
+      margin:0;
+      font-size:20px;
+      letter-spacing:.2px;
+      font-weight:900;
+      line-height:1.1;
+      white-space:nowrap;
+    }
+    .brandSub{
+      margin:4px 0 0;
+      font-size:13.5px;
+      color:var(--muted);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:520px;
+    }
+    .mark{
+      width:30px; height:30px;
+      border-radius:10px;
+      display:grid; place-items:center;
+      box-shadow:0 10px 22px rgba(37,99,235,.16);
+      background:linear-gradient(135deg, rgba(56,189,248,.18), rgba(37,99,235,.14));
+      border:1px solid rgba(37,99,235,.12);
+    }
+    .mark svg{display:block}
 
-    /* ✅ FIX: true uniform alignment via grid columns (no “squiggle”) */
-    .tLine{
+    .navRight{
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end;
+    }
+    .pill{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.70);
+      color:var(--text);
+      font-weight:800;
+      max-width:260px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .btn{
+      appearance:none;
+      border:0;
+      cursor:pointer;
+      padding:9px 12px;
+      border-radius:12px;
+      font-weight:900;
+      background:linear-gradient(135deg, rgba(37,99,235,.95), rgba(56,189,248,.75));
+      color:white;
+      box-shadow:0 10px 26px rgba(37,99,235,.18);
+    }
+    .btn.secondary{
+      background:rgba(255,255,255,.70);
+      border:1px solid var(--line);
+      color:var(--text);
+      box-shadow:none;
+    }
+    .btn:disabled{opacity:.55; cursor:not-allowed}
+
+    /* App layout */
+    .shell{
+      max-width:1200px;
+      margin:18px auto 36px;
+      padding:0 16px;
       display:grid;
-      grid-template-columns: 34px 92px 1fr;
-      gap:10px;
+      grid-template-columns: 260px 1fr;
+      gap:16px;
       align-items:start;
-      padding: 10px 12px;
-      border-top: 1px solid var(--line);
-      min-width: 0;
     }
-    .tLine:first-child { border-top: 0; }
-
-    .ln { text-align:right; color: var(--muted); font-family: var(--mono); font-size: 12px; padding-top: 2px; }
-
-    .chip {
-      font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid var(--line);
-      color: var(--text);
-      font-weight: 700;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .chip.you { background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.28); }
-    .chip.pro { background: rgba(34,197,94,0.14); border-color: rgba(34,197,94,0.26); }
-    .chip.other { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.26); }
-    .tText {
-      min-width: 0;
-      font-size: 13.5px;
-      line-height: 1.35;
-      white-space: pre-wrap;
+    @media (max-width: 980px){
+      .shell{grid-template-columns:1fr}
+      .sidebar{position:relative}
     }
 
-    .reportGrid { display:grid; gap: 10px; }
-    .reportCard {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: rgba(255,255,255,0.03);
-      overflow: hidden;
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
     }
-    .reportHead {
-      padding: 10px 12px;
-      font-weight: 850;
+
+    /* Sidebar */
+    .sidebar{
+      position:sticky;
+      top:78px;
+      padding:12px;
+    }
+    .sideTitle{
+      font-size:12px;
+      color:var(--muted);
+      font-weight:900;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      margin:10px 8px 8px;
+    }
+    .sideItem{
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 10px;
+      border-radius:14px;
+      border:1px solid transparent;
+      background:transparent;
+      color:var(--text);
+      font-weight:850;
+      cursor:pointer;
+      text-decoration:none;
+    }
+    .sideItem:hover{ background:rgba(37,99,235,.06); border-color:rgba(37,99,235,.10); }
+    .sideItem.active{ background:rgba(37,99,235,.10); border-color:rgba(37,99,235,.18); }
+    .tag{
+      font-size:11px;
+      font-weight:900;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid rgba(37,99,235,.18);
+      background:rgba(37,99,235,.08);
+      color:rgba(37,99,235,.95);
+      white-space:nowrap;
+    }
+    .sideItem.disabled{
+      opacity:.55;
+    }
+
+    /* Main content */
+    .main{
+      padding:14px;
+    }
+
+    .banner{
+      border-radius:14px;
+      padding:10px 12px;
+      border:1px solid var(--line);
+      background:rgba(2,8,23,.02);
+      display:flex; gap:10px; align-items:flex-start;
+      margin:0 0 10px;
+    }
+    .banner .dot{ width:10px; height:10px; border-radius:999px; margin-top:4px; }
+    .banner.good .dot{ background:var(--good); }
+    .banner.warn .dot{ background:var(--warn); }
+    .banner.bad  .dot{ background:var(--bad); }
+    .banner .txt{ font-size:13.5px; line-height:1.35; }
+    .banner .txt strong{ font-weight:900; }
+
+    .hidden{display:none !important;}
+    label{ display:block; font-size:13px; color:var(--muted); margin-bottom:6px; font-weight:800; }
+    input[type="file"], select, textarea, input[type="email"]{
+      width:100%;
+      background:rgba(2,8,23,.02);
+      color:var(--text);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px 12px;
+      outline:none;
+    }
+    textarea{ min-height:92px; resize:vertical; }
+    .help{ color:var(--muted); font-size:12.5px; margin-top:6px; line-height:1.35; }
+    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .status{ color:var(--muted); font-size:13px; }
+    .sectionTitle{ font-size:14px; font-weight:950; margin:0 0 10px; }
+    .kicker{ color:var(--muted); font-size:13px; margin:0 0 10px; }
+
+    /* Quick Actions */
+    .qaWrap{ padding:12px; }
+    .qaHead{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:6px 6px 10px;
+    }
+    .qaGrid{
+      display:grid;
+      gap:12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    @media (max-width: 860px){
+      .qaGrid{ grid-template-columns:1fr; }
+    }
+    .qaCard{
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:12px 12px;
+      background:linear-gradient(180deg, rgba(37,99,235,.05), rgba(56,189,248,.04));
+      display:flex;
+      gap:12px;
+      align-items:flex-start;
+      text-align:left;
+      cursor:pointer;
+      position:relative;
+      overflow:hidden;
+    }
+    .qaCard:hover{ border-color:rgba(37,99,235,.22); }
+    .qaIcon{
+      width:34px; height:34px; border-radius:12px;
+      background:rgba(37,99,235,.12);
+      border:1px solid rgba(37,99,235,.16);
+      display:grid; place-items:center;
+      flex:0 0 auto;
+    }
+    .qaTitle{ font-weight:950; margin:0; }
+    .qaDesc{ margin:4px 0 0; color:var(--muted); font-size:13px; line-height:1.35; }
+    .qaSoon{
+      position:absolute; top:10px; right:10px;
+      font-size:11px; font-weight:950;
+      padding:4px 8px; border-radius:999px;
+      border:1px solid rgba(245,158,11,.25);
+      background:rgba(245,158,11,.10);
+      color:rgba(180,83,9,.95);
+    }
+
+    /* Table */
+    .tableWrap{ padding:12px; }
+    .table{
+      width:100%;
+      border-collapse:collapse;
+      overflow:hidden;
+      border-radius:16px;
+    }
+    .table th, .table td{
+      padding:12px 10px;
+      border-top:1px solid var(--line);
+      font-size:13.5px;
+      text-align:left;
+      vertical-align:middle;
+    }
+    .table thead th{
+      color:var(--muted);
+      font-weight:950;
+      background:rgba(2,8,23,.02);
+      border-top:0;
+    }
+    .table tr:hover td{ background:rgba(37,99,235,.04); cursor:pointer; }
+
+    .footerNote{ color:var(--muted); font-size:12px; margin-top:10px; }
+
+    /* Transcript */
+    .transcriptBox{
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:rgba(2,8,23,.02);
+      overflow:hidden;
+    }
+    .tLine{
+      display:flex; gap:10px; align-items:flex-start;
+      padding:10px 12px;
+      border-top:1px solid var(--line);
+      min-width:0;
+    }
+    .tLine:first-child{ border-top:0; }
+    .ln{ width:34px; text-align:right; color:var(--muted); font-family:var(--mono); font-size:12px; padding-top:2px; }
+
+    .chip{
+      flex:0 0 92px;
+      font-size:12px;
+      padding:4px 8px;
+      border-radius:999px;
+      background:rgba(37,99,235,.08);
+      border:1px solid rgba(37,99,235,.14);
+      color:rgba(37,99,235,.98);
+      font-weight:850;
+      text-align:center;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .chip.you{ background:rgba(37,99,235,.10); border-color:rgba(37,99,235,.18); color:rgba(37,99,235,.98); }
+    .chip.pro{ background:rgba(22,163,74,.10); border-color:rgba(22,163,74,.18); color:rgba(22,101,52,.98); }
+    .chip.other{ background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.20); color:rgba(180,83,9,.98); }
+
+    .tText{
+      flex:1 1 auto;
+      min-width:0;
+      font-size:13.5px;
+      line-height:1.35;
+      white-space:pre-wrap;
+      color:var(--text);
+    }
+
+    /* Report */
+    .reportGrid{ display:grid; gap:10px; }
+    .reportCard{
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:rgba(2,8,23,.02);
+      overflow:hidden;
+    }
+    .reportHead{
+      padding:10px 12px;
+      font-weight:950;
       display:flex; align-items:center; justify-content:space-between;
       cursor:pointer;
       user-select:none;
-      background: rgba(255,255,255,0.02);
+      background:rgba(255,255,255,.60);
     }
-    .reportBody { padding: 10px 12px; border-top: 1px solid var(--line); }
-    .reportBody p { margin: 0 0 8px; color: var(--text); font-size: 13.5px; line-height: 1.4; }
-    .reportBody ul, .reportBody ol { margin: 6px 0 10px 18px; }
-    .reportBody li { margin: 4px 0; font-size: 13.5px; line-height: 1.35; }
-    .reportBody strong { font-weight: 850; }
+    .reportBody{ padding:10px 12px; border-top:1px solid var(--line); }
+    .reportBody p{ margin:0 0 8px; font-size:13.5px; line-height:1.4; }
+    .reportBody ul, .reportBody ol{ margin:6px 0 10px 18px; }
+    .reportBody li{ margin:4px 0; font-size:13.5px; line-height:1.35; }
+    .reportBody strong{ font-weight:950; }
 
-    details { border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,0.02); padding: 10px 12px; }
-    details summary { cursor:pointer; font-weight: 850; }
-    .mono { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: var(--muted); margin-top: 10px; }
-    .footerNote { color: var(--muted); font-size: 12px; margin-top: 10px; }
+    details{ border:1px solid var(--line); border-radius:16px; background:rgba(2,8,23,.02); padding:10px 12px; }
+    details summary{ cursor:pointer; font-weight:950; }
+    .mono{ font-family:var(--mono); font-size:12px; white-space:pre-wrap; color:var(--muted); margin-top:10px; }
 
-    .table { width:100%; border-collapse: collapse; }
-    .table th, .table td { padding: 10px 8px; border-top: 1px solid var(--line); font-size: 13.5px; text-align:left; }
-    .table th { color: var(--muted); font-weight: 900; }
-    .table tr:hover td { background: rgba(255,255,255,0.03); cursor:pointer; }
+    .kv{ display:grid; gap:8px; }
+    .kv .item{
+      display:grid;
+      grid-template-columns: 180px 1fr;
+      gap:10px;
+      padding:10px 10px;
+      border-radius:14px;
+      background:rgba(2,8,23,.02);
+      border:1px solid var(--line);
+    }
+    .kv .k{ color:var(--muted); font-size:13px; font-weight:900; }
+    .kv .v{ font-size:13.5px; white-space:pre-wrap; }
+
+    .bullets{ margin:0; padding-left:18px; }
+    .bullets li{ margin:4px 0; font-size:13.5px; }
+
   </style>
 </head>
 
 <body>
-  <div class="wrap">
-    <div class="header">
+  <div class="topbar">
+    <div class="topInner">
       <div class="brand">
-        <h1 id="brandTitle">Calibrate</h1>
-        <p id="brandSub">Upload a call. Get a transcript + coaching report.</p>
+        <div class="mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#38bdf8"/>
+                <stop offset="1" stop-color="#2563eb"/>
+              </linearGradient>
+            </defs>
+            <circle cx="32" cy="32" r="22" stroke="url(#g2)" stroke-width="10" stroke-linecap="round"
+              stroke-dasharray="120 30" stroke-dashoffset="15"/>
+            <path d="M26 34.5 31.5 40 42 29.5" stroke="url(#g2)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="brandText">
+          <div class="brandTitle" id="brandTitle">Calibrate</div>
+          <div class="brandSub" id="brandSub">Upload a call. Get a transcript + coaching report.</div>
+        </div>
       </div>
-      <div class="row">
+
+      <div class="navRight">
         <span id="who" class="pill hidden"></span>
         <button id="btnHome" class="btn secondary hidden">Home</button>
         <button id="btnNew" class="btn secondary hidden">New</button>
@@ -200,166 +420,237 @@
         <button id="btnSignOut" class="btn secondary hidden">Sign out</button>
       </div>
     </div>
+  </div>
 
-    <!-- Landing -->
-    <div id="viewLanding" class="card hidden">
-      <h3 class="sectionTitle">Calibrate MVP</h3>
-      <p style="margin:0 0 10px; color:var(--muted);">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
-      <ul class="bullets">
-        <li>Transcript line-by-line with speakers</li>
-        <li>Call outcome + coaching report</li>
-        <li>Script gate (PASS/FAIL) capped ~90 words</li>
-      </ul>
-      <div class="row" style="margin-top:12px;">
-        <button id="btnGetStarted" class="btn">Get started</button>
-        <span id="landingStatus" class="status"></span>
-      </div>
-    </div>
+  <div class="shell">
+    <!-- Sidebar (only when logged in) -->
+    <aside id="sidebar" class="card sidebar hidden">
+      <div class="sideTitle">Dashboard</div>
+      <button id="sideHistory" class="sideItem">History</button>
+      <button id="sideUpload" class="sideItem">Upload call</button>
+      <button id="sideRecord" class="sideItem disabled">Record call <span class="tag">Coming soon</span></button>
+      <button id="sidePractice" class="sideItem disabled">AI call practice <span class="tag">Coming soon</span></button>
 
-    <!-- Login -->
-    <div id="viewLogin" class="card hidden">
-      <h3 class="sectionTitle">Sign in</h3>
-      <div id="loginBanners"></div>
+      <div class="sideTitle" style="margin-top:14px;">Support</div>
+      <a class="sideItem" id="sideSupport" href="mailto:support@calibrate.ai?subject=Calibrate%20Support">Contact support</a>
+    </aside>
 
-      <div class="grid two">
-        <div>
-          <label for="email">Email</label>
-          <input id="email" type="email" placeholder="you@email.com" />
-          <div class="help">Magic link (no password). Check your inbox.</div>
-        </div>
-        <div>
-          <label>&nbsp;</label>
-          <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
-          <div class="help">Google OAuth button is included too (only works if you set Google provider in Supabase).</div>
+    <!-- Main content -->
+    <main class="card main">
+      <!-- Landing -->
+      <div id="viewLanding" class="hidden">
+        <div class="sectionTitle">Calibrate MVP</div>
+        <p class="kicker">Upload a cold call. Get a readable transcript + coaching report + a 45s best script.</p>
+        <ul class="bullets">
+          <li>Transcript line-by-line with speakers</li>
+          <li>Call outcome + coaching report</li>
+          <li>Script gate (PASS/FAIL) capped ~90 words</li>
+        </ul>
+        <div class="row" style="margin-top:12px;">
+          <button id="btnGetStarted" class="btn">Get started</button>
+          <span id="landingStatus" class="status"></span>
         </div>
       </div>
 
-      <div class="row" style="margin-top:12px;">
-        <button id="btnGoogle" class="btn secondary">Continue with Google</button>
-        <span id="loginStatus" class="status"></span>
-      </div>
-    </div>
+      <!-- Login -->
+      <div id="viewLogin" class="hidden">
+        <div class="sectionTitle">Sign in</div>
+        <div id="loginBanners"></div>
 
-    <!-- Session expired -->
-    <div id="viewSessionExpired" class="card hidden">
-      <h3 class="sectionTitle">Session expired</h3>
-      <p style="margin:0 0 10px; color:var(--muted);">
-        Your session expired while you were using Calibrate. Please sign in again to continue.
-      </p>
-      <div id="expiredBanners"></div>
-      <div class="row" style="margin-top:12px;">
-        <button id="btnGoSignIn" class="btn">Sign in</button>
-        <button id="btnGoLanding" class="btn secondary">Go to landing</button>
-      </div>
-    </div>
-
-    <!-- Home / History -->
-    <div id="viewHome" class="card hidden">
-      <div class="row" style="justify-content:space-between;">
-        <h3 class="sectionTitle" style="margin:0;">Your history</h3>
-        <button id="btnHomeNew" class="btn">New call</button>
-      </div>
-      <div id="homeBanners" style="margin-top:12px;"></div>
-      <div id="homeStatus" class="status" style="margin: 8px 0;"></div>
-      <div style="overflow:auto;">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>When</th>
-              <th>Scenario</th>
-              <th>Outcome</th>
-              <th>Enforcer</th>
-              <th>Mismatch</th>
-            </tr>
-          </thead>
-          <tbody id="runsTbody"></tbody>
-        </table>
-      </div>
-      <div class="footerNote">Click a row to open that run.</div>
-    </div>
-
-    <!-- Calibrate (new run) -->
-    <div id="viewCalibrate" class="card hidden">
-      <div class="grid two">
-        <div>
-          <label for="audio">Audio file</label>
-          <input id="audio" type="file" accept="audio/*" />
-          <div class="help">Limits: audio only • max 25MB • max 30 minutes • formats: mp3/m4a/wav/ogg.</div>
+        <div style="display:grid; gap:12px; grid-template-columns: 1fr 1fr;">
+          <div>
+            <label for="email">Email</label>
+            <input id="email" type="email" placeholder="you@email.com" />
+            <div class="help">Magic link (no password). Check your inbox.</div>
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button id="btnMagicLink" class="btn" style="width:100%;">Send magic link</button>
+            <div class="help">Google OAuth works if enabled in Supabase.</div>
+          </div>
         </div>
 
-        <div>
-          <label for="category">Scenario template (optional)</label>
-          <select id="category"></select>
-          <div class="help">This nudges examples and wording. Context + transcript stay the source of truth.</div>
-        </div>
-
-        <div>
-          <label for="legacyScenario">Legacy scenario (optional)</label>
-          <select id="legacyScenario"></select>
-          <div class="help">Kept for backwards compatibility during MVP.</div>
-        </div>
-
-        <div>
-          <label for="context">Context (required)</label>
-          <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."></textarea>
-          <div class="help">Keep it short — we infer prospect details from the transcript when possible.</div>
+        <div class="row" style="margin-top:12px;">
+          <button id="btnGoogle" class="btn secondary">Continue with Google</button>
+          <span id="loginStatus" class="status"></span>
         </div>
       </div>
 
-      <div class="row" style="margin-top: 10px;">
-        <button id="run" class="btn">Calibrate</button>
-        <span id="status" class="status"></span>
+      <!-- Session expired -->
+      <div id="viewSessionExpired" class="hidden">
+        <div class="sectionTitle">Session expired</div>
+        <p class="kicker">Your session expired while you were using Calibrate. Please sign in again to continue.</p>
+        <div id="expiredBanners"></div>
+        <div class="row" style="margin-top:12px;">
+          <button id="btnGoSignIn" class="btn">Sign in</button>
+          <button id="btnGoLanding" class="btn secondary">Go to landing</button>
+        </div>
       </div>
 
-      <div id="results" class="card hidden" style="margin-top:14px;">
-        <div id="banners"></div>
+      <!-- Home / History -->
+      <div id="viewHome" class="hidden">
+        <div id="homeBanners"></div>
 
-        <h3 class="sectionTitle">Summary</h3>
-        <div class="kv" id="summaryKV"></div>
+        <div class="card qaWrap" style="box-shadow:none; margin-bottom:12px;">
+          <div class="qaHead">
+            <div class="sectionTitle" style="margin:0;">Quick actions</div>
+          </div>
+          <div class="qaGrid">
+            <button id="qaUpload" class="qaCard" type="button">
+              <div class="qaIcon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3v10" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M8 7l4-4 4 4" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M5 14v4a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-4" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div>
+                <div class="qaTitle">Upload a call</div>
+                <div class="qaDesc">Upload audio and generate a transcript + coaching report.</div>
+              </div>
+            </button>
+
+            <button id="qaRecord" class="qaCard" type="button">
+              <div class="qaIcon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3Z" stroke="#2563eb" stroke-width="2.4"/>
+                  <path d="M19 11a7 7 0 0 1-14 0" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M12 18v3" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div>
+                <div class="qaTitle">Record call</div>
+                <div class="qaDesc">Record live calls directly in the app.</div>
+              </div>
+              <div class="qaSoon">Coming soon</div>
+            </button>
+
+            <button id="qaPractice" class="qaCard" type="button">
+              <div class="qaIcon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M7 11V7a2 2 0 0 1 2-2h8" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M17 13v4a2 2 0 0 1-2 2H7" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M7 12h10" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
+                  <path d="M16 6l2-2 2 2" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M16 18l2 2 2-2" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div>
+                <div class="qaTitle">AI call practice</div>
+                <div class="qaDesc">Practice with an AI prospect + get instant feedback.</div>
+              </div>
+              <div class="qaSoon">Coming soon</div>
+            </button>
+          </div>
+        </div>
+
+        <div class="card tableWrap" style="box-shadow:none;">
+          <div id="homeStatus" class="status" style="margin: 0 0 8px;"></div>
+          <div style="overflow:auto;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Outcome</th>
+                  <th>Scenario</th>
+                  <th>Type</th>
+                  <th>Mismatch</th>
+                </tr>
+              </thead>
+              <tbody id="runsTbody"></tbody>
+            </table>
+          </div>
+          <div class="footerNote">Click a row to open that run.</div>
+        </div>
+      </div>
+
+      <!-- Calibrate (new run) -->
+      <div id="viewCalibrate" class="hidden">
+        <div class="sectionTitle">New run</div>
+        <p class="kicker">Upload an audio file + add context. You’ll get transcript + coaching report.</p>
+
+        <div style="display:grid; gap:12px; grid-template-columns: 1fr 1fr;">
+          <div>
+            <label for="audio">Audio file</label>
+            <input id="audio" type="file" accept="audio/*" />
+            <div class="help">Limits: audio only • max 25MB • formats: mp3/m4a/wav/ogg.</div>
+          </div>
+
+          <div>
+            <label for="category">Scenario template (optional)</label>
+            <select id="category"></select>
+            <div class="help">This nudges examples and wording. Context + transcript stay the source of truth.</div>
+          </div>
+
+          <div>
+            <label for="legacyScenario">Legacy scenario (optional)</label>
+            <select id="legacyScenario"></select>
+            <div class="help">Kept for backwards compatibility during MVP.</div>
+          </div>
+
+          <div>
+            <label for="context">Context (required)</label>
+            <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."></textarea>
+            <div class="help">Keep it short — we infer prospect details from the transcript when possible.</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 10px;">
+          <button id="run" class="btn">Calibrate</button>
+          <span id="status" class="status"></span>
+        </div>
+
+        <div id="results" class="card hidden" style="margin-top:14px; padding:14px; box-shadow:none;">
+          <div id="banners"></div>
+
+          <div class="sectionTitle" style="margin-top:4px;">Summary</div>
+          <div class="kv" id="summaryKV"></div>
+
+          <div style="height: 12px;"></div>
+
+          <div class="sectionTitle">Transcript</div>
+          <div class="transcriptBox" id="transcriptBox"></div>
+
+          <div style="height: 12px;"></div>
+
+          <div class="sectionTitle">Report</div>
+          <div class="reportGrid" id="reportGrid"></div>
+
+          <div style="height: 12px;"></div>
+
+          <details id="diagnosticsDetails" class="hidden">
+            <summary>Diagnostics (internal)</summary>
+            <div class="mono" id="diagnosticsMono"></div>
+            <div class="mono" id="rawJson"></div>
+            <div class="footerNote">Dev mode only. Add <span style="font-family:var(--mono)">?dev=1</span> to the URL.</div>
+          </details>
+        </div>
+      </div>
+
+      <!-- Run viewer -->
+      <div id="viewRun" class="hidden">
+        <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+          <div class="sectionTitle" style="margin:0;">Run</div>
+          <button id="btnBackHome" class="btn secondary">Back</button>
+        </div>
+
+        <div id="runBanners"></div>
+
+        <div class="sectionTitle" style="margin-top:12px;">Summary</div>
+        <div class="kv" id="summaryKV2"></div>
 
         <div style="height: 12px;"></div>
 
-        <h3 class="sectionTitle">Transcript</h3>
-        <div class="transcriptBox" id="transcriptBox"></div>
+        <div class="sectionTitle">Transcript</div>
+        <div class="transcriptBox" id="transcriptBox2"></div>
 
         <div style="height: 12px;"></div>
 
-        <h3 class="sectionTitle">Report</h3>
-        <div class="reportGrid" id="reportGrid"></div>
-
-        <div style="height: 12px;"></div>
-
-        <details id="diagnosticsDetails" class="hidden">
-          <summary>Diagnostics (internal)</summary>
-          <div class="mono" id="diagnosticsMono"></div>
-          <div class="mono" id="rawJson"></div>
-          <div class="footerNote">Dev mode only. Add <span style="font-family:var(--mono)">?dev=1</span> to the URL.</div>
-        </details>
-      </div>
-    </div>
-
-    <!-- Run viewer -->
-    <div id="viewRun" class="card hidden">
-      <div class="row" style="justify-content:space-between;">
-        <h3 class="sectionTitle" style="margin:0;">Run</h3>
-        <button id="btnBackHome" class="btn secondary">Back</button>
+        <div class="sectionTitle">Report</div>
+        <div class="reportGrid" id="reportGrid2"></div>
       </div>
 
-      <div id="runBanners" style="margin-top:12px;"></div>
-
-      <h3 class="sectionTitle" style="margin-top:14px;">Summary</h3>
-      <div class="kv" id="summaryKV2"></div>
-
-      <div style="height: 12px;"></div>
-
-      <h3 class="sectionTitle">Transcript</h3>
-      <div class="transcriptBox" id="transcriptBox2"></div>
-
-      <div style="height: 12px;"></div>
-
-      <h3 class="sectionTitle">Report</h3>
-      <div class="reportGrid" id="reportGrid2"></div>
-    </div>
+    </main>
   </div>
 
   <!-- Supabase JS (CDN) -->
@@ -743,6 +1034,12 @@
     const viewCalibrate = document.getElementById("viewCalibrate");
     const viewRun = document.getElementById("viewRun");
 
+    const sidebar = document.getElementById("sidebar");
+    const sideHistory = document.getElementById("sideHistory");
+    const sideUpload = document.getElementById("sideUpload");
+    const sideRecord = document.getElementById("sideRecord");
+    const sidePractice = document.getElementById("sidePractice");
+
     const btnHome = document.getElementById("btnHome");
     const btnNew = document.getElementById("btnNew");
     const btnSignIn = document.getElementById("btnSignIn");
@@ -762,7 +1059,10 @@
     const btnGoSignIn = document.getElementById("btnGoSignIn");
     const btnGoLanding = document.getElementById("btnGoLanding");
 
-    const btnHomeNew = document.getElementById("btnHomeNew");
+    const qaUpload = document.getElementById("qaUpload");
+    const qaRecord = document.getElementById("qaRecord");
+    const qaPractice = document.getElementById("qaPractice");
+
     const homeBanners = document.getElementById("homeBanners");
     const homeStatus = document.getElementById("homeStatus");
     const runsTbody = document.getElementById("runsTbody");
@@ -833,6 +1133,16 @@
       viewRun.classList.add("hidden");
     }
 
+    function setActiveSidebar(path) {
+      const clear = () => {
+        [sideHistory, sideUpload].forEach(el => el.classList.remove("active"));
+      };
+      clear();
+      if (path === "/home") sideHistory.classList.add("active");
+      if (path === "/calibrate") sideUpload.classList.add("active");
+      if (path.startsWith("/runs/")) sideHistory.classList.add("active");
+    }
+
     function updateTopNav() {
       const loggedIn = !!session;
       btnSignIn.classList.toggle("hidden", loggedIn);
@@ -840,6 +1150,8 @@
       btnHome.classList.toggle("hidden", !loggedIn);
       btnNew.classList.toggle("hidden", !loggedIn);
       who.classList.toggle("hidden", !loggedIn);
+
+      sidebar.classList.toggle("hidden", !loggedIn);
 
       if (loggedIn) who.textContent = session.user?.email || "Signed in";
       else who.textContent = "";
@@ -907,6 +1219,11 @@
       return { ok: r2.ok, status: r2.status, json: j2 };
     }
 
+    function comingSoon(targetBannersEl) {
+      targetBannersEl.innerHTML = "";
+      targetBannersEl.appendChild(banner("warn", "Coming soon:", "This feature is on the roadmap — the button is just a teaser for now."));
+    }
+
     // ---- Nav buttons ----
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
@@ -922,11 +1239,21 @@
       else goto("/login");
     });
 
-    btnHomeNew.addEventListener("click", () => goto("/calibrate"));
     btnBackHome.addEventListener("click", () => goto("/home"));
 
     btnGoSignIn.addEventListener("click", () => goto("/login"));
     btnGoLanding.addEventListener("click", () => goto("/"));
+
+    // Sidebar actions
+    sideHistory.addEventListener("click", () => goto("/home"));
+    sideUpload.addEventListener("click", () => goto("/calibrate"));
+    sideRecord.addEventListener("click", () => comingSoon(homeBanners));
+    sidePractice.addEventListener("click", () => comingSoon(homeBanners));
+
+    // Quick actions
+    qaUpload.addEventListener("click", () => goto("/calibrate"));
+    qaRecord.addEventListener("click", () => comingSoon(homeBanners));
+    qaPractice.addEventListener("click", () => comingSoon(homeBanners));
 
     // ---- Login actions ----
     btnMagicLink.addEventListener("click", async () => {
@@ -971,10 +1298,20 @@
     // ---- History ----
     let runsLoadSeq = 0;
 
+    function prettifyType(t) {
+      const v = String(t || "").toLowerCase().trim();
+      if (!v) return "Upload";
+      if (v === "upload") return "Upload";
+      if (v === "record") return "Record";
+      if (v === "practice") return "Practice";
+      return v[0].toUpperCase() + v.slice(1);
+    }
+
     async function loadRuns() {
       const seq = ++runsLoadSeq;
-      homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
+      // keep banners unless we explicitly clear them
+      // homeBanners.innerHTML = "";
 
       try {
         const { ok, status, json } = await fetchJsonAuthed("/api/runs");
@@ -1001,14 +1338,14 @@
           const when = new Date(run.created_at).toLocaleString();
           const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
           const outcome = run.call_outcome || "—";
-          const enforcer = run.enforcer || "—";
           const mismatch = (run.mismatch || run.scenario_mismatch) ? "Yes" : "No";
+          const type = prettifyType(run.type || run.run_type || "upload");
 
           tr.innerHTML = `
             <td>${escapeHtml(when)}</td>
-            <td>${escapeHtml(scenario)}</td>
             <td>${escapeHtml(outcome)}</td>
-            <td>${escapeHtml(enforcer)}</td>
+            <td>${escapeHtml(scenario)}</td>
+            <td>${escapeHtml(type)}</td>
             <td>${escapeHtml(mismatch)}</td>
           `;
 
@@ -1200,6 +1537,8 @@
         goto("/login");
         return;
       }
+
+      setActiveSidebar(path);
 
       if (path === "/") {
         if (loggedIn) { goto("/home"); return; }

@@ -11,10 +11,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.set("trust proxy", 1);
+app.set("trust proxy", 1); // Render/proxies
 app.use(express.json());
 
-// ---- Limits ----
+// ---- Limits (server truth) ----
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
 const MAX_RUNS_PER_24H = 10;
 
@@ -26,7 +26,7 @@ const upload = multer({
   limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
-// serve static files
+// serve static files (index.html, etc.)
 app.use(express.static(__dirname, { extensions: ["html"] }));
 
 app.get("/health", (req, res) => {
@@ -37,6 +37,7 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Expose anon config for frontend (SAFE: anon key is meant for browser use)
 app.get("/api/config", (req, res) => {
   res.json({
     supabaseUrl: process.env.SUPABASE_URL || "",
@@ -45,7 +46,7 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-// ---- Supabase clients ----
+// ---- Supabase clients (lazy singletons) ----
 let _sbAnon = null;
 let _sbService = null;
 
@@ -123,12 +124,14 @@ async function insertRunResilient(sb, payload) {
 
     const msg = String(error.message || "");
 
+    // Postgres style: column runs.foo does not exist
     let m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
     if (m && m[1]) {
       delete p[m[1]];
       continue;
     }
 
+    // PostgREST schema cache style:
     m = msg.match(/Could not find the '(\w+)' column of '(\w+)' in the schema cache/i);
     if (m && m[1]) {
       delete p[m[1]];
@@ -141,7 +144,7 @@ async function insertRunResilient(sb, payload) {
   throw new Error("Insert failed after retries (schema mismatch).");
 }
 
-// -------------------- Runs API --------------------
+// -------------------- Runs API (history + details) --------------------
 
 app.get("/api/runs", async (req, res) => {
   try {
@@ -161,6 +164,9 @@ app.get("/api/runs", async (req, res) => {
 
     const runs = (data || []).map((r) => {
       const mismatch = Boolean(normalizeScenarioMismatch(r));
+      const runType =
+        r.run_type ?? r.type ?? r.runType ?? r.run_type_text ?? "upload";
+
       return {
         id: r.id,
         created_at: r.created_at,
@@ -169,6 +175,8 @@ app.get("/api/runs", async (req, res) => {
         enforcer: r.enforcer ?? r.enforcer_version ?? r.enforcerVersion ?? ENFORCER_VERSION,
         mismatch,
         scenario_mismatch: mismatch,
+        type: runType,       // for the new UI table
+        run_type: runType,   // keep both shapes for safety
       };
     });
 
@@ -205,172 +213,62 @@ app.get("/api/runs/:id", async (req, res) => {
   }
 });
 
-// -------------------- Transcript building + smoothing --------------------
+// -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
 
-function speakerLabelFromUtterance(u) {
-  const sp = u?.speaker;
-
-  if (typeof sp === "number" && Number.isFinite(sp)) return `Speaker ${sp}`;
-
-  if (typeof sp === "string") {
-    const s = sp.trim();
-    if (!s) return "Speaker X";
-    if (/^\d+$/.test(s)) return `Speaker ${parseInt(s, 10)}`;
-    if (/^[A-Za-z]$/.test(s)) return `Speaker ${s.toUpperCase()}`;
-    return `Speaker ${s}`;
-  }
-
-  return "Speaker X";
-}
-
-function isLikelyContinuation(prev, curr) {
-  const prevText = String(prev?.text || "").trim();
-  const currText = String(curr?.text || "").trim();
-  if (!prevText || !currText) return false;
-
-  const gap = Number.isFinite(curr?.start) && Number.isFinite(prev?.end) ? (curr.start - prev.end) : 0;
-  const gapSmall = !Number.isFinite(gap) ? true : gap <= 900; // ms
-
-  const prevShort = prevText.length <= 80;
-
-  const contStarters = /^(and|but|so|because|at|according|until|then|also|or|if|when|where|which|that|with|for|in|on|to|from)\b/i;
-  const startsContinuationWord = contStarters.test(currText);
-
-  const startsLowercase = /^[a-z]/.test(currText);
-
-  const prevEndsClosed = /[.!?]["')\]]?$/.test(prevText);
-  const prevEndsOpen = !prevEndsClosed || /[,;:—-]$/.test(prevText);
-
-  // We accept continuation if:
-  // - very small gap AND (prev is "open" OR prev is short) AND current looks like a continuation start
-  return gapSmall && (prevEndsOpen || prevShort) && (startsContinuationWord || startsLowercase);
-}
-
-function smoothAndMergeUtterances(utterances) {
-  const items = (utterances || []).map((u) => ({
-    speaker: speakerLabelFromUtterance(u),
-    text: String(u?.text || "").trim(),
-    start: typeof u?.start === "number" ? u.start : null,
-    end: typeof u?.end === "number" ? u.end : null,
-  })).filter(x => x.text);
-
-  if (items.length === 0) return [];
-
-  // Pass 1: fix obvious "continuation flips"
-  for (let i = 1; i < items.length; i++) {
-    const prev = items[i - 1];
-    const curr = items[i];
-    if (curr.speaker !== prev.speaker && isLikelyContinuation(prev, curr)) {
-      curr.speaker = prev.speaker;
-    }
-  }
-
-  // Pass 2: merge adjacent same-speaker fragments
-  const merged = [];
-  for (const it of items) {
-    const last = merged[merged.length - 1];
-    if (last && last.speaker === it.speaker) {
-      const joiner = last.text.endsWith("-") ? "" : " ";
-      last.text = (last.text + joiner + it.text).replace(/\s+/g, " ").trim();
-      last.end = it.end ?? last.end;
-    } else {
-      merged.push({ ...it });
-    }
-  }
-
-  return merged;
-}
-
-function inferRepProspectMap(twoSpeakers, mergedItems) {
-  const [s1, s2] = twoSpeakers;
-
-  const textFor = (speaker) =>
-    mergedItems.filter(x => x.speaker === speaker).map(x => x.text).join(" ").slice(0, 6000);
-
-  const repSignals = [
-    /\bmy name is\b/i,
-    /\bi'?m\b/i,
-    /\bi am\b/i,
-    /\bcalling\b/i,
-    /\breaching out\b/i,
-    /\bquick\b/i,
-    /\bseconds?\b/i,
-    /\bwork with\b/i,
-    /\bcan i\b/i,
-    /\bdo you have\b/i,
-    /\bare you\b/i,
-    /\bwould you\b/i,
-  ];
-
-  const prospectSignals = [
-    /\bnot interested\b/i,
-    /\bprobably not\b/i,
-    /\bwe'?re good\b/i,
-    /\balready (have|using|working)\b/i,
-    /\bjust email\b/i,
-    /\bhow much\b/i,
-    /\bno\b/i,
-    /\byes\b/i,
-  ];
-
-  const score = (txt) => {
-    let rep = 0, pro = 0;
-    for (const r of repSignals) if (r.test(txt)) rep++;
-    for (const p of prospectSignals) if (p.test(txt)) pro++;
-    return { rep, pro, net: rep - pro };
-  };
-
-  const a = score(textFor(s1));
-  const b = score(textFor(s2));
-
-  // Strong preference: whoever contains "my name is" is rep
-  const aHasIntro = /\bmy name is\b/i.test(textFor(s1));
-  const bHasIntro = /\bmy name is\b/i.test(textFor(s2));
-  if (aHasIntro && !bHasIntro) return { [s1]: "You", [s2]: "Prospect" };
-  if (bHasIntro && !aHasIntro) return { [s2]: "You", [s1]: "Prospect" };
-
-  const diff = Math.abs(a.net - b.net);
-
-  // If we have any signal at all, map; otherwise keep Speaker A/B
-  if (diff >= 1) {
-    const repSpeaker = a.net >= b.net ? s1 : s2;
-    const proSpeaker = repSpeaker === s1 ? s2 : s1;
-    return { [repSpeaker]: "You", [proSpeaker]: "Prospect" };
-  }
-
-  return null;
-}
-
-function buildTranscriptFromUtterances(utterances) {
-  const merged = smoothAndMergeUtterances(utterances);
-  if (merged.length === 0) return "";
-
-  const speakers = [...new Set(merged.map(x => x.speaker))];
-
-  // If exactly 2 speakers, map consistently to You/Prospect for ALL lines
-  let roleMap = null;
-  if (speakers.length === 2) {
-    roleMap = inferRepProspectMap(speakers, merged);
-  }
-
-  return merged.map((x) => {
-    const label = roleMap?.[x.speaker] || x.speaker;
-    return `${label}: ${x.text}`;
-  }).join("\n");
-}
-
-// Light formatting (no “smart” relabeling anymore; server transcript is already consistent)
 function prettifyTranscript(raw) {
   let t = (raw ?? "").toString().trim();
   if (!t) return "";
 
   t = t.replace(/\r\n/g, "\n");
-  t = t.replace(/[ \t]+/g, " ").replace(/\n[ \t]+/g, "\n").replace(/\n{2,}/g, "\n").trim();
 
-  // normalize "Speaker0:" -> "Speaker 0:"
-  t = t.replace(/^speaker\s*([a-z]|\d+)\s*:/gim, "Speaker $1:");
+  // Normalize speaker labels (handles Speaker A/B AND Speaker 0/1/2...)
+  t = t.replace(/\s*(Speaker\s*(?:[A-Za-z]|\d+)\s*:)\s*/gim, "\n$1 ");
 
-  return t;
+  // Normalize common role labels into their own lines
+  t = t.replace(/\s*(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "\n$1: ");
+
+  // If sentence continues then hits a label, force a new line
+  t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s+(?=[A-Za-z0-9])/gi, "$1\n$2: ");
+  t = t.replace(/([.!?])\s+(Prospect|Rep|Caller|Agent|Customer)\s*[:.]\s*/gi, "$1\n$2: ");
+
+  t = t
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+
+  let lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  // Accept Speaker A/B OR Speaker 0/1/2...
+  const labelRe = /^(Speaker\s*(?:[A-Za-z]|\d+)|Prospect|Rep|Caller|Agent|Customer)\s*:\s*(.*)$/i;
+
+  lines = lines.map((line) => {
+    const m = line.match(labelRe);
+    if (!m) return line;
+
+    let label = (m[1] || "").replace(/\s+/g, " ").trim();
+    const text = (m[2] || "").trim();
+
+    // Standardize "Speaker0" -> "Speaker 0"
+    label = label.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+
+    const lower = label.toLowerCase();
+
+    // Keep "Speaker X" as-is (frontend may remap ONLY if truly 2 speakers)
+    if (lower.startsWith("speaker")) return `${label}: ${text}`.trim();
+
+    if (lower === "prospect" || lower === "customer") return `Prospect: ${text}`.trim();
+
+    // Rep/Caller/Agent => You
+    return `You: ${text}`.trim();
+  });
+
+  // Prevent accidental double-prefixes
+  lines = lines.map((l) =>
+    l.replace(/^You:\s*Prospect:\s*/i, "Prospect: ").replace(/^Prospect:\s*You:\s*/i, "You: ")
+  );
+
+  return lines.join("\n");
 }
 
 async function transcribeWithAssemblyAI(audioBuffer) {
@@ -388,12 +286,7 @@ async function transcribeWithAssemblyAI(audioBuffer) {
   const createRes = await fetch("https://api.assemblyai.com/v2/transcript", {
     method: "POST",
     headers: { authorization: apiKey, "content-type": "application/json" },
-    body: JSON.stringify({
-      audio_url,
-      punctuate: true,
-      format_text: true,
-      speaker_labels: true,
-    }),
+    body: JSON.stringify({ audio_url, punctuate: true, format_text: true, speaker_labels: true }),
   });
   if (!createRes.ok) throw new Error("AssemblyAI transcript create failed: " + (await createRes.text().catch(() => "")));
   const { id } = await createRes.json();
@@ -407,12 +300,15 @@ async function transcribeWithAssemblyAI(audioBuffer) {
     const pollJson = await pollRes.json();
 
     if (pollJson.status === "completed") {
-      // IMPORTANT: build from utterances with smoothing + consistent You/Prospect mapping
       if (Array.isArray(pollJson.utterances) && pollJson.utterances.length) {
-        const built = buildTranscriptFromUtterances(pollJson.utterances);
-        return prettifyTranscript(built);
+        return pollJson.utterances
+          .map((u) => {
+            const sid = Number.isFinite(u?.speaker) ? u.speaker : "X";
+            return `Speaker ${sid}: ${(u.text || "").trim()}`.trim();
+          })
+          .join("\n");
       }
-      return prettifyTranscript((pollJson.text || "").trim());
+      return (pollJson.text || "").trim();
     }
 
     if (pollJson.status === "error") throw new Error("AssemblyAI transcription error: " + (pollJson.error || "unknown"));
@@ -421,8 +317,6 @@ async function transcribeWithAssemblyAI(audioBuffer) {
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
-
-// -------------------- Calibrate endpoint --------------------
 
 app.post("/api/run", upload.single("audio"), async (req, res) => {
   const userId = await requireUserId(req);
@@ -458,7 +352,8 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       return res.status(429).json({ error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Try again later.` });
     }
 
-    const transcript = await transcribeWithAssemblyAI(file.buffer);
+    const transcriptRaw = await transcribeWithAssemblyAI(file.buffer);
+    const transcript = prettifyTranscript(transcriptRaw);
 
     const result = await runCalibrate({ transcript, userContext, category, legacyScenario });
 
@@ -481,6 +376,9 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
       enforcer: ENFORCER_VERSION,
       scenario_mismatch: mismatch,
       mismatch_reason: mismatchReason || null,
+
+      // Safe: if column doesn't exist, insertRunResilient will drop it.
+      run_type: "upload",
     };
 
     const inserted = await insertRunResilient(sb, row);
@@ -493,10 +391,10 @@ app.post("/api/run", upload.single("audio"), async (req, res) => {
   }
 });
 
-// unknown /api route
+// If someone hits an unknown /api route, return JSON (NOT index.html)
 app.use("/api", (req, res) => res.status(404).json({ error: "Unknown API route" }));
 
-// SPA fallback
+// SPA fallback for non-API routes
 app.get(/^(?!\/api\/).*/, (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
