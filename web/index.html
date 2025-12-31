@@ -272,13 +272,10 @@
     .outcomePill.warn{border-color:rgba(245,158,11,0.28); background:rgba(245,158,11,0.10)}
     .outcomePill.bad{border-color:rgba(239,68,68,0.28); background:rgba(239,68,68,0.10)}
 
-    /* Tooltip */
+    /* Tooltip: viewport-clamped (JS-driven). No ::before/::after tooltips anymore. */
     .hasTip{position:relative}
-    .hasTip:hover::after{
-      content: attr(data-tip);
-      position:absolute;
-      left:0;
-      top:calc(100% + 10px);
+    .tipBox{
+      position:fixed;
       min-width:260px;
       max-width:420px;
       padding:10px 12px;
@@ -291,16 +288,16 @@
       font-size:12.5px;
       line-height:1.35;
       white-space:normal;
-      z-index:9999;
+      z-index:999999;
+      pointer-events:none;
     }
-    .hasTip:hover::before{
-      content:"";
-      position:absolute;
-      left:14px;
-      top:calc(100% + 4px);
+    .tipArrow{
+      position:fixed;
+      width:0;height:0;
       border:7px solid transparent;
-      border-bottom-color:rgba(15,23,42,0.10);
-      z-index:10000;
+      border-bottom-color:rgba(15,23,42,0.12);
+      z-index:1000000;
+      pointer-events:none;
     }
 
     /* Banners */
@@ -440,6 +437,110 @@
       padding:10px 12px;
       outline:none;
     }
+
+    /* Playbook */
+    .pbLayout{
+      display:grid;
+      grid-template-columns: 320px 1fr;
+      gap:12px;
+      align-items:start;
+      margin-top:12px;
+    }
+    @media (max-width: 960px){
+      .pbLayout{grid-template-columns:1fr;}
+    }
+    .pbLeft{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:rgba(255,255,255,0.92);
+      overflow:hidden;
+    }
+    .pbLeftHead{
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:rgba(15,23,42,0.02);
+    }
+    .pbList{
+      max-height:520px;
+      overflow:auto;
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .pbItem{
+      width:100%;
+      text-align:left;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.86);
+      cursor:pointer;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      font-weight:950;
+      color:var(--text);
+    }
+    .pbItem:hover{background:rgba(37,99,235,0.06);border-color:rgba(37,99,235,0.20)}
+    .pbItem.active{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.28)}
+    .pbMeta{
+      font-size:11px;
+      font-weight:900;
+      color:var(--muted);
+      white-space:nowrap;
+    }
+    .pbRight{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:rgba(255,255,255,0.92);
+      overflow:hidden;
+    }
+    .pbRightHead{
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:rgba(15,23,42,0.02);
+    }
+    .pbBody{
+      padding:12px;
+      display:grid;
+      gap:12px;
+    }
+    .pbSmall{
+      font-size:12.5px;
+      color:var(--muted);
+      line-height:1.35;
+    }
+    .pbVersions{
+      border-top:1px solid var(--line);
+      padding-top:10px;
+      display:grid;
+      gap:8px;
+    }
+    .pbVer{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:rgba(15,23,42,0.02);
+      padding:10px 12px;
+    }
+    .pbVerTop{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      align-items:flex-start;
+      margin-bottom:6px;
+    }
+    .pbVerTop .vnum{font-weight:950}
+    .pbVerTop .vdate{color:var(--muted);font-size:12px;white-space:nowrap}
+    .pbNotes{color:var(--muted);font-size:12.5px;margin-top:6px}
   </style>
 </head>
 
@@ -497,6 +598,10 @@
           <button id="navUpload" class="navItem">
             <span>Upload Call</span>
             <span class="tag">Live</span>
+          </button>
+
+          <button id="navPlaybook" class="navItem">
+            <span>Playbook</span>
           </button>
 
           <button id="navRecord" class="navItem">
@@ -675,7 +780,10 @@
               <div id="runTitle" style="margin-top:6px;font-weight:950;font-size:16px;"></div>
               <div id="runMeta" style="margin-top:4px;color:var(--muted);font-size:12.5px;"></div>
             </div>
-            <button id="btnBackHome" class="btn secondary">Back</button>
+            <div class="row">
+              <button id="btnSavePlaybook" class="btn secondary hidden">Save to Playbook</button>
+              <button id="btnBackHome" class="btn secondary">Back</button>
+            </div>
           </div>
 
           <div id="runBanners" style="margin-top:12px;"></div>
@@ -692,6 +800,76 @@
 
           <h3 class="sectionTitle">Report</h3>
           <div class="reportGrid" id="reportGrid2"></div>
+        </div>
+
+        <!-- Playbook -->
+        <div id="viewPlaybook" class="card hidden">
+          <div class="row" style="justify-content:space-between;">
+            <div>
+              <h3 class="sectionTitle" style="margin:0;">Playbook</h3>
+              <div class="pbSmall" style="margin-top:6px;">
+                Save scripts you actually use. Update them as you learn. Your latest version becomes your default.
+              </div>
+            </div>
+            <button id="btnPlaybookBack" class="btn secondary">Back</button>
+          </div>
+
+          <div id="playbookBanners" style="margin-top:12px;"></div>
+
+          <div class="pbLayout">
+            <div class="pbLeft">
+              <div class="pbLeftHead">
+                <div style="font-weight:950;">Scripts</div>
+                <div class="row" style="gap:8px;">
+                  <button id="btnPbRefresh" class="btn secondary" style="padding:8px 10px;">Refresh</button>
+                  <button id="btnPbNew" class="btn" style="padding:8px 10px;">New</button>
+                </div>
+              </div>
+              <div id="pbList" class="pbList"></div>
+            </div>
+
+            <div class="pbRight">
+              <div class="pbRightHead">
+                <div style="font-weight:950;" id="pbRightTitle">New Script</div>
+                <span id="pbRightStatus" class="status"></span>
+              </div>
+
+              <div class="pbBody">
+                <div>
+                  <label for="pbTitle">Title (max 5 words)</label>
+                  <input id="pbTitle" class="field" placeholder="e.g., Dental Receptionist Opener" />
+                  <div class="pbSmall" style="margin-top:6px;">
+                    Keep it short. This shows in your library.
+                  </div>
+                </div>
+
+                <div>
+                  <label for="pbText">Script</label>
+                  <textarea id="pbText" class="field" style="width:100%;min-height:180px;resize:vertical"
+                    placeholder="Paste the exact script you want to reuse."></textarea>
+                </div>
+
+                <div>
+                  <label for="pbNotes">Notes (optional)</label>
+                  <input id="pbNotes" class="field" placeholder="What changed? Why is this better?" />
+                </div>
+
+                <div class="row">
+                  <button id="btnPbSave" class="btn">Save</button>
+                  <button id="btnPbAddVersion" class="btn secondary hidden">Add as New Version</button>
+                  <span class="pbSmall" id="pbLinkHint"></span>
+                </div>
+
+                <div class="pbVersions">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                    <div style="font-weight:950;">Version History</div>
+                    <div class="pbSmall">Newest first</div>
+                  </div>
+                  <div id="pbVersions"></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Support -->
@@ -1109,11 +1287,13 @@
     const viewHome = document.getElementById("viewHome");
     const viewCalibrate = document.getElementById("viewCalibrate");
     const viewRun = document.getElementById("viewRun");
+    const viewPlaybook = document.getElementById("viewPlaybook");
     const viewSupport = document.getElementById("viewSupport");
 
     const sidebar = document.getElementById("sidebar");
     const navDashboard = document.getElementById("navDashboard");
     const navUpload = document.getElementById("navUpload");
+    const navPlaybook = document.getElementById("navPlaybook");
     const navRecord = document.getElementById("navRecord");
     const navPractice = document.getElementById("navPractice");
     const navSupport = document.getElementById("navSupport");
@@ -1149,6 +1329,7 @@
     const homeStatus = document.getElementById("homeStatus");
     const runsTbody = document.getElementById("runsTbody");
 
+    const btnSavePlaybook = document.getElementById("btnSavePlaybook");
     const btnBackHome = document.getElementById("btnBackHome");
     const runBanners = document.getElementById("runBanners");
     const runTitleEl = document.getElementById("runTitle");
@@ -1169,6 +1350,23 @@
     const summaryKVEl2 = document.getElementById("summaryKV2");
     const transcriptBoxEl2 = document.getElementById("transcriptBox2");
     const reportGridEl2 = document.getElementById("reportGrid2");
+
+    // Playbook DOM
+    const btnPlaybookBack = document.getElementById("btnPlaybookBack");
+    const playbookBanners = document.getElementById("playbookBanners");
+    const btnPbRefresh = document.getElementById("btnPbRefresh");
+    const btnPbNew = document.getElementById("btnPbNew");
+    const pbList = document.getElementById("pbList");
+
+    const pbRightTitle = document.getElementById("pbRightTitle");
+    const pbRightStatus = document.getElementById("pbRightStatus");
+    const pbTitle = document.getElementById("pbTitle");
+    const pbText = document.getElementById("pbText");
+    const pbNotes = document.getElementById("pbNotes");
+    const btnPbSave = document.getElementById("btnPbSave");
+    const btnPbAddVersion = document.getElementById("btnPbAddVersion");
+    const pbVersions = document.getElementById("pbVersions");
+    const pbLinkHint = document.getElementById("pbLinkHint");
 
     // support DOM
     const btnSupportBack = document.getElementById("btnSupportBack");
@@ -1214,15 +1412,17 @@
       viewHome.classList.add("hidden");
       viewCalibrate.classList.add("hidden");
       viewRun.classList.add("hidden");
+      viewPlaybook.classList.add("hidden");
       viewSupport.classList.add("hidden");
     }
 
     function setActiveNav(path) {
-      const btns = [navDashboard, navUpload, navRecord, navPractice, navSupport];
+      const btns = [navDashboard, navUpload, navPlaybook, navRecord, navPractice, navSupport];
       btns.forEach(b => b.classList.remove("active"));
 
       if (path === "/home") navDashboard.classList.add("active");
       else if (path === "/calibrate") navUpload.classList.add("active");
+      else if (path === "/playbook") navPlaybook.classList.add("active");
       else if (path === "/support") navSupport.classList.add("active");
       else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
     }
@@ -1306,6 +1506,94 @@
       }
     }
 
+    // ---- Tooltip manager (viewport-clamped; not clipped by scroll containers) ----
+    (function initTooltips(){
+      let tipEl = null;
+      let arrowEl = null;
+      let active = null;
+
+      function cleanup(){
+        if (tipEl) tipEl.remove();
+        if (arrowEl) arrowEl.remove();
+        tipEl = null;
+        arrowEl = null;
+        active = null;
+      }
+
+      function position(el){
+        if (!tipEl || !arrowEl) return;
+
+        const pad = 10;
+        const r = el.getBoundingClientRect();
+
+        // force measure
+        tipEl.style.left = "0px";
+        tipEl.style.top = "0px";
+
+        const tw = tipEl.offsetWidth || 320;
+        const th = tipEl.offsetHeight || 60;
+
+        let left = r.left;
+        let top = r.bottom + 10;
+
+        // clamp horizontally
+        if (left + tw > window.innerWidth - pad) left = window.innerWidth - pad - tw;
+        if (left < pad) left = pad;
+
+        // flip above if needed
+        if (top + th > window.innerHeight - pad) top = r.top - th - 10;
+        if (top < pad) top = pad;
+
+        tipEl.style.left = Math.round(left) + "px";
+        tipEl.style.top = Math.round(top) + "px";
+
+        // arrow points toward element
+        const ax = Math.round(Math.min(Math.max(r.left + 14, left + 14), left + tw - 14));
+        const isBelow = top > r.top;
+        const ay = isBelow ? Math.round(top - 6) : Math.round(top + th - 8);
+
+        arrowEl.style.left = ax + "px";
+        arrowEl.style.top = ay + "px";
+        arrowEl.style.transform = isBelow ? "rotate(180deg)" : "rotate(0deg)";
+      }
+
+      function show(el){
+        const msg = el.getAttribute("data-tip");
+        if (!msg) return;
+
+        cleanup();
+        active = el;
+
+        tipEl = document.createElement("div");
+        tipEl.className = "tipBox";
+        tipEl.textContent = msg;
+
+        arrowEl = document.createElement("div");
+        arrowEl.className = "tipArrow";
+
+        document.body.appendChild(tipEl);
+        document.body.appendChild(arrowEl);
+
+        position(el);
+      }
+
+      document.addEventListener("pointerenter", (e) => {
+        const el = e.target?.closest?.(".hasTip");
+        if (!el) return;
+        if (!el.getAttribute("data-tip")) return;
+        show(el);
+      }, true);
+
+      document.addEventListener("pointerleave", (e) => {
+        const el = e.target?.closest?.(".hasTip");
+        if (!el) return;
+        cleanup();
+      }, true);
+
+      window.addEventListener("scroll", () => { if (active) position(active); }, true);
+      window.addEventListener("resize", () => { if (active) position(active); });
+    })();
+
     // ---- Nav buttons ----
     btnHome.addEventListener("click", () => goto("/home"));
     btnNew.addEventListener("click", () => goto("/calibrate"));
@@ -1328,6 +1616,7 @@
     // Sidebar + quick actions
     navDashboard.addEventListener("click", () => goto("/home"));
     navUpload.addEventListener("click", () => goto("/calibrate"));
+    navPlaybook.addEventListener("click", () => goto("/playbook"));
     navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
     navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
     navSupport.addEventListener("click", () => goto("/support"));
@@ -1341,6 +1630,7 @@
     qaPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
 
     btnSupportBack.addEventListener("click", () => goto("/home"));
+    btnPlaybookBack.addEventListener("click", () => goto("/home"));
 
     // ---- Login actions ----
     btnMagicLink.addEventListener("click", async () => {
@@ -1416,7 +1706,6 @@
 
     categoryEl.addEventListener("change", renderAssist);
     contextEl.addEventListener("input", () => {
-      // lightweight debounce-ish
       if (window.__assistTimer) clearTimeout(window.__assistTimer);
       window.__assistTimer = setTimeout(renderAssist, 120);
     });
@@ -1429,7 +1718,7 @@
       homeBanners.innerHTML = "";
       homeStatus.textContent = "Loading…";
 
-      const { ok, status, json } = await fetchJsonAuthed("/api/runs");
+      const { ok, json } = await fetchJsonAuthed("/api/runs");
       if (seq !== runsLoadSeq) return;
 
       if (!ok) {
@@ -1451,7 +1740,6 @@
       for (const run of runs) {
         const tr = document.createElement("tr");
 
-        // IMPORTANT: never default to "Call Analysis" unless truly missing
         const title = (run.title || run.run_title || "").trim() || "(untitled)";
         const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
 
@@ -1476,6 +1764,8 @@
 
     // ---- Run viewer ----
     let runLoadSeq = 0;
+    let currentRunId = "";
+    let currentRun = null;
 
     async function loadRun(runId) {
       const seq = ++runLoadSeq;
@@ -1487,8 +1777,9 @@
 
       runTitleEl.textContent = "";
       runMetaEl.textContent = "";
+      btnSavePlaybook.classList.add("hidden");
 
-      const { ok, status, json } = await fetchJsonAuthed("/api/runs/" + encodeURIComponent(runId));
+      const { ok, json } = await fetchJsonAuthed("/api/runs/" + encodeURIComponent(runId));
       if (seq !== runLoadSeq) return;
 
       if (!ok) {
@@ -1497,6 +1788,8 @@
       }
 
       const run = json.run || {};
+      currentRunId = runId;
+      currentRun = run;
 
       const title = (run.title || run.run_title || "").trim() || "Call Analysis";
       runTitleEl.textContent = title;
@@ -1522,6 +1815,8 @@
 
       const reportMd = run.report_text || "";
       renderReportInto(reportMd, reportGridEl2);
+
+      btnSavePlaybook.classList.remove("hidden");
     }
 
     // ---- Calibrate (new run) ----
@@ -1543,7 +1838,7 @@
       fd.append("context", ctx);
       fd.append("category", categoryEl.value || "");
 
-      const { ok, status, json } = await fetchJsonAuthed("/api/run", { method: "POST", body: fd });
+      const { ok, json } = await fetchJsonAuthed("/api/run", { method: "POST", body: fd });
 
       try {
         if (!ok) {
@@ -1603,6 +1898,274 @@
       supportContact.value = "";
     });
 
+    // ---- Playbook (client) ----
+    let pbSelectedId = "";
+    let pbDraft = null; // {title, text, notes}
+
+    function maxWords(s, n) {
+      const cleaned = String(s || "")
+        .replace(/[“”"’']/g, "")
+        .replace(/[^\w\s-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!cleaned) return "";
+      return cleaned.split(" ").filter(Boolean).slice(0, n).join(" ").trim();
+    }
+
+    function guessScriptFromReport(md) {
+      const text = String(md || "").trim();
+      if (!text) return "";
+
+      // Prefer any section that mentions follow up / next step
+      const sections = splitReportIntoSections(text);
+      const preferred = sections.find(s => /follow[- ]?up|next step|two[- ]line|script|message/i.test(s.title || ""));
+      const body = (preferred?.body || text).trim();
+
+      // Extract first block that looks like a script: short paragraphs, or lines starting with quotes, or "Send:"
+      const lines = body.split("\n").map(l => l.trim()).filter(Boolean);
+
+      // Try "Send:" / "Text:" / "Follow-up:"
+      for (const l of lines) {
+        if (/^(send|text|follow[- ]?up|message)\s*:/i.test(l)) {
+          const after = l.replace(/^(send|text|follow[- ]?up|message)\s*:\s*/i, "").trim();
+          if (after.length >= 10) return after;
+        }
+      }
+
+      // Try first paragraph that is 1-3 sentences and not too long
+      const paras = body.split(/\n\s*\n/g).map(p => p.trim()).filter(Boolean);
+      for (const p of paras) {
+        const plain = p.replace(/^[-*]\s+/g, "").trim();
+        if (plain.length >= 20 && plain.length <= 420 && plain.split(/\n/).length <= 3) return plain;
+      }
+
+      // Fallback: first 1-6 lines joined
+      return lines.slice(0, 6).join("\n").trim();
+    }
+
+    function resetPlaybookEditorForNew(draft) {
+      pbSelectedId = "";
+      pbRightTitle.textContent = "New Script";
+      pbRightStatus.textContent = "";
+      pbTitle.value = (draft?.title || "").trim();
+      pbText.value = (draft?.text || "").trim();
+      pbNotes.value = (draft?.notes || "").trim();
+      pbVersions.innerHTML = `<div class="pbSmall">Save to create version history.</div>`;
+      btnPbAddVersion.classList.add("hidden");
+      btnPbSave.textContent = "Save";
+      pbLinkHint.textContent = currentRunId ? `Linked to current run: ${currentRunId}` : "";
+    }
+
+    function renderPlaybookList(items) {
+      pbList.innerHTML = "";
+      if (!items.length) {
+        pbList.innerHTML = `<div class="pbSmall">No scripts yet. Click <strong>New</strong>.</div>`;
+        return;
+      }
+
+      for (const s of items) {
+        const btn = document.createElement("button");
+        btn.className = "pbItem" + (s.id === pbSelectedId ? " active" : "");
+        const dt = s.updated_at || s.created_at || "";
+        const when = dt ? new Date(dt).toLocaleDateString() : "";
+        btn.innerHTML = `
+          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.title || "Untitled")}</span>
+          <span class="pbMeta">${escapeHtml(when)}</span>
+        `;
+        btn.addEventListener("click", () => {
+          goto("/playbook");
+          loadPlaybookScript(s.id);
+        });
+        pbList.appendChild(btn);
+      }
+    }
+
+    async function loadPlaybookList() {
+      playbookBanners.innerHTML = "";
+      pbRightStatus.textContent = "Loading…";
+      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts");
+      pbRightStatus.textContent = "";
+
+      if (!ok) {
+        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load playbook."));
+        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
+        renderPlaybookList([]);
+        return;
+      }
+
+      renderPlaybookList(json.scripts || []);
+    }
+
+    async function loadPlaybookScript(id) {
+      playbookBanners.innerHTML = "";
+      pbRightStatus.textContent = "Loading…";
+
+      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts/" + encodeURIComponent(id));
+      pbRightStatus.textContent = "";
+
+      if (!ok) {
+        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load script."));
+        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
+        return;
+      }
+
+      const script = json.script || {};
+      const versions = json.versions || [];
+      pbSelectedId = script.id || "";
+
+      pbRightTitle.textContent = script.title || "Script";
+      pbTitle.value = script.title || "";
+      pbText.value = script.current_text || "";
+      pbNotes.value = "";
+      btnPbAddVersion.classList.remove("hidden");
+      btnPbSave.textContent = "Save as New Script";
+      pbLinkHint.textContent = currentRunId ? `Linked to current run: ${currentRunId}` : "";
+
+      pbVersions.innerHTML = "";
+      if (!versions.length) {
+        pbVersions.innerHTML = `<div class="pbSmall">No versions found.</div>`;
+      } else {
+        for (const v of versions) {
+          const box = document.createElement("div");
+          box.className = "pbVer";
+          const when = v.created_at ? new Date(v.created_at).toLocaleString() : "";
+          box.innerHTML = `
+            <div class="pbVerTop">
+              <div class="vnum">v${escapeHtml(String(v.version || ""))}</div>
+              <div class="vdate">${escapeHtml(when)}</div>
+            </div>
+            <div style="white-space:pre-wrap;">${escapeHtml(v.text || "")}</div>
+            ${v.notes ? `<div class="pbNotes">${escapeHtml(v.notes)}</div>` : ""}
+          `;
+          pbVersions.appendChild(box);
+        }
+      }
+
+      // Refresh list highlight
+      await loadPlaybookList();
+    }
+
+    async function createPlaybookScript() {
+      playbookBanners.innerHTML = "";
+      pbRightStatus.textContent = "";
+
+      const title = maxWords(pbTitle.value || "", 5);
+      const text = String(pbText.value || "").trim();
+      const notes = String(pbNotes.value || "").trim();
+
+      if (!title || title.split(/\s+/g).filter(Boolean).length < 1) {
+        playbookBanners.appendChild(banner("bad", "Error:", "Title is required (max 5 words)."));
+        return;
+      }
+      if (title.split(/\s+/g).filter(Boolean).length > 5) {
+        playbookBanners.appendChild(banner("bad", "Error:", "Title must be 5 words or fewer."));
+        return;
+      }
+      if (text.length < 5) {
+        playbookBanners.appendChild(banner("bad", "Error:", "Script text is required (5+ characters)."));
+        return;
+      }
+
+      btnPbSave.disabled = true;
+      pbRightStatus.textContent = "Saving…";
+
+      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          text,
+          source_run_id: currentRunId || null,
+        }),
+      });
+
+      btnPbSave.disabled = false;
+      pbRightStatus.textContent = "";
+
+      if (!ok) {
+        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to save."));
+        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
+        return;
+      }
+
+      const newId = json.id || "";
+      playbookBanners.appendChild(banner("good", "Saved:", "Script added to your Playbook."));
+      pbDraft = null;
+      if (newId) await loadPlaybookScript(newId);
+      else await loadPlaybookList();
+    }
+
+    async function addPlaybookVersion() {
+      playbookBanners.innerHTML = "";
+      pbRightStatus.textContent = "";
+
+      if (!pbSelectedId) {
+        playbookBanners.appendChild(banner("bad", "Error:", "No script selected."));
+        return;
+      }
+
+      const text = String(pbText.value || "").trim();
+      const notes = String(pbNotes.value || "").trim();
+
+      if (text.length < 5) {
+        playbookBanners.appendChild(banner("bad", "Error:", "Script text is required (5+ characters)."));
+        return;
+      }
+
+      btnPbAddVersion.disabled = true;
+      pbRightStatus.textContent = "Saving version…";
+
+      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts/" + encodeURIComponent(pbSelectedId) + "/version", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          text,
+          notes: notes || null,
+          source_run_id: currentRunId || null,
+        }),
+      });
+
+      btnPbAddVersion.disabled = false;
+      pbRightStatus.textContent = "";
+
+      if (!ok) {
+        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to save version."));
+        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
+        return;
+      }
+
+      playbookBanners.appendChild(banner("good", "Updated:", "New version saved."));
+      pbNotes.value = "";
+      await loadPlaybookScript(pbSelectedId);
+    }
+
+    btnPbRefresh.addEventListener("click", () => loadPlaybookList());
+    btnPbNew.addEventListener("click", () => {
+      resetPlaybookEditorForNew(null);
+      pbSelectedId = "";
+      // unhighlight list
+      [...pbList.querySelectorAll(".pbItem")].forEach(x => x.classList.remove("active"));
+    });
+    btnPbSave.addEventListener("click", () => createPlaybookScript());
+    btnPbAddVersion.addEventListener("click", () => addPlaybookVersion());
+
+    // Save-to-Playbook from a run
+    btnSavePlaybook.addEventListener("click", () => {
+      if (!currentRun) {
+        toast("warn", "Note:", "No run loaded.");
+        return;
+      }
+      const runTitle = (currentRun.title || currentRun.run_title || "Script").trim();
+      const suggestedTitle = maxWords(runTitle, 5) || "Call Script";
+      const suggestedText = guessScriptFromReport(currentRun.report_text || "");
+      pbDraft = {
+        title: suggestedTitle,
+        text: suggestedText || "",
+        notes: "",
+      };
+      goto("/playbook");
+    });
+
     // ---- Routing ----
     async function renderRoute() {
       if (!sb) return;
@@ -1618,6 +2181,7 @@
       const needsAuth =
         path === "/home" ||
         path === "/calibrate" ||
+        path === "/playbook" ||
         path === "/support" ||
         path.startsWith("/runs/");
 
@@ -1664,6 +2228,19 @@
         statusEl.textContent = "";
         assistCard.classList.add("hidden");
         renderAssist();
+        return;
+      }
+
+      if (path === "/playbook") {
+        viewPlaybook.classList.remove("hidden");
+        playbookBanners.innerHTML = "";
+        pbRightStatus.textContent = "";
+        if (pbDraft) {
+          resetPlaybookEditorForNew(pbDraft);
+        } else if (!pbSelectedId) {
+          resetPlaybookEditorForNew(null);
+        }
+        await loadPlaybookList();
         return;
       }
 

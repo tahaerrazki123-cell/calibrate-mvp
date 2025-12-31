@@ -218,7 +218,8 @@ function normalizeAssemblyUtterances(utterances) {
   for (const u of utterances || []) {
     const key = normalizeSpeakerKey(u?.speaker);
     if (!speakerMap.has(key)) {
-      const label = idx < SPEAKER_LETTERS.length ? `Speaker ${SPEAKER_LETTERS[idx]}` : `Speaker ${idx + 1}`;
+      const label =
+        idx < SPEAKER_LETTERS.length ? `Speaker ${SPEAKER_LETTERS[idx]}` : `Speaker ${idx + 1}`;
       speakerMap.set(key, label);
       idx++;
     }
@@ -333,13 +334,16 @@ function enforce3to5Words(raw) {
 }
 
 function fallbackShortTitle({ userContext, category }) {
-  const base = stripOutcomeSuffix(String(userContext || "")).trim() || String(category || "").replace(/_/g, " ").trim() || "Call Analysis";
+  const base =
+    stripOutcomeSuffix(String(userContext || "")).trim() ||
+    String(category || "").replace(/_/g, " ").trim() ||
+    "Call Analysis";
   const cleaned = base
     .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
   const words = cleaned.split(" ").filter(Boolean);
-  const picked = (words.length >= 3 ? words.slice(0, 5) : words.slice(0, 5));
+  const picked = words.slice(0, 5);
   return toTitleCase(picked.join(" ")) || "Call Analysis";
 }
 
@@ -348,7 +352,8 @@ function titleLLMConfig() {
   // Recommended env:
   // TITLE_LLM_API_KEY, TITLE_LLM_BASE_URL, TITLE_LLM_MODEL
   // If not set, we try DEEPSEEK_API_KEY (OpenAI-compatible) as a fallback.
-  const apiKey = process.env.TITLE_LLM_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || "";
+  const apiKey =
+    process.env.TITLE_LLM_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || "";
   const baseUrl =
     process.env.TITLE_LLM_BASE_URL ||
     process.env.DEEPSEEK_BASE_URL ||
@@ -356,10 +361,7 @@ function titleLLMConfig() {
     ""; // if empty -> no LLM call
 
   const model =
-    process.env.TITLE_LLM_MODEL ||
-    process.env.DEEPSEEK_MODEL ||
-    process.env.OPENAI_MODEL ||
-    "deepseek-chat";
+    process.env.TITLE_LLM_MODEL || process.env.DEEPSEEK_MODEL || process.env.OPENAI_MODEL || "deepseek-chat";
 
   return { apiKey, baseUrl, model };
 }
@@ -407,8 +409,7 @@ async function generateAiShortTitle({ userContext, transcript, category }) {
         messages: [
           {
             role: "system",
-            content:
-              "You write ultra-short, high-signal titles for call analyses. Follow the rules exactly.",
+            content: "You write ultra-short, high-signal titles for call analyses. Follow the rules exactly.",
           },
           { role: "user", content: prompt },
         ],
@@ -560,7 +561,9 @@ function computeOutcome({ llmOutcome, transcript }) {
   if (booked.hit) {
     return {
       key: "BOOKED_MEETING",
-      reason: `Booked meeting detected from transcript evidence: ${booked.evidence || "meeting language + scheduling cues"}.`,
+      reason: `Booked meeting detected from transcript evidence: ${
+        booked.evidence || "meeting language + scheduling cues"
+      }.`,
       evidence: booked.evidence || "",
     };
   }
@@ -603,7 +606,8 @@ function computeOutcome({ llmOutcome, transcript }) {
 
   return {
     key: "CONNECTED",
-    reason: "Reached a real person and had a conversation. No strong evidence of a booked meeting or explicit rejection was detected.",
+    reason:
+      "Reached a real person and had a conversation. No strong evidence of a booked meeting or explicit rejection was detected.",
     evidence: "",
   };
 }
@@ -664,12 +668,228 @@ app.post("/api/support", async (req, res) => {
   }
 });
 
+// -------------------- Playbook API --------------------
+// Tables expected:
+// - playbook_scripts(id uuid pk, user_id uuid, title text, current_text text, created_at, updated_at)
+// - playbook_versions(id uuid pk, user_id uuid, script_id uuid fk, version int, text text, notes text, source_run_id uuid, created_at)
+
+app.get("/api/playbook/scripts", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const sb = supabaseService();
+    const { data, error } = await sb
+      .from("playbook_scripts")
+      .select("id,title,updated_at,created_at")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(200);
+
+    if (error) {
+      return res.status(500).json({
+        error:
+          "Playbook query failed. Ensure playbook tables exist (playbook_scripts, playbook_versions).",
+        detail: error.message,
+      });
+    }
+    return res.json({ scripts: data || [] });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+app.get("/api/playbook/scripts/:id", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const sb = supabaseService();
+    const scriptId = req.params.id;
+
+    const { data: script, error: e1 } = await sb
+      .from("playbook_scripts")
+      .select("*")
+      .eq("id", scriptId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (e1) {
+      return res.status(500).json({
+        error: "Playbook read failed. Ensure playbook tables exist.",
+        detail: e1.message,
+      });
+    }
+    if (!script) return res.status(404).json({ error: "Script not found" });
+
+    const { data: versions, error: e2 } = await sb
+      .from("playbook_versions")
+      .select("id,version,text,notes,source_run_id,created_at")
+      .eq("script_id", scriptId)
+      .eq("user_id", userId)
+      .order("version", { ascending: false })
+      .limit(50);
+
+    if (e2) {
+      return res.status(500).json({
+        error: "Playbook versions read failed. Ensure playbook_versions table exists.",
+        detail: e2.message,
+      });
+    }
+
+    return res.json({ script, versions: versions || [] });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+app.post("/api/playbook/scripts", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const title = String(req.body?.title || "").trim();
+    const text = String(req.body?.text || "").trim();
+    const source_run_id = String(req.body?.source_run_id || "").trim() || null;
+
+    if (!title) return res.status(400).json({ error: "Title is required." });
+    if (title.split(/\s+/g).filter(Boolean).length > 5) {
+      return res.status(400).json({ error: "Title must be 5 words or fewer." });
+    }
+    if (text.length < 5) return res.status(400).json({ error: "Script text is required (5+ chars)." });
+
+    const sb = supabaseService();
+    const now = new Date().toISOString();
+
+    const { data: inserted, error } = await sb
+      .from("playbook_scripts")
+      .insert([
+        {
+          user_id: userId,
+          title,
+          current_text: text,
+          created_at: now,
+          updated_at: now,
+        },
+      ])
+      .select("id")
+      .maybeSingle();
+
+    if (error) {
+      return res.status(500).json({
+        error: "Playbook create failed. Ensure playbook tables exist.",
+        detail: error.message,
+      });
+    }
+
+    // Version 1
+    const { error: e2 } = await sb.from("playbook_versions").insert([
+      {
+        user_id: userId,
+        script_id: inserted.id,
+        version: 1,
+        text,
+        notes: "Initial version",
+        source_run_id,
+        created_at: now,
+      },
+    ]);
+
+    if (e2) {
+      return res.status(500).json({
+        error: "Playbook version create failed. Ensure playbook_versions exists.",
+        detail: e2.message,
+      });
+    }
+
+    return res.json({ id: inserted.id });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
+app.post("/api/playbook/scripts/:id/version", async (req, res) => {
+  try {
+    const userId = await requireUserId(req);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const sb = supabaseService();
+    const scriptId = req.params.id;
+
+    const text = String(req.body?.text || "").trim();
+    const notes = String(req.body?.notes || "").trim() || null;
+    const source_run_id = String(req.body?.source_run_id || "").trim() || null;
+
+    if (text.length < 5) return res.status(400).json({ error: "Script text is required (5+ chars)." });
+
+    const { data: last, error: e1 } = await sb
+      .from("playbook_versions")
+      .select("version")
+      .eq("script_id", scriptId)
+      .eq("user_id", userId)
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (e1) {
+      return res.status(500).json({
+        error: "Failed to read last version.",
+        detail: e1.message,
+      });
+    }
+
+    const nextV = (last?.version || 0) + 1;
+    const now = new Date().toISOString();
+
+    const { error: e2 } = await sb.from("playbook_versions").insert([
+      {
+        user_id: userId,
+        script_id: scriptId,
+        version: nextV,
+        text,
+        notes,
+        source_run_id,
+        created_at: now,
+      },
+    ]);
+
+    if (e2) {
+      return res.status(500).json({
+        error: "Failed to create new version.",
+        detail: e2.message,
+      });
+    }
+
+    const { error: e3 } = await sb
+      .from("playbook_scripts")
+      .update({ current_text: text, updated_at: now })
+      .eq("id", scriptId)
+      .eq("user_id", userId);
+
+    if (e3) {
+      return res.status(500).json({
+        error: "Failed to update current script.",
+        detail: e3.message,
+      });
+    }
+
+    return res.json({ ok: true, version: nextV });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
 // -------------------- Runs API (history + details) --------------------
 
 function enforceShortDisplayTitle(title) {
   const cleaned = String(title || "").trim();
   if (!cleaned) return "Call Analysis";
-  const words = cleaned.replace(/[^\p{L}\p{N}\s'-]/gu, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const words = cleaned
+    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
   if (words.length <= 5) return toTitleCase(words.join(" "));
   return toTitleCase(words.slice(0, 5).join(" "));
 }
@@ -706,7 +926,9 @@ app.get("/api/runs", async (req, res) => {
       const scenario_template = r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null;
 
       const titleFromDb = pick(r, ["run_title", "title", "report_title"], "");
-      const titleComputed = enforceShortDisplayTitle(titleFromDb || pick(r, ["user_context", "userContext"], "") || "Call Analysis");
+      const titleComputed = enforceShortDisplayTitle(
+        titleFromDb || pick(r, ["user_context", "userContext"], "") || "Call Analysis"
+      );
 
       const call_outcome = pick(r, ["call_outcome", "callOutcome", "outcome"], null);
       const call_outcome_reason = pick(r, ["call_outcome_reason", "outcome_reason", "callOutcomeReason"], null);
@@ -745,12 +967,7 @@ app.get("/api/runs/:id", async (req, res) => {
     const runId = req.params.id;
     const sb = supabaseService();
 
-    const { data, error } = await sb
-      .from("runs")
-      .select("*")
-      .eq("id", runId)
-      .eq("user_id", userId)
-      .maybeSingle();
+    const { data, error } = await sb.from("runs").select("*").eq("id", runId).eq("user_id", userId).maybeSingle();
 
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: "Run not found" });
@@ -770,7 +987,9 @@ app.get("/api/runs/:id", async (req, res) => {
     const scenario_template = data.scenario_template ?? data.scenarioTemplate ?? data.category ?? null;
 
     const titleFromDb = pick(data, ["run_title", "title", "report_title"], "");
-    const titleComputed = enforceShortDisplayTitle(titleFromDb || pick(data, ["user_context", "userContext"], "") || "Call Analysis");
+    const titleComputed = enforceShortDisplayTitle(
+      titleFromDb || pick(data, ["user_context", "userContext"], "") || "Call Analysis"
+    );
 
     const run = {
       ...data,
