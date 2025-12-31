@@ -1,1654 +1,2263 @@
-<!-- FILE: web/index.html -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Calibrate MVP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calibrate</title>
+
+  <!-- Inline SVG favicon (Calibrate mark) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231d4ed8'/%3E%3Cstop offset='1' stop-color='%2338bdf8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M32 6a26 26 0 1 0 18.38 7.62' fill='none' stroke='url(%23g)' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M28 33l6 6 14-14' fill='none' stroke='url(%23g)' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+
   <style>
     :root{
-      --bg:#f7f8fc;
+      --bg:#f4f8ff;
+      --bg2:#eef6ff;
       --card:#ffffff;
-      --ink:#0f172a;
       --muted:#64748b;
-      --line:rgba(15,23,42,.10);
-      --shadow:0 10px 35px rgba(2,6,23,.08);
+      --text:#0f172a;
+      --line:rgba(15,23,42,0.10);
+      --good:#16a34a;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+
       --blue:#2563eb;
-      --blue2:#1d4ed8;
-      --green:#16a34a;
-      --red:#dc2626;
-      --amber:#d97706;
-      --radius:16px;
-      --radius2:22px;
+      --blue2:#38bdf8;
+
+      --shadow:0 18px 45px rgba(2,6,23,0.10);
+      --radius:18px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
     }
-    *{ box-sizing:border-box; }
-    html,body{ height:100%; }
+
+    *{box-sizing:border-box}
     body{
       margin:0;
       font-family:var(--sans);
-      color:var(--ink);
+      color:var(--text);
       background:
-        radial-gradient(1200px 800px at 10% -10%, rgba(37,99,235,.10), transparent 60%),
-        radial-gradient(900px 700px at 90% 0%, rgba(22,163,74,.07), transparent 55%),
-        radial-gradient(1000px 800px at 30% 120%, rgba(217,119,6,.06), transparent 60%),
-        var(--bg);
+        radial-gradient(900px 500px at 20% -10%, rgba(37,99,235,0.18), transparent 60%),
+        radial-gradient(800px 450px at 100% 0%, rgba(56,189,248,0.18), transparent 55%),
+        linear-gradient(180deg, var(--bg), var(--bg2));
     }
 
-    .wrap{ max-width:1100px; margin:0 auto; padding:22px 18px 44px; }
-    .topbar{
-      display:flex; align-items:center; justify-content:space-between;
-      gap:14px; margin-bottom:14px;
+    .wrap{max-width:1120px;margin:24px auto;padding:0 16px;}
+
+    .header{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;
     }
-    .brand{
-      display:flex; align-items:center; gap:10px; user-select:none;
+
+    .brand{display:flex;flex-direction:column;gap:2px}
+    .brandTitle{
+      margin:0;
+      display:flex;align-items:center;gap:10px;
+      font-size:22px;letter-spacing:0.2px;
+      font-weight:900;
     }
-    .logo{
-      width:38px; height:38px; border-radius:12px;
-      background:linear-gradient(135deg, rgba(37,99,235,1), rgba(29,78,216,.85));
-      box-shadow:0 10px 22px rgba(37,99,235,.25);
-      position:relative;
-    }
-    .logo::after{
-      content:"";
-      position:absolute; inset:10px 9px 11px 9px;
+    .brandSub{margin:0;color:var(--muted);font-size:13.5px}
+
+    .logoMark{
+      width:28px;height:28px;flex:0 0 28px;
+      display:grid;place-items:center;
       border-radius:10px;
-      background:rgba(255,255,255,.92);
-      clip-path: polygon(14% 60%, 14% 40%, 52% 40%, 52% 25%, 86% 50%, 52% 75%, 52% 60%);
-      opacity:.95;
+      background:rgba(37,99,235,0.08);
+      border:1px solid rgba(37,99,235,0.15);
     }
-    .brandTitle{ font-weight:900; letter-spacing:.2px; }
-    .brandSub{ color:var(--muted); font-size:12.5px; margin-top:2px; }
-    .brandText{ display:flex; flex-direction:column; line-height:1.05; }
-    .nav{
-      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-    }
+    .logoMark svg{width:20px;height:20px;display:block}
+
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
     .pill{
-      display:inline-flex; align-items:center; gap:8px;
-      padding:8px 11px;
-      border-radius:999px;
+      font-size:12px;padding:6px 10px;border-radius:999px;
       border:1px solid var(--line);
-      background:rgba(255,255,255,.85);
-      box-shadow:0 8px 20px rgba(2,6,23,.05);
-      font-size:13px;
+      background:rgba(255,255,255,0.80);
+      color:var(--text);
+      font-weight:800;
+    }
+
+    .btn{
+      appearance:none;border:0;
+      background:linear-gradient(135deg, rgba(37,99,235,0.95), rgba(56,189,248,0.85));
+      color:#ffffff;
+      font-weight:900;
+      padding:10px 14px;
+      border-radius:12px;
       cursor:pointer;
-      transition:.15s transform, .15s background, .15s border;
-      text-decoration:none;
-      color:inherit;
-      position:relative;
+      box-shadow:0 10px 22px rgba(37,99,235,0.18);
     }
-    .pill:hover{ transform: translateY(-1px); background:#fff; border-color:rgba(15,23,42,.18); }
-    .pill.active{ border-color:rgba(37,99,235,.45); box-shadow:0 10px 26px rgba(37,99,235,.12); }
-    .pillDot{
-      width:9px; height:9px; border-radius:99px;
-      background:rgba(37,99,235,.85);
-      box-shadow:0 0 0 4px rgba(37,99,235,.12);
+    .btn.secondary{
+      background:rgba(255,255,255,0.86);
+      border:1px solid var(--line);
+      color:var(--text);
+      font-weight:900;
+      box-shadow:none;
     }
+    .btn:disabled{opacity:0.55;cursor:not-allowed}
+
+    .status{color:var(--muted);font-size:13px}
+    .hidden{display:none !important}
+    .link{color:var(--blue);text-decoration:none;font-weight:900}
 
     .card{
-      background:rgba(255,255,255,.9);
+      background:rgba(255,255,255,0.86);
       border:1px solid var(--line);
-      border-radius:var(--radius2);
+      border-radius:var(--radius);
       box-shadow:var(--shadow);
-      overflow:hidden;
+      padding:16px;
     }
-    .cardInner{ padding:18px; }
 
-    .grid{
+    /* Layout (sidebar + main) */
+    .appLayout{
       display:grid;
-      grid-template-columns: 1.1fr .9fr;
-      gap:14px;
+      grid-template-columns: 260px 1fr;
+      gap:16px;
+      align-items:start;
+    }
+    .appLayout.noSidebar{
+      grid-template-columns: 1fr;
     }
     @media (max-width: 960px){
-      .grid{ grid-template-columns:1fr; }
+      .appLayout{grid-template-columns:1fr;}
+      .sidebar{position:relative;top:auto}
     }
 
-    .h1{ font-size:18px; font-weight:950; letter-spacing:.2px; margin:0 0 6px; }
-    .muted{ color:var(--muted); font-size:13.5px; line-height:1.35; }
-
-    label{ display:block; font-size:13px; color:var(--muted); margin:12px 0 6px; }
-    .field, select, textarea{
-      width:100%;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.9);
-      border-radius:14px;
-      padding:10px 12px;
-      font-size:14px;
-      outline:none;
-      transition:.15s border, .15s box-shadow, .15s background;
-      font-family:var(--sans);
+    .sidebar{
+      position:sticky;
+      top:16px;
+      padding:14px;
     }
-    textarea{ min-height:108px; resize:vertical; }
-    .field:focus, select:focus, textarea:focus{
-      border-color:rgba(37,99,235,.55);
-      box-shadow:0 0 0 4px rgba(37,99,235,.12);
-      background:#fff;
+    .sideHead{
+      display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:10px;
     }
-    .row{
-      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-    }
-    .btn{
-      border:0;
-      border-radius:14px;
-      padding:10px 14px;
-      font-weight:800;
-      cursor:pointer;
-      background:linear-gradient(135deg, rgba(37,99,235,1), rgba(29,78,216,1));
-      color:white;
-      box-shadow:0 12px 26px rgba(37,99,235,.22);
-      transition:.15s transform, .15s filter;
-      display:inline-flex; align-items:center; gap:10px;
-    }
-    .btn:hover{ transform: translateY(-1px); filter:saturate(1.05); }
-    .btn:disabled{ opacity:.55; cursor:not-allowed; transform:none; }
-    .btn.secondary{
-      background:rgba(255,255,255,.9);
-      color:var(--ink);
-      border:1px solid var(--line);
-      box-shadow:0 10px 22px rgba(2,6,23,.06);
-    }
-    .btn.secondary:hover{ background:#fff; }
-    .btn.danger{
-      background:linear-gradient(135deg, rgba(220,38,38,1), rgba(185,28,28,1));
-      box-shadow:0 12px 26px rgba(220,38,38,.18);
-    }
-
-    .hint{
-      font-size:12.5px;
-      color:var(--muted);
-      margin-top:8px;
-    }
-
-    .divider{
-      height:1px;
-      background:linear-gradient(90deg, transparent, rgba(15,23,42,.10), transparent);
-      margin:16px 0;
-    }
-
-    .toast{
-      position:fixed;
-      right:18px; bottom:18px;
-      max-width:340px;
-      background:rgba(255,255,255,.95);
-      border:1px solid var(--line);
-      border-radius:16px;
-      box-shadow:0 20px 50px rgba(2,6,23,.18);
-      padding:12px 14px;
-      font-size:13.5px;
-      display:none;
-      z-index:999;
-    }
-    .toast.show{ display:block; animation:pop .16s ease-out; }
-    @keyframes pop{ from{ transform:translateY(8px); opacity:.0;} to{ transform:translateY(0); opacity:1;} }
-
-    .tag{
-      display:inline-flex; align-items:center;
-      border-radius:999px;
-      padding:5px 10px;
+    .sideTitle{
       font-size:12px;
-      font-weight:900;
-      letter-spacing:.06em;
-      text-transform:uppercase;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.85);
-    }
-    .tag.ok{ color:var(--green); border-color:rgba(22,163,74,.28); background:rgba(22,163,74,.08); }
-    .tag.bad{ color:var(--red); border-color:rgba(220,38,38,.28); background:rgba(220,38,38,.08); }
-    .tag.warn{ color:var(--amber); border-color:rgba(217,119,6,.28); background:rgba(217,119,6,.08); }
-
-    .mono{ font-family:var(--mono); font-size:12.5px; }
-    .small{ font-size:12.5px; color:var(--muted); }
-
-    .sectionTitle{
-      margin:0 0 10px;
-      font-size:13px;
-      letter-spacing:.13em;
+      letter-spacing:0.12em;
       text-transform:uppercase;
       color:var(--muted);
-      font-weight:950;
+      font-weight:900;
+      margin:0;
     }
-
-    .kv{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
+    .navList{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+    .navItem{
+      width:100%;
+      display:flex;align-items:center;justify-content:space-between;
       gap:10px;
-    }
-    @media (max-width: 560px){
-      .kv{ grid-template-columns:1fr; }
-    }
-    .kvItem{
-      border:1px solid var(--line);
-      border-radius:16px;
-      padding:12px 12px;
-      background:rgba(255,255,255,.92);
-      display:flex; flex-direction:column; gap:6px;
-      min-height:60px;
-    }
-    .kvK{ font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-weight:900; }
-    .kvV{ font-weight:900; }
-    .kvV.sub{ font-weight:700; color:var(--muted); font-size:13.5px; line-height:1.35; }
-
-    /* Transcript blocks */
-    .transcript{
-      display:flex; flex-direction:column; gap:10px;
-    }
-    .tLine{
-      display:flex; gap:10px; align-items:flex-start;
-    }
-    .tChip{
-      flex:0 0 auto;
-      padding:7px 10px;
-      border-radius:999px;
-      font-weight:900;
-      font-size:12px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.90);
-    }
-    .tChip.you{ background:rgba(37,99,235,.10); border-color:rgba(37,99,235,.22); color:var(--blue2); }
-    .tChip.pro{ background:rgba(22,163,74,.10); border-color:rgba(22,163,74,.22); color:var(--green); }
-    .tText{
-      border:1px solid var(--line);
-      border-radius:16px;
       padding:10px 12px;
-      background:rgba(255,255,255,.92);
-      width:100%;
-      line-height:1.35;
-      font-size:14px;
-    }
-
-    /* Report */
-    details{
+      border-radius:14px;
       border:1px solid var(--line);
-      background:rgba(255,255,255,.92);
-      border-radius:16px;
-      padding:0;
-      overflow:hidden;
-    }
-    summary{
+      background:rgba(255,255,255,0.80);
       cursor:pointer;
-      padding:12px 12px;
-      font-weight:950;
-      list-style:none;
-      display:flex; align-items:center; justify-content:space-between;
-      user-select:none;
+      font-weight:900;
+      color:var(--text);
     }
-    summary::-webkit-details-marker{ display:none; }
-    .reportBody{
-      padding:0 12px 12px;
-      color:var(--ink);
-      font-size:14px;
-      line-height:1.45;
-    }
-    .reportBody p{ margin:10px 0; }
-    .reportBody ul{ margin:10px 0 10px 18px; padding:0; }
-    .reportBody li{ margin:6px 0; }
-    .reportBody .mutedLine{ color:var(--muted); font-size:13.5px; }
-
-    .badge{
-      font-size:12px;
-      color:var(--muted);
-      border:1px solid var(--line);
+    .navItem:hover{background:rgba(37,99,235,0.06);border-color:rgba(37,99,235,0.20)}
+    .navItem.active{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.28)}
+    .navItem .tag{
+      font-size:11px;
+      padding:3px 8px;
       border-radius:999px;
-      padding:5px 9px;
-      background:rgba(255,255,255,.86);
-    }
-
-    /* History list */
-    .list{
-      display:flex; flex-direction:column; gap:10px;
-    }
-    .listItem{
-      display:flex; align-items:center; justify-content:space-between; gap:12px;
-      border:1px solid var(--line);
-      border-radius:18px;
-      padding:12px 12px;
-      background:rgba(255,255,255,.92);
-      cursor:pointer;
-      transition:.15s transform, .15s border, .15s background;
-    }
-    .listItem:hover{ transform:translateY(-1px); border-color:rgba(15,23,42,.18); background:#fff; }
-    .liLeft{ display:flex; flex-direction:column; gap:4px; min-width:0; }
-    .liTitle{ font-weight:950; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:620px; }
-    .liMeta{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:var(--muted); font-size:12.5px; }
-    .liRight{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
-    .chev{ color:var(--muted); font-weight:900; }
-
-    /* Outcome pill */
-    .outcomePill{
-      display:inline-flex; align-items:center;
-      border-radius:999px;
-      padding:6px 10px;
-      font-size:12px;
-      font-weight:950;
-      text-transform:uppercase;
-      letter-spacing:.08em;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.86);
+      border:1px solid rgba(37,99,235,0.18);
+      background:rgba(37,99,235,0.08);
+      color:var(--blue);
+      font-weight:900;
       white-space:nowrap;
     }
-    .outcomePill.win{ color:var(--green); border-color:rgba(22,163,74,.30); background:rgba(22,163,74,.10); }
-    .outcomePill.loss{ color:var(--red); border-color:rgba(220,38,38,.30); background:rgba(220,38,38,.10); }
-    .outcomePill.followup{ color:var(--amber); border-color:rgba(217,119,6,.30); background:rgba(217,119,6,.10); }
-    .outcomePill.unknown{ color:var(--muted); }
 
-    /* Tooltip */
-    .hasTip{ position:relative; }
-    .hasTip:hover::after{
-      content: attr(data-tip);
-      position:absolute;
-      left:50%;
-      transform:translateX(-50%);
-      bottom: calc(100% + 10px);
-      background: rgba(15,23,42,.92);
-      color: #fff;
-      padding: 8px 10px;
-      border-radius: 12px;
-      font-size: 12.5px;
-      line-height:1.25;
-      white-space: nowrap;
-      box-shadow: 0 16px 40px rgba(2,6,23,.26);
-      z-index: 50;
+    /* Sub-item indicator under Home (NOT inside Home button) */
+    .navSubWrap{margin-top:-4px;margin-bottom:2px;padding-left:10px;}
+    .navSubItem{
+      width:100%;
+      display:flex;align-items:center;gap:8px;
+      padding:7px 10px;
+      border-radius:12px;
+      border:1px solid rgba(37,99,235,0.14);
+      background:rgba(37,99,235,0.06);
+      color:var(--text);
+      cursor:pointer;
+      font-weight:850;
+      font-size:12.5px;
     }
-    .hasTip:hover::before{
-      content:\" \";
-      position:absolute;
-      left:50%;
-      transform:translateX(-50%);
-      bottom: calc(100% + 3px);
-      width: 0; height: 0;
-      border-left: 6px solid transparent;
-      border-right: 6px solid transparent;
-      border-top: 8px solid rgba(15,23,42,.92);
-      z-index: 50;
+    .navSubItem:hover{background:rgba(37,99,235,0.09);border-color:rgba(37,99,235,0.20)}
+    .navSubDot{
+      width:8px;height:8px;border-radius:999px;
+      background:rgba(37,99,235,0.70);
+      flex:0 0 8px;
+      margin-top:1px;
+    }
+    .navSubText{
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
     }
 
-    /* NEW: top 3-panel row for Run view */
-    .triGrid{
+    /* Quick actions */
+    .sectionTitle{font-size:15px;font-weight:950;margin:0 0 10px}
+    .actionGrid{
       display:grid;
       grid-template-columns: repeat(3, 1fr);
       gap:12px;
       margin-top:10px;
     }
-    @media (max-width: 960px){
-      .triGrid{ grid-template-columns:1fr; }
-    }
-    .panel{
+    @media (max-width: 960px){ .actionGrid{grid-template-columns:1fr;} }
+
+    .actionCard{
       border:1px solid var(--line);
-      background:rgba(255,255,255,.92);
+      background:rgba(255,255,255,0.88);
       border-radius:18px;
-      padding:12px;
-      min-height:190px;
-      display:flex;
-      flex-direction:column;
-      gap:10px;
+      padding:14px;
+      cursor:pointer;
+      position:relative;
+      overflow:hidden;
+      min-height:92px;
     }
-    .panel.center{ text-align:center; }
-    .panel.center .panelBody{ align-items:center; text-align:center; }
-    .panelHead{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
+    .actionCard:hover{border-color:rgba(37,99,235,0.24); box-shadow:0 16px 34px rgba(37,99,235,0.12)}
+    .actionCard .aTitle{font-weight:950;margin:0 0 6px;font-size:14px}
+    .actionCard .aDesc{margin:0;color:var(--muted);font-size:12.5px;line-height:1.35}
+    .actionCard .aBadge{
+      position:absolute;top:12px;right:12px;
+      font-size:11px;font-weight:950;
+      padding:4px 8px;border-radius:999px;
+      border:1px solid rgba(37,99,235,0.18);
+      background:rgba(37,99,235,0.08);
+      color:var(--blue);
     }
-    .panelTitle{
-      margin:0;
+    .actionCard.soon .aBadge{
+      border-color:rgba(245,158,11,0.22);
+      background:rgba(245,158,11,0.10);
+      color:#92400e;
+    }
+    .actionCard::after{
+      content:"";
+      position:absolute;inset:-40px -60px auto auto;
+      width:160px;height:160px;border-radius:999px;
+      background:radial-gradient(circle at 30% 30%, rgba(56,189,248,0.30), transparent 60%);
+      transform:rotate(25deg);
+      pointer-events:none;
+    }
+
+    /* Table */
+    .tableWrap{overflow:auto;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,0.92)}
+    .table{width:100%;border-collapse:collapse}
+    .table th,.table td{
+      padding:12px 10px;border-top:1px solid var(--line);
+      font-size:13.5px;text-align:left;
+      vertical-align:middle;
+    }
+    .table th{color:var(--muted);font-weight:950;background:rgba(15,23,42,0.02)}
+    .table tr:hover td{background:rgba(37,99,235,0.05);cursor:pointer}
+
+    .colReport{width:55%}
+    .colScenario{width:25%}
+    .colOutcome{width:20%}
+
+    .reportCell{
+      max-width:520px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      font-weight:850;
+    }
+    .mutedCell{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;}
+
+    /* Outcome pill */
+    .outcomePill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:5px 10px;border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(2,6,23,0.03);
+      font-weight:950;
+      font-size:12.5px;
+      white-space:nowrap;
+      position:relative;
+    }
+    .outcomePill.good{border-color:rgba(22,163,74,0.25); background:rgba(22,163,74,0.10)}
+    .outcomePill.warn{border-color:rgba(245,158,11,0.28); background:rgba(245,158,11,0.10)}
+    .outcomePill.bad{border-color:rgba(239,68,68,0.28); background:rgba(239,68,68,0.10)}
+
+    /* Tooltip: viewport-clamped (JS-driven). No ::before/::after tooltips anymore. */
+    .hasTip{position:relative}
+    .tipBox{
+      position:fixed;
+      min-width:260px;
+      max-width:420px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.98);
+      box-shadow:0 18px 45px rgba(2,6,23,0.14);
+      color:var(--text);
+      font-weight:800;
+      font-size:12.5px;
+      line-height:1.35;
+      white-space:normal;
+      z-index:999999;
+      pointer-events:none;
+    }
+    .tipArrow{
+      position:fixed;
+      width:0;height:0;
+      border:7px solid transparent;
+      border-bottom-color:rgba(15,23,42,0.12);
+      z-index:1000000;
+      pointer-events:none;
+    }
+
+    /* Banners */
+    .banner{
+      border-radius:14px;padding:10px 12px;border:1px solid var(--line);
+      margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;
+      background:rgba(255,255,255,0.92);
+    }
+    .banner .dot{width:10px;height:10px;border-radius:999px;margin-top:4px}
+    .banner.good .dot{background:var(--good)}
+    .banner.warn .dot{background:var(--warn)}
+    .banner.bad  .dot{background:var(--bad)}
+    .banner .txt{font-size:13.5px;line-height:1.35;color:var(--text)}
+    .banner .txt strong{font-weight:950}
+
+    /* Transcript */
+    .transcriptBox{border:1px solid var(--line);border-radius:14px;background:rgba(15,23,42,0.02);overflow:hidden}
+
+    .tLine{
+      display:grid;
+      grid-template-columns:34px 92px 1fr;
+      column-gap:10px;
+      align-items:start;
+      padding:10px 12px;
+      border-top:1px solid var(--line);
+    }
+    .tLine:first-child{border-top:0}
+
+    .ln{
+      text-align:right;
+      color:var(--muted);
+      font-family:var(--mono);
       font-size:12px;
-      letter-spacing:.13em;
-      text-transform:uppercase;
-      color:var(--muted);
-      font-weight:950;
+      padding-top:2px;
+      font-variant-numeric: tabular-nums;
     }
-    .panelBody{
-      flex:1;
-      display:flex;
-      flex-direction:column;
-      gap:10px;
+
+    .chip{
+      width:92px;
+      font-size:12px;
+      padding:4px 8px;
+      border-radius:999px;
+      background:rgba(37,99,235,0.08);
+      border:1px solid rgba(37,99,235,0.16);
+      color:var(--text);
+      font-weight:850;
+      text-align:center;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
     }
-    .outcomeBig{
-      font-size:24px;
-      font-weight:950;
-      letter-spacing:.2px;
-      margin-top:4px;
-    }
-    .outcomeReason{
-      color:var(--muted);
+    .chip.you{background:rgba(37,99,235,0.14);border-color:rgba(37,99,235,0.24)}
+    .chip.pro{background:rgba(22,163,74,0.12);border-color:rgba(22,163,74,0.22)}
+    .chip.other{background:rgba(2,6,23,0.04);border-color:rgba(2,6,23,0.10)}
+
+    .tText{
+      min-width:0;
       font-size:13.5px;
       line-height:1.35;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+      word-break:break-word;
     }
-    .metaRow{
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      justify-content:center;
-      margin-top:auto;
+
+    /* Report */
+    .reportGrid{display:grid;gap:10px}
+    .reportCard{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.90);overflow:hidden}
+    .reportHead{
+      padding:10px 12px;font-weight:950;display:flex;align-items:center;justify-content:space-between;
+      cursor:pointer;user-select:none;background:rgba(15,23,42,0.02);
     }
-    .fixList{ display:grid; gap:8px; }
-    .fixItem{
-      display:flex;
-      gap:10px;
-      align-items:flex-start;
-      padding:10px;
-      border-radius:16px;
+    .reportBody{padding:10px 12px;border-top:1px solid var(--line)}
+    .reportBody p{margin:0 0 8px;color:var(--text);font-size:13.5px;line-height:1.4}
+    .reportBody ul,.reportBody ol{margin:6px 0 10px 18px}
+    .reportBody li{margin:4px 0;font-size:13.5px;line-height:1.35}
+    .reportBody strong{font-weight:950}
+
+    /* Key/Value */
+    .kv{display:grid;gap:8px}
+    .kv .item{
+      display:grid;grid-template-columns:180px 1fr;gap:10px;padding:10px 12px;
+      border-radius:14px;background:rgba(15,23,42,0.02);border:1px solid var(--line);
+    }
+    .kv .k{color:var(--muted);font-size:13px;font-weight:900}
+    .kv .v{font-size:13.5px;white-space:pre-wrap}
+
+    .bullets{margin:0;padding-left:18px}
+    .bullets li{margin:4px 0;color:var(--text);font-size:13.5px}
+
+    details{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.92);padding:10px 12px}
+    details summary{cursor:pointer;font-weight:950}
+    .mono{font-family:var(--mono);font-size:12px;white-space:pre-wrap;color:var(--muted);margin-top:10px}
+    .footerNote{color:var(--muted);font-size:12px;margin-top:10px}
+
+    /* Toast */
+    .toastHost{
+      position:fixed;right:18px;bottom:18px;z-index:9999;
+      display:flex;flex-direction:column;gap:10px;
+      max-width:min(420px, calc(100vw - 36px));
+      pointer-events:none;
+    }
+    .toast{
+      pointer-events:auto;
+      border-radius:14px;
       border:1px solid var(--line);
-      background:rgba(15,23,42,0.02);
+      background:rgba(255,255,255,0.96);
+      box-shadow:0 18px 45px rgba(2,6,23,0.14);
+      padding:10px 12px;
+      display:flex;gap:10px;align-items:flex-start;
+    }
+    .toast .dot{width:10px;height:10px;border-radius:999px;margin-top:4px}
+    .toast.good .dot{background:var(--good)}
+    .toast.warn .dot{background:var(--warn)}
+    .toast.bad  .dot{background:var(--bad)}
+    .toast .txt{font-size:13.5px;line-height:1.35}
+    .toast .txt strong{font-weight:950}
+
+    /* Landing centering */
+    .landingWrap{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height: calc(100vh - 170px);
+    }
+    .landingCard{
+      width:min(620px, 100%);
       text-align:left;
     }
-    .fixNum{
-      width:22px; height:22px;
-      border-radius:999px;
-      display:grid; place-items:center;
-      font-weight:950;
-      font-size:12px;
-      background:rgba(37,99,235,.10);
-      border:1px solid rgba(37,99,235,.18);
-      color:var(--blue2);
-      flex:0 0 auto;
-      margin-top:1px;
+
+    /* Support */
+    .field{
+      width:100%;
+      background:rgba(15,23,42,0.02);
+      color:var(--text);
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px 12px;
+      outline:none;
     }
-    .fixText{ font-size:13.5px; line-height:1.35; }
-    .panelBtns{ display:flex; gap:8px; align-items:center; justify-content:flex-end; }
-    .btn.small{
-      padding:8px 10px;
-      border-radius:14px;
-      font-weight:900;
-      font-size:13px;
-      gap:8px;
-    }
-    .pbSmall{ font-size:12.5px; color:var(--muted); line-height:1.35; }
 
     /* Playbook */
     .pbLayout{
       display:grid;
-      grid-template-columns: 0.92fr 1.08fr;
-      gap:14px;
+      grid-template-columns: 320px 1fr;
+      gap:12px;
+      align-items:start;
+      margin-top:12px;
     }
-    @media (max-width: 980px){
-      .pbLayout{ grid-template-columns:1fr; }
+    @media (max-width: 960px){
+      .pbLayout{grid-template-columns:1fr;}
+    }
+    .pbLeft{
+      border:1px solid var(--line);
+      border-radius:14px;
+      background:rgba(255,255,255,0.92);
+      overflow:hidden;
+    }
+    .pbLeftHead{
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:rgba(15,23,42,0.02);
     }
     .pbList{
-      display:flex; flex-direction:column; gap:10px;
+      max-height:520px;
+      overflow:auto;
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
     }
     .pbItem{
+      width:100%;
+      text-align:left;
+      padding:10px 12px;
+      border-radius:14px;
       border:1px solid var(--line);
-      background:rgba(255,255,255,.92);
-      border-radius:18px;
-      padding:12px 12px;
+      background:rgba(255,255,255,0.86);
       cursor:pointer;
-      transition:.15s transform, .15s border, .15s background;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      font-weight:950;
+      color:var(--text);
     }
-    .pbItem:hover{ transform:translateY(-1px); border-color:rgba(15,23,42,.18); background:#fff; }
-    .pbItem.active{ border-color:rgba(37,99,235,.45); box-shadow:0 12px 28px rgba(37,99,235,.12); }
-    .pbTop{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-    .pbTitle{ font-weight:950; margin:0; }
-    .pbMeta{ color:var(--muted); font-size:12.5px; margin-top:4px; }
-    .pbEditor{
+    .pbItem:hover{background:rgba(37,99,235,0.06);border-color:rgba(37,99,235,0.20)}
+    .pbItem.active{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.28)}
+    .pbMeta{
+      font-size:11px;
+      font-weight:900;
+      color:var(--muted);
+      white-space:nowrap;
+    }
+    .pbRight{
       border:1px solid var(--line);
-      background:rgba(255,255,255,.92);
-      border-radius:18px;
-      padding:12px;
+      border-radius:14px;
+      background:rgba(255,255,255,0.92);
+      overflow:hidden;
     }
-    .pbEditor .row{ justify-content:space-between; }
-    .pbEditor textarea{
-      min-height:220px;
-      font-family:var(--sans);
-      font-size:14px;
-      line-height:1.4;
+    .pbRightHead{
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:rgba(15,23,42,0.02);
+    }
+    .pbBody{
+      padding:12px;
+      display:grid;
+      gap:12px;
+    }
+    .pbSmall{
+      font-size:12.5px;
+      color:var(--muted);
+      line-height:1.35;
     }
     .pbVersions{
-      margin-top:10px;
-      display:flex; flex-direction:column; gap:8px;
+      border-top:1px solid var(--line);
+      padding-top:10px;
+      display:grid;
+      gap:8px;
     }
     .pbVer{
       border:1px solid var(--line);
-      border-radius:16px;
-      padding:10px 10px;
-      background:rgba(255,255,255,.92);
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      border-radius:14px;
+      background:rgba(15,23,42,0.02);
+      padding:10px 12px;
     }
-    .pbVerLeft{ display:flex; flex-direction:column; gap:2px; }
-    .pbVerTitle{ font-weight:950; font-size:13px; }
-    .pbVerMeta{ font-size:12.5px; color:var(--muted); }
-    .pbVerBtn{ padding:8px 10px; border-radius:14px; }
-
-    /* Banner */
-    .banner{
-      border:1px solid var(--line);
-      border-radius:18px;
-      padding:12px 12px;
-      background:rgba(255,255,255,.92);
+    .pbVerTop{
       display:flex;
+      justify-content:space-between;
       gap:10px;
       align-items:flex-start;
-      margin-top:10px;
+      margin-bottom:6px;
     }
-    .bannerIcon{
-      width:32px; height:32px;
-      border-radius:12px;
-      display:grid; place-items:center;
-      font-weight:950;
-      color:#fff;
-      flex:0 0 auto;
-    }
-    .bannerIcon.warn{ background:rgba(217,119,6,1); }
-    .bannerIcon.bad{ background:rgba(220,38,38,1); }
-    .bannerIcon.ok{ background:rgba(22,163,74,1); }
-    .bannerText{ display:flex; flex-direction:column; gap:3px; }
-    .bannerTitle{ font-weight:950; }
-    .bannerDesc{ color:var(--muted); font-size:13.5px; line-height:1.35; }
-
+    .pbVerTop .vnum{font-weight:950}
+    .pbVerTop .vdate{color:var(--muted);font-size:12px;white-space:nowrap}
+    .pbNotes{color:var(--muted);font-size:12.5px;margin-top:6px}
   </style>
 </head>
+
 <body>
   <div class="wrap">
-    <div class="topbar">
-      <div class="brand" onclick="goto('/')">
-        <div class="logo" aria-hidden="true"></div>
-        <div class="brandText">
-          <div class="brandTitle">Calibrate MVP</div>
-          <div class="brandSub">Upload an audio file + pick a scenario. You’ll get transcript + coaching report.</div>
-        </div>
+    <div class="header">
+      <div class="brand">
+        <h1 id="brandTitle" class="brandTitle">
+          <span class="logoMark" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#1d4ed8"/>
+                  <stop offset="1" stop-color="#38bdf8"/>
+                </linearGradient>
+              </defs>
+              <path d="M32 6a26 26 0 1 0 18.38 7.62" stroke="url(#g)" stroke-width="8" stroke-linecap="round"/>
+              <path d="M28 33l6 6 14-14" stroke="url(#g)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          Calibrate
+        </h1>
+        <p id="brandSub" class="brandSub">Upload a call. Get a transcript + coaching report.</p>
       </div>
 
-      <div class="nav">
-        <a class="pill" id="navHome" onclick="goto('/')"><span class="pillDot"></span>Home</a>
-        <a class="pill" id="navPlaybook" onclick="goto('/playbook')"><span class="pillDot" style="background:rgba(22,163,74,.85); box-shadow:0 0 0 4px rgba(22,163,74,.12)"></span>Playbook</a>
+      <div class="row">
+        <span id="who" class="pill hidden"></span>
+        <button id="btnHome" class="btn secondary hidden">Home</button>
+        <button id="btnNew" class="btn secondary hidden">New</button>
+        <button id="btnSignIn" class="btn secondary">Sign in</button>
+        <button id="btnSignOut" class="btn secondary hidden">Sign out</button>
       </div>
     </div>
 
-    <div id="viewRoot"></div>
+    <div class="appLayout" id="appLayout">
+      <!-- Sidebar (only visible when authed) -->
+      <aside id="sidebar" class="card sidebar hidden">
+        <div class="sideHead">
+          <p class="sideTitle">Dashboard</p>
+        </div>
+
+        <div class="navList">
+          <button id="navDashboard" class="navItem">
+            <span>Home</span>
+          </button>
+
+          <!-- current report indicator (sub-item) -->
+          <div id="navRunWrap" class="navSubWrap hidden">
+            <button id="navCurrentRun" class="navSubItem" title="">
+              <span class="navSubDot" aria-hidden="true"></span>
+              <span id="navRunText" class="navSubText"></span>
+            </button>
+          </div>
+
+          <button id="navUpload" class="navItem">
+            <span>Upload Call</span>
+          </button>
+
+          <button id="navPlaybook" class="navItem">
+            <span>Playbook</span>
+          </button>
+
+          <button id="navRecord" class="navItem">
+            <span>Record Call</span>
+            <span class="tag">Soon</span>
+          </button>
+
+          <button id="navPractice" class="navItem">
+            <span>AI Call Practice</span>
+            <span class="tag">Soon</span>
+          </button>
+
+          <button id="navSupport" class="navItem">
+            <span>Contact Support</span>
+          </button>
+        </div>
+
+        <div class="footerNote" style="margin-top:12px;">
+          Tip: record + practice are placeholders for user testing.
+        </div>
+      </aside>
+
+      <!-- Main content -->
+      <main>
+        <!-- Landing -->
+        <div id="viewLanding" class="hidden landingWrap">
+          <div class="card landingCard">
+            <h3 class="sectionTitle" style="margin:0;">Calibrate MVP</h3>
+            <p style="margin:6px 0 10px; color:var(--muted);">
+              Upload a cold call. Get a readable transcript + coaching report + a best next script.
+            </p>
+            <ul class="bullets">
+              <li>Transcript line-by-line with speakers</li>
+              <li>Call result + why it was labeled that way</li>
+              <li>Coaching report + next script</li>
+            </ul>
+            <div class="row" style="margin-top:12px;">
+              <button id="btnGetStarted" class="btn">Get started</button>
+              <span id="landingStatus" class="status"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Login -->
+        <div id="viewLogin" class="card hidden">
+          <h3 class="sectionTitle">Sign in</h3>
+          <div id="loginBanners"></div>
+
+          <div style="display:grid; gap:12px;">
+            <div>
+              <label for="email">Email</label>
+              <input id="email" type="email" placeholder="you@email.com" class="field" />
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                Magic link (no password). Check your inbox.
+              </div>
+            </div>
+            <div class="row">
+              <button id="btnMagicLink" class="btn">Send magic link</button>
+              <button id="btnGoogle" class="btn secondary">Continue with Google</button>
+              <span id="loginStatus" class="status"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session expired -->
+        <div id="viewSessionExpired" class="card hidden">
+          <h3 class="sectionTitle">Session expired</h3>
+          <p style="margin:0 0 10px; color:var(--muted);">
+            Your session expired while you were using Calibrate. Please sign in again to continue.
+          </p>
+          <div id="expiredBanners"></div>
+          <div class="row" style="margin-top:12px;">
+            <button id="btnGoSignIn" class="btn">Sign in</button>
+            <button id="btnGoLanding" class="btn secondary">Go to landing</button>
+          </div>
+        </div>
+
+        <!-- Home / History -->
+        <div id="viewHome" class="hidden">
+          <div class="card">
+            <h3 class="sectionTitle" style="margin:0;">Quick Actions</h3>
+            <p style="margin:6px 0 0; color:var(--muted); font-size:13.5px;">
+              Choose a workflow. Record + practice are teasers (coming soon).
+            </p>
+
+            <div class="actionGrid">
+              <div id="qaUpload" class="actionCard">
+                <p class="aTitle">Upload a Call</p>
+                <p class="aDesc">Upload an audio file, add context, get transcript + coaching report.</p>
+              </div>
+
+              <div id="qaRecord" class="actionCard soon">
+                <div class="aBadge">Coming soon</div>
+                <p class="aTitle">Record Call</p>
+                <p class="aDesc">Record directly in-app and auto-analyze instantly.</p>
+              </div>
+
+              <div id="qaPractice" class="actionCard soon">
+                <div class="aBadge">Coming soon</div>
+                <p class="aTitle">AI Call Practice</p>
+                <p class="aDesc">Roleplay prospects and get instant coaching + scripts.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px;">
+            <div id="homeBanners"></div>
+            <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+              <h3 class="sectionTitle" style="margin:0;">History</h3>
+              <span id="homeStatus" class="status"></span>
+            </div>
+
+            <div class="tableWrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th class="colReport">Call Analysis</th>
+                    <th class="colScenario">Scenario</th>
+                    <th class="colOutcome">Call Result</th>
+                  </tr>
+                </thead>
+                <tbody id="runsTbody"></tbody>
+              </table>
+            </div>
+
+            <div class="footerNote">Click a row to open that analysis.</div>
+          </div>
+        </div>
+
+        <!-- Calibrate (new run) -->
+        <div id="viewCalibrate" class="card hidden">
+          <div style="display:grid; gap:12px;">
+            <div>
+              <label for="audio">Audio file</label>
+              <input id="audio" type="file" accept="audio/*" class="field" />
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                Limits: audio only • max 25MB • formats: mp3/m4a/wav/ogg.
+              </div>
+            </div>
+
+            <div>
+              <label for="category">Scenario template (optional)</label>
+              <select id="category" class="field"></select>
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                This nudges examples and wording. Context + transcript stay the source of truth.
+              </div>
+            </div>
+
+            <div>
+              <label for="context">Context (required)</label>
+              <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."
+                        style="width:100%;min-height:92px;resize:vertical" class="field"></textarea>
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                Keep it short — we infer details from the transcript when possible.
+              </div>
+            </div>
+
+            <div id="assistCard" class="banner warn hidden" style="margin-bottom:0;">
+              <div class="dot"></div>
+              <div class="txt"><strong id="assistTitle"></strong> <span id="assistMsg"></span></div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top: 10px;">
+            <button id="run" class="btn">Calibrate</button>
+            <span id="status" class="status"></span>
+          </div>
+        </div>
+
+        <!-- Run viewer -->
+        <div id="viewRun" class="card hidden">
+          <div class="row" style="justify-content:space-between;">
+            <div>
+              <h3 class="sectionTitle" style="margin:0;">Call Analysis</h3>
+              <div id="runTitle" style="margin-top:6px;font-weight:950;font-size:16px;"></div>
+              <div id="runMeta" style="margin-top:4px;color:var(--muted);font-size:12.5px;"></div>
+            </div>
+            <div class="row">
+              <button id="btnSavePlaybook" class="btn secondary hidden">Save to Playbook</button>
+              <button id="btnBackHome" class="btn secondary">Back</button>
+            </div>
+          </div>
+
+          <div id="runBanners" style="margin-top:12px;"></div>
+
+          <h3 class="sectionTitle" style="margin-top:14px;">Summary</h3>
+          <div class="kv" id="summaryKV2"></div>
+
+          <div style="height: 12px;"></div>
+
+          <h3 class="sectionTitle">Transcript</h3>
+          <div class="transcriptBox" id="transcriptBox2"></div>
+
+          <div style="height: 12px;"></div>
+
+          <h3 class="sectionTitle">Report</h3>
+          <div class="reportGrid" id="reportGrid2"></div>
+        </div>
+
+        <!-- Playbook -->
+        <div id="viewPlaybook" class="card hidden">
+          <div class="row" style="justify-content:space-between;">
+            <div>
+              <h3 class="sectionTitle" style="margin:0;">Playbook</h3>
+              <div class="pbSmall" style="margin-top:6px;">
+                Save scripts you actually use. Update them as you learn. Your latest version becomes your default.
+              </div>
+            </div>
+            <button id="btnPlaybookBack" class="btn secondary">Back</button>
+          </div>
+
+          <div id="playbookBanners" style="margin-top:12px;"></div>
+
+          <div class="pbLayout">
+            <div class="pbLeft">
+              <div class="pbLeftHead">
+                <div style="font-weight:950;">Scripts</div>
+                <div class="row" style="gap:8px;">
+                  <button id="btnPbRefresh" class="btn secondary" style="padding:8px 10px;">Refresh</button>
+                  <button id="btnPbNew" class="btn" style="padding:8px 10px;">New</button>
+                </div>
+              </div>
+              <div id="pbList" class="pbList"></div>
+            </div>
+
+            <div class="pbRight">
+              <div class="pbRightHead">
+                <div style="font-weight:950;" id="pbRightTitle">New Script</div>
+                <span id="pbRightStatus" class="status"></span>
+              </div>
+
+              <div class="pbBody">
+                <div>
+                  <label for="pbTitle">Title (max 5 words)</label>
+                  <input id="pbTitle" class="field" placeholder="e.g., Dental Receptionist Opener" />
+                  <div class="pbSmall" style="margin-top:6px;">
+                    Keep it short. This shows in your library.
+                  </div>
+                </div>
+
+                <div>
+                  <label for="pbText">Script</label>
+                  <textarea id="pbText" class="field" style="width:100%;min-height:180px;resize:vertical"
+                    placeholder="Paste the exact script you want to reuse."></textarea>
+                </div>
+
+                <div>
+                  <label for="pbNotes">Notes (optional)</label>
+                  <input id="pbNotes" class="field" placeholder="What changed? Why is this better?" />
+                </div>
+
+                <div class="row">
+                  <button id="btnPbSave" class="btn">Save</button>
+                  <button id="btnPbAddVersion" class="btn secondary hidden">Add as New Version</button>
+                  <span class="pbSmall" id="pbLinkHint"></span>
+                </div>
+
+                <div class="pbVersions">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                    <div style="font-weight:950;">Version History</div>
+                    <div class="pbSmall">Newest first</div>
+                  </div>
+                  <div id="pbVersions"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Support -->
+        <div id="viewSupport" class="card hidden">
+          <div class="row" style="justify-content:space-between;">
+            <h3 class="sectionTitle" style="margin:0;">Contact Support</h3>
+            <button id="btnSupportBack" class="btn secondary">Back</button>
+          </div>
+
+          <div id="supportBanners" style="margin-top:12px;"></div>
+
+          <div style="display:grid; gap:12px; margin-top:10px;">
+            <div>
+              <label for="supportMessage">Message</label>
+              <textarea id="supportMessage" class="field" style="width:100%;min-height:120px;resize:vertical"
+                        placeholder="Describe what happened. Include what you expected vs what you saw."></textarea>
+            </div>
+
+            <div>
+              <label for="supportContact">Your contact (optional)</label>
+              <input id="supportContact" class="field" placeholder="Email, Instagram, etc." />
+              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
+                If you want a reply, leave a contact method.
+              </div>
+            </div>
+
+            <div class="row">
+              <button id="btnSupportSend" class="btn">Send</button>
+              <span id="supportStatus" class="status"></span>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <div id="toastHost" class="toastHost"></div>
+
+  <!-- Supabase JS (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
-    // --------- tiny router ----------
-    const routes = {};
-    const viewRoot = document.getElementById('viewRoot');
-    const navHome = document.getElementById('navHome');
-    const navPlaybook = document.getElementById('navPlaybook');
-
-    function setActiveNav(path){
-      navHome.classList.toggle('active', path === '/' || path.startsWith('/run'));
-      navPlaybook.classList.toggle('active', path.startsWith('/playbook'));
-    }
-
-    function goto(path){
-      history.pushState({}, '', path);
+    // ---- Router helpers ----
+    function goto(path) {
+      history.pushState({}, "", path);
       renderRoute();
     }
-    window.addEventListener('popstate', renderRoute);
+    window.addEventListener("popstate", renderRoute);
 
-    function toast(msg){
-      const el = document.getElementById('toast');
-      el.textContent = msg;
-      el.classList.add('show');
-      setTimeout(()=> el.classList.remove('show'), 2200);
-    }
-
-    // --------- api helpers ----------
-    async function apiGet(url){
-      const r = await fetch(url);
-      if(!r.ok) throw new Error(await r.text());
-      return r.json();
-    }
-    async function apiPost(url, body){
-      const r = await fetch(url, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(body || {})
-      });
-      if(!r.ok) throw new Error(await r.text());
-      return r.json();
-    }
-    async function apiUpload(url, formData){
-      const r = await fetch(url, { method:'POST', body: formData });
-      if(!r.ok) throw new Error(await r.text());
-      return r.json();
+    // ---- Toast ----
+    const toastHost = document.getElementById("toastHost");
+    function toast(type, title, msg, ms = 2600) {
+      const t = document.createElement("div");
+      t.className = "toast " + (type || "warn");
+      t.innerHTML = `
+        <div class="dot"></div>
+        <div class="txt"><strong>${escapeHtml(title || "Note:")}</strong> ${escapeHtml(msg || "")}</div>
+      `;
+      toastHost.appendChild(t);
+      setTimeout(() => { try { t.remove(); } catch {} }, ms);
     }
 
-    // --------- utilities ----------
-    function fmtDate(iso){
-      try{
-        const d = new Date(iso);
-        if(isNaN(+d)) return '';
-        return d.toLocaleString([], { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-      }catch{ return ''; }
-    }
-    function escapeHtml(s){
-      return (s||'').replace(/[&<>"']/g, c => ({
-        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
-      }[c]));
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
     }
 
-    // --------- scenario templates ----------
-    const scenarioTemplates = {
-      none: { label: 'None', helper: 'No scenario framing applied.' },
-      b2b:  { label: 'B2B service / software', helper: 'Use ROI/time-saved/pipeline language. Qualify decision-maker, current tool/process, measurable outcome, and a low-friction next step (10-min walkthrough).' },
-      retail:{ label: 'Local service / retail', helper: 'Focus on convenience, availability, and simple next steps. Confirm fit, budget sensitivity, and booking flow.' },
-      recruiting:{ label: 'Recruiting / staffing', helper: 'Clarify role urgency, hiring process, and decision chain. Offer a fast shortlist and specific next-step meeting.' }
+    function banner(type, title, msg) {
+      const wrap = document.createElement("div");
+      wrap.className = "banner " + type;
+      wrap.innerHTML = `
+        <div class="dot"></div>
+        <div class="txt"><strong>${escapeHtml(title)}</strong> ${escapeHtml(msg)}</div>
+      `;
+      return wrap;
+    }
+
+    // ---- Scenario data ----
+    const scenarioTemplates = [
+      ["", "None"],
+      ["b2b_service_software", "B2B service / software"],
+      ["local_service", "Local service (contractors, clinics, home services)"],
+      ["ecommerce", "E-commerce / Shopify / DTC"],
+      ["agency_services", "Agency service (SEO, ads, creative, etc.)"],
+      ["recruiting_staffing", "Recruiting / staffing"],
+      ["real_estate", "Real estate"],
+      ["coaching_consulting", "Coaching / consulting"],
+    ];
+
+    const scenarioKeywords = {
+      b2b_service_software: ["pipeline","crm","demo","saas","software","workflow","time saved","roi","automation"],
+      local_service: ["estimate","quote","jobs","service area","booked jobs","roof","plumbing","clinic","dentist","hvac"],
+      ecommerce: ["shopify","ecommerce","d2c","cart","conversion","roas","ads","product page","checkout","aov"],
+      agency_services: ["seo","ads","creative","agency","retainer","audit","rank","keywords","google ads","meta ads"],
+      recruiting_staffing: ["hire","hiring","staffing","recruiting","candidates","roles","openings","time to hire"],
+      real_estate: ["listing","realtor","buyer","seller","open house","zillow","mls","showing","offer"],
+      coaching_consulting: ["coaching","consulting","clients","program","course","mentorship","1:1","funnel"],
     };
 
-    const legacyScenarioMap = {
-      none: 'None',
-      seo: 'SEO agency pitch',
-      maintenance: 'Website maintenance',
-      ai_receptionist: 'AI receptionist'
-    };
+    function fillSelect(el, options) {
+      el.innerHTML = "";
+      for (const [value, label] of options) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = label;
+        el.appendChild(opt);
+      }
+    }
 
-    // --------- Call outcome mapping ----------
-    function normalizeOutcomeKey(s){
-      const t = (s||'').toLowerCase();
-      if(t.includes('pass')) return 'pass';
-      if(t.includes('booked')) return 'booked';
-      if(t.includes('meeting')) return 'booked';
-      if(t.includes('follow')) return 'followup';
-      if(t.includes('no_show')) return 'no_show';
-      if(t.includes('objection')) return 'objection';
-      if(t.includes('fail')) return 'fail';
-      return t || 'unknown';
+    // ---- Outcome labels + tips ----
+    function normalizeOutcomeKey(raw) {
+      const s = String(raw || "").trim();
+      if (!s) return "";
+      return s.toUpperCase().replace(/\s+/g, "_").replace(/-+/g, "_");
     }
-    function outcomeLabel(key){
-      if(key==='booked') return 'BOOKED ✅';
-      if(key==='pass') return 'PASS ✅';
-      if(key==='followup') return 'FOLLOW UP ⚠️';
-      if(key==='no_show') return 'NO SHOW ⚠️';
-      if(key==='objection') return 'OBJECTION ❌';
-      if(key==='fail') return 'FAIL ❌';
-      return 'UNKNOWN';
+
+    function outcomeLabel(key) {
+      const k = normalizeOutcomeKey(key);
+      const map = {
+        BOOKED_MEETING: "Booked Meeting",
+        CONNECTED: "Connected",
+        REJECTED: "Rejected",
+        HOSTILE: "Hostile",
+        VOICEMAIL: "Voicemail",
+        NO_ANSWER: "No Answer",
+      };
+      return map[k] || (k ? k.replace(/_/g, " ") : "—");
     }
-    function outcomePillClass(key){
-      if(key==='booked' || key==='pass') return 'win';
-      if(key==='followup' || key==='no_show') return 'followup';
-      if(key==='objection' || key==='fail') return 'loss';
-      return 'unknown';
+
+    function outcomePillClass(key) {
+      const k = normalizeOutcomeKey(key);
+      if (k === "BOOKED_MEETING") return "good";
+      if (k === "REJECTED" || k === "VOICEMAIL" || k === "NO_ANSWER") return "warn";
+      if (k === "HOSTILE") return "bad";
+      return "";
     }
+
     const outcomeGlossary = {
-      booked: 'Prospect agreed to a defined next step (meeting, demo, walkthrough, calendar commitment).',
-      pass: 'Prospect affirmed relevance or requested the next step, even if scheduling specifics aren’t captured.',
-      followup: 'Prospect didn’t commit, but left the door open (asked to send info, check back later, or review).',
-      no_show: 'Prospect disengaged or the call ended without a meaningful exchange.',
-      objection: 'Prospect explicitly rejected or raised a blocking objection not resolved in-call.',
-      fail: 'Call broke down (rambling, no control, no qualification, no clear ask).',
-      unknown: 'Outcome wasn’t clear from the transcript + context.'
+      BOOKED_MEETING: "A meeting/call was scheduled or explicitly agreed to (calendar/Zoom/link/time agreement).",
+      CONNECTED: "You reached a real person and had a conversation, but no meeting was clearly booked.",
+      REJECTED: "They declined the offer or ended the call without engaging further.",
+      HOSTILE: "They rejected aggressively (anger/insults/stop calling).",
+      VOICEMAIL: "This appears to be voicemail or a message prompt.",
+      NO_ANSWER: "No real conversation happened (no pickup / dead air).",
     };
 
-    // --------- markdown-ish parser for report sections ----------
-    function splitReportIntoSections(reportText){
-      const text = (reportText||'').trim();
-      if(!text) return [];
-      const lines = text.split(/\r?\n/);
-      const sections = [];
-      let cur = { title: 'Report', body: [] };
+    // ---- Mini markdown ----
+    function renderMiniMarkdown(md) {
+      const lines = String(md || "").split("\n");
+      let html = "";
+      let inUL = false;
+      let inOL = false;
 
-      const h2 = /^##\s+(.*)\s*$/;
-      for(const ln of lines){
-        const m = ln.match(h2);
-        if(m){
-          if(cur.body.length || cur.title) sections.push({ title: cur.title, body: cur.body.join('\n').trim() });
-          cur = { title: m[1].trim(), body: [] };
-        }else{
-          cur.body.push(ln);
-        }
-      }
-      if(cur.body.length || cur.title) sections.push({ title: cur.title, body: cur.body.join('\n').trim() });
+      const flushLists = () => {
+        if (inUL) { html += "</ul>"; inUL = false; }
+        if (inOL) { html += "</ol>"; inOL = false; }
+      };
 
-      return sections.filter(s => (s.title || '').trim() || (s.body || '').trim());
-    }
+      for (let raw of lines) {
+        const line = raw.trimEnd();
+        if (!line.trim()) { flushLists(); continue; }
 
-    function renderMdToHtml(md){
-      const lines = (md||'').split(/\r?\n/);
-      let html = '';
-      let inList = false;
-
-      function closeList(){ if(inList){ html += '</ul>'; inList=false; } }
-
-      for(let raw of lines){
-        const line = raw.trimRight();
-
-        // list item
-        const li = line.match(/^\s*[-*]\s+(.*)$/) || line.match(/^\s*\d+\.\s+(.*)$/);
-        if(li){
-          if(!inList){ html += '<ul>'; inList=true; }
-          html += '<li>' + escapeHtml(li[1]) + '</li>';
-          continue;
-        } else {
-          closeList();
-        }
-
-        if(!line.trim()){
+        const ulMatch = line.match(/^\s*[-*]\s+(.*)$/);
+        if (ulMatch) {
+          if (inOL) { html += "</ol>"; inOL = false; }
+          if (!inUL) { html += "<ul>"; inUL = true; }
+          html += `<li>${escapeHtml(ulMatch[1]).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`;
           continue;
         }
 
-        // bold **text**
-        let safe = escapeHtml(line);
-        safe = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        safe = safe.replace(/`(.+?)`/g, '<span class="mono">$1</span>');
+        const olMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+        if (olMatch) {
+          if (inUL) { html += "</ul>"; inUL = false; }
+          if (!inOL) { html += "<ol>"; inOL = true; }
+          html += `<li>${escapeHtml(olMatch[1]).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`;
+          continue;
+        }
 
-        html += '<p>' + safe + '</p>';
+        flushLists();
+        const p = escapeHtml(line).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        html += `<p>${p}</p>`;
       }
-      closeList();
+
+      flushLists();
       return html;
     }
 
-    function stripMdFormatting(s){
-      return String(s||'')
-        .replace(/^\s*[-*]\s+/,'')
-        .replace(/^\s*\d+\.\s+/,'')
-        .replace(/[*_`>#]/g,'')
-        .replace(/\s+/g,' ')
-        .trim();
+    function splitReportIntoSections(reportMd) {
+      const text = String(reportMd || "").trim();
+      if (!text) return [];
+
+      const cleaned = text.replace(/^\uFEFF/, "").trim();
+
+      if (cleaned.startsWith("##")) {
+        const normalized = cleaned.replace(/^##\s+/, "");
+        return normalized.split(/\n##\s+/g).map((chunk) => chunk.trim()).filter(Boolean).map((chunk) => {
+          const [titleLine, ...rest] = chunk.split("\n");
+          return { title: titleLine.trim(), body: rest.join("\n").trim() };
+        });
+      }
+
+      const parts = cleaned.split(/\n##\s+/g);
+      if (parts.length === 1) return [{ title: "Report", body: cleaned }];
+
+      const sections = [];
+      if (parts[0].trim()) sections.push({ title: "Report", body: parts[0].trim() });
+      for (let i = 1; i < parts.length; i++) {
+        const chunk = parts[i].trim();
+        if (!chunk) continue;
+        const [titleLine, ...rest] = chunk.split("\n");
+        sections.push({ title: titleLine.trim(), body: rest.join("\n").trim() });
+      }
+      return sections;
     }
 
-    function extractBulletItems(md){
-      const items = [];
-      const lines = String(md||'').split(/\r?\n/);
-      for(const raw of lines){
-        const m = raw.match(/^\s*[-*]\s+(.*)$/) || raw.match(/^\s*\d+\.\s+(.*)$/);
-        if(m){
-          const cleaned = stripMdFormatting(m[1]);
-          if(cleaned) items.push(cleaned);
-        }
-      }
-      return items;
+    // Keep remap conservative (only when truly 2 diarized speakers)
+    function computeSpeakerDisplayMap(parsedLines) {
+      const labels = [...new Set(parsedLines.map(x => x.speaker).filter(Boolean))];
+
+      if (labels.some(l => /^you$/i.test(l) || /^prospect$/i.test(l))) return null;
+
+      const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+      const normLabels = labels.map(norm);
+
+      const speakerish = normLabels.filter(l => /^speaker\s+([a-z]|\d+)$/i.test(l));
+      const uniqueSpeakerish = [...new Set(speakerish.map(s => s.toLowerCase()))];
+
+      if (uniqueSpeakerish.length !== 2 || normLabels.length !== 2) return null;
+
+      const aLabel = labels[0];
+      const bLabel = labels[1];
+
+      const textFor = (label) => parsedLines
+        .filter(x => x.speaker === label)
+        .map(x => x.text || "")
+        .join(" ")
+        .slice(0, 4000);
+
+      const repSignals = [
+        /\bhey\b/i, /\bhi\b/i, /\bthis\s+is\b/i, /\bmy\s+name\s+is\b/i, /\bi['’]?m\b/i,
+        /\bcalling\b/i, /\breaching\s+out\b/i, /\bquick\b/i, /\bseconds?\b/i, /\bcan\s+i\b/i, /\bdo\s+you\s+have\b/i
+      ];
+      const prospectSignals = [
+        /\bnot\s+interested\b/i, /\bprobably\s+not\b/i, /\bjust\s+email\b/i, /\bhow\s+much\b/i,
+        /\bwe\s+already\b/i, /\bwe['’]?re\s+good\b/i, /\bstop\s+calling\b/i, /\bwho\s+is\s+this\b/i
+      ];
+
+      const score = (txt) => {
+        let rep = 0, pro = 0;
+        for (const r of repSignals) if (r.test(txt)) rep++;
+        for (const p of prospectSignals) if (p.test(txt)) pro++;
+        return { rep, pro, net: rep - pro };
+      };
+
+      const a = score(textFor(aLabel));
+      const b = score(textFor(bLabel));
+
+      const diff = Math.abs(a.net - b.net);
+      if (diff < 2) return null;
+
+      const aIsYou = a.net > b.net;
+      return {
+        [aLabel]: aIsYou ? "You" : "Prospect",
+        [bLabel]: aIsYou ? "Prospect" : "You",
+      };
     }
 
-    function extractTopFixesFromReport(reportText){
-      const txt = String(reportText||'').trim();
-      if(!txt) return [];
-      const sections = splitReportIntoSections(txt);
+    function renderTranscriptInto(transcriptOrLines, transcriptBoxEl) {
+      transcriptBoxEl.innerHTML = "";
 
-      // Prefer sections whose headings imply priority fixes.
-      const preferred = sections.find(s => /fix|priority|priorities|top\s*3|do this first|first/i.test((s.title||'').toLowerCase()));
-      let pool = preferred ? preferred.body : txt;
+      let parsed = [];
 
-      let items = extractBulletItems(pool);
+      if (Array.isArray(transcriptOrLines)) {
+        parsed = transcriptOrLines
+          .map(x => ({
+            speaker: String(x?.speaker || "Other").trim() || "Other",
+            text: String(x?.text || "").trim(),
+          }))
+          .filter(x => x.text);
+      } else {
+        const rawLines = String(transcriptOrLines || "")
+          .split("\n")
+          .map(s => s.trim())
+          .filter(Boolean);
 
-      // If not enough, search all sections in order.
-      if(items.length < 3){
-        for(const sec of sections){
-          const more = extractBulletItems(sec.body);
-          items = items.concat(more);
-          if(items.length >= 3) break;
-        }
-      }
+        parsed = rawLines.map((line) => {
+          let speaker = "Other";
+          let text = line;
 
-      // Deduplicate.
-      const seen = new Set();
-      items = items.filter(x => {
-        const k = x.toLowerCase();
-        if(seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-
-      // Fallback: take first sentences.
-      if(items.length < 3){
-        const plain = txt.replace(/[#*_`>-]/g,' ').replace(/\s+/g,' ').trim();
-        const sents = plain.split(/(?<=[.!?])\s+/).filter(Boolean);
-        for(const s of sents){
-          const cleaned = stripMdFormatting(s);
-          if(cleaned) items.push(cleaned);
-          if(items.length >= 3) break;
-        }
-      }
-      return items.slice(0, 3);
-    }
-
-    function enforceTwoLine(text){
-      let t = String(text||'').trim();
-      if(!t) return '';
-      t = t.replace(/^["'“”]+|["'“”]+$/g, '').trim();
-      const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
-      if(sentences.length >= 2){
-        const line1 = sentences[0].trim();
-        const line2 = sentences.slice(1).join(' ').trim();
-        return (line1 + '\n' + line2).trim();
-      }
-      const words = t.split(/\s+/).filter(Boolean);
-      if(words.length > 18){
-        const mid = Math.min(18, Math.ceil(words.length/2));
-        return (words.slice(0, mid).join(' ') + '\n' + words.slice(mid).join(' ')).trim();
-      }
-      return t;
-    }
-
-    // --------- script guesser (used for playbook + follow-up) ----------
-    function guessScriptFromReport(reportText){
-      const sections = splitReportIntoSections(reportText || '');
-      const cand = sections.find(s => /follow up|two-line|two line|message|dm|email|text/i.test(s.title||'')) || sections.find(s => /script|send|write/i.test(s.title||''));
-      const body = (cand ? cand.body : (reportText||''));
-      const lines = body.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
-      // find a line that looks like a draft message
-      for(const ln of lines){
-        if(ln.length >= 35 && ln.length <= 220 && !ln.startsWith('-') && !ln.match(/^\d+\./)){
-          if(!ln.toLowerCase().includes('section') && !ln.toLowerCase().includes('enforcer')){
-            return ln.replace(/^["'“”]+|["'“”]+$/g,'').trim();
+          const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
+          if (m) {
+            speaker = (m[1] || "Other").replace(/\s+/g, " ").trim();
+            text = (m[2] || "").trim();
           }
-        }
+
+          speaker = speaker.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
+          return { speaker, text };
+        }).filter(x => x.text);
       }
 
-      // fallback: take first bullet-ish items and stitch into 2 lines
-      const bullets = extractBulletItems(body);
-      if(bullets.length){
-        const a = bullets[0] || '';
-        const b = bullets[1] || '';
-        return [a,b].filter(Boolean).join(' ');
-      }
-
-      // last fallback
-      const plain = (reportText||'').replace(/[#*_`>-]/g,' ').replace(/\s+/g,' ').trim();
-      return plain.slice(0, 200);
-    }
-
-    function maxWords(s, n){
-      const w = (s||'').trim().split(/\s+/).filter(Boolean);
-      return w.slice(0, n).join(' ');
-    }
-
-    async function copyToClipboard(text){
-      const t = String(text||'');
-      if(!t.trim()){
-        toast('Nothing to copy.');
+      if (!parsed.length) {
+        const empty = document.createElement("div");
+        empty.className = "tLine";
+        empty.innerHTML = `<div class="ln">–</div><span class="chip other">Transcript</span><div class="tText">(empty)</div>`;
+        transcriptBoxEl.appendChild(empty);
         return;
       }
-      try{
-        await navigator.clipboard.writeText(t);
-        toast('Copied.');
-      }catch{
-        // fallback
-        const ok = window.prompt('Copy to clipboard:', t);
-        if(ok !== null) toast('Copied.');
+
+      const remap = computeSpeakerDisplayMap(parsed);
+
+      parsed.forEach((p, idx) => {
+        const displaySpeaker = remap?.[p.speaker] || p.speaker;
+
+        const chipClass =
+          /^you$/i.test(displaySpeaker) ? "you" :
+          /^prospect$/i.test(displaySpeaker) ? "pro" :
+          "other";
+
+        const row = document.createElement("div");
+        row.className = "tLine";
+        row.innerHTML = `
+          <div class="ln">${idx + 1}</div>
+          <span class="chip ${chipClass}">${escapeHtml(displaySpeaker)}</span>
+          <div class="tText">${escapeHtml(p.text || "")}</div>
+        `;
+        transcriptBoxEl.appendChild(row);
+      });
+    }
+
+    function renderReportInto(reportMd, reportGridEl) {
+      reportGridEl.innerHTML = "";
+      const sections = splitReportIntoSections(reportMd);
+
+      if (!sections.length) {
+        const card = document.createElement("div");
+        card.className = "reportCard";
+        card.innerHTML = `<div class="reportHead">Report</div><div class="reportBody"><p>(empty)</p></div>`;
+        reportGridEl.appendChild(card);
+        return;
+      }
+
+      sections.forEach((s, i) => {
+        const card = document.createElement("div");
+        card.className = "reportCard";
+
+        const head = document.createElement("div");
+        head.className = "reportHead";
+        head.textContent = s.title || `Section ${i + 1}`;
+
+        const body = document.createElement("div");
+        body.className = "reportBody";
+        body.innerHTML = renderMiniMarkdown(s.body || "");
+
+        let open = (i < 2);
+        body.style.display = open ? "block" : "none";
+        head.addEventListener("click", () => {
+          open = !open;
+          body.style.display = open ? "block" : "none";
+        });
+
+        card.appendChild(head);
+        card.appendChild(body);
+        reportGridEl.appendChild(card);
+      });
+    }
+
+    function renderSummaryInto(run, opts) {
+      const summaryKVEl = opts.summaryKVEl;
+      summaryKVEl.innerHTML = "";
+
+      const addKV = (k, vNodeOrText) => {
+        const item = document.createElement("div");
+        item.className = "item";
+        const kEl = document.createElement("div");
+        kEl.className = "k";
+        kEl.textContent = k;
+
+        const vEl = document.createElement("div");
+        vEl.className = "v";
+
+        if (vNodeOrText instanceof Node) vEl.appendChild(vNodeOrText);
+        else vEl.textContent = String(vNodeOrText || "");
+
+        item.appendChild(kEl);
+        item.appendChild(vEl);
+        summaryKVEl.appendChild(item);
+      };
+
+      const scenario = run.scenario_template || "";
+      const scenarioLabel = scenarioTemplates.find(([v]) => v === scenario)?.[1] || "None";
+
+      const outcomeKey = normalizeOutcomeKey(run.call_outcome || "");
+      const outcomeTxt = outcomeLabel(outcomeKey);
+      const outcomeTip = run.call_outcome_reason || outcomeGlossary[outcomeKey] || "—";
+
+      const outcomeNode = document.createElement("span");
+      outcomeNode.className = `outcomePill hasTip ${outcomePillClass(outcomeKey)}`;
+      outcomeNode.setAttribute("data-tip", outcomeTip);
+      outcomeNode.textContent = outcomeTxt;
+
+      addKV("Scenario (selected)", scenarioLabel);
+      addKV("User Context", run.user_context || "(none)");
+      addKV("Call Result", outcomeNode);
+    }
+
+    // ---- DOM ----
+    const appLayoutEl = document.getElementById("appLayout");
+
+    const viewLanding = document.getElementById("viewLanding");
+    const viewLogin = document.getElementById("viewLogin");
+    const viewSessionExpired = document.getElementById("viewSessionExpired");
+    const viewHome = document.getElementById("viewHome");
+    const viewCalibrate = document.getElementById("viewCalibrate");
+    const viewRun = document.getElementById("viewRun");
+    const viewPlaybook = document.getElementById("viewPlaybook");
+    const viewSupport = document.getElementById("viewSupport");
+
+    const sidebar = document.getElementById("sidebar");
+    const navDashboard = document.getElementById("navDashboard");
+    const navUpload = document.getElementById("navUpload");
+    const navPlaybook = document.getElementById("navPlaybook");
+    const navRecord = document.getElementById("navRecord");
+    const navPractice = document.getElementById("navPractice");
+    const navSupport = document.getElementById("navSupport");
+
+    const navRunWrap = document.getElementById("navRunWrap");
+    const navCurrentRun = document.getElementById("navCurrentRun");
+    const navRunText = document.getElementById("navRunText");
+
+    const qaUpload = document.getElementById("qaUpload");
+    const qaRecord = document.getElementById("qaRecord");
+    const qaPractice = document.getElementById("qaPractice");
+
+    const btnHome = document.getElementById("btnHome");
+    const btnNew = document.getElementById("btnNew");
+    const btnSignIn = document.getElementById("btnSignIn");
+    const btnSignOut = document.getElementById("btnSignOut");
+    const who = document.getElementById("who");
+
+    const btnGetStarted = document.getElementById("btnGetStarted");
+    const landingStatus = document.getElementById("landingStatus");
+
+    const loginBanners = document.getElementById("loginBanners");
+    const loginStatus = document.getElementById("loginStatus");
+    const emailEl = document.getElementById("email");
+    const btnMagicLink = document.getElementById("btnMagicLink");
+    const btnGoogle = document.getElementById("btnGoogle");
+
+    const expiredBanners = document.getElementById("expiredBanners");
+    const btnGoSignIn = document.getElementById("btnGoSignIn");
+    const btnGoLanding = document.getElementById("btnGoLanding");
+
+    const homeBanners = document.getElementById("homeBanners");
+    const homeStatus = document.getElementById("homeStatus");
+    const runsTbody = document.getElementById("runsTbody");
+
+    const btnSavePlaybook = document.getElementById("btnSavePlaybook");
+    const btnBackHome = document.getElementById("btnBackHome");
+    const runBanners = document.getElementById("runBanners");
+    const runTitleEl = document.getElementById("runTitle");
+    const runMetaEl = document.getElementById("runMeta");
+
+    // calibrate DOM
+    const categoryEl = document.getElementById("category");
+    const audioEl = document.getElementById("audio");
+    const contextEl = document.getElementById("context");
+    const runBtn = document.getElementById("run");
+    const statusEl = document.getElementById("status");
+
+    const assistCard = document.getElementById("assistCard");
+    const assistTitle = document.getElementById("assistTitle");
+    const assistMsg = document.getElementById("assistMsg");
+
+    // run viewer DOM
+    const summaryKVEl2 = document.getElementById("summaryKV2");
+    const transcriptBoxEl2 = document.getElementById("transcriptBox2");
+    const reportGridEl2 = document.getElementById("reportGrid2");
+
+    // Playbook DOM
+    const btnPlaybookBack = document.getElementById("btnPlaybookBack");
+    const playbookBanners = document.getElementById("playbookBanners");
+    const btnPbRefresh = document.getElementById("btnPbRefresh");
+    const btnPbNew = document.getElementById("btnPbNew");
+    const pbList = document.getElementById("pbList");
+
+    const pbRightTitle = document.getElementById("pbRightTitle");
+    const pbRightStatus = document.getElementById("pbRightStatus");
+    const pbTitle = document.getElementById("pbTitle");
+    const pbText = document.getElementById("pbText");
+    const pbNotes = document.getElementById("pbNotes");
+    const btnPbSave = document.getElementById("btnPbSave");
+    const btnPbAddVersion = document.getElementById("btnPbAddVersion");
+    const pbVersions = document.getElementById("pbVersions");
+    const pbLinkHint = document.getElementById("pbLinkHint");
+
+    // support DOM
+    const btnSupportBack = document.getElementById("btnSupportBack");
+    const supportBanners = document.getElementById("supportBanners");
+    const supportMessage = document.getElementById("supportMessage");
+    const supportContact = document.getElementById("supportContact");
+    const btnSupportSend = document.getElementById("btnSupportSend");
+    const supportStatus = document.getElementById("supportStatus");
+
+    fillSelect(categoryEl, scenarioTemplates);
+
+    // ---- Supabase init ----
+    let sb = null;
+    let session = null;
+    let config = null;
+
+    let sessionExpiredMessage = "";
+    let sessionExpiredHandled = false;
+
+    async function initSupabase() {
+      const r = await fetch("/api/config");
+      config = await r.json();
+      if (!config?.supabaseUrl || !config?.supabaseAnonKey) throw new Error("Missing Supabase config from /api/config");
+
+      const createClient = window.supabase?.createClient;
+      if (!createClient) throw new Error("Supabase JS not loaded");
+
+      sb = createClient(config.supabaseUrl, config.supabaseAnonKey);
+
+      const { data } = await sb.auth.getSession();
+      session = data.session;
+
+      sb.auth.onAuthStateChange((_event, newSession) => {
+        session = newSession;
+        renderRoute();
+      });
+    }
+
+    function hideAllViews() {
+      viewLanding.classList.add("hidden");
+      viewLogin.classList.add("hidden");
+      viewSessionExpired.classList.add("hidden");
+      viewHome.classList.add("hidden");
+      viewCalibrate.classList.add("hidden");
+      viewRun.classList.add("hidden");
+      viewPlaybook.classList.add("hidden");
+      viewSupport.classList.add("hidden");
+    }
+
+    function setActiveNav(path) {
+      const btns = [navDashboard, navUpload, navPlaybook, navRecord, navPractice, navSupport];
+      btns.forEach(b => b.classList.remove("active"));
+
+      if (path === "/home") navDashboard.classList.add("active");
+      else if (path === "/calibrate") navUpload.classList.add("active");
+      else if (path === "/playbook") navPlaybook.classList.add("active");
+      else if (path === "/support") navSupport.classList.add("active");
+      else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
+    }
+
+    function updateTopNav() {
+      const loggedIn = !!session;
+      btnSignIn.classList.toggle("hidden", loggedIn);
+      btnSignOut.classList.toggle("hidden", !loggedIn);
+      btnHome.classList.toggle("hidden", !loggedIn);
+      btnNew.classList.toggle("hidden", !loggedIn);
+      who.classList.toggle("hidden", !loggedIn);
+
+      sidebar.classList.toggle("hidden", !loggedIn);
+      appLayoutEl.classList.toggle("noSidebar", !loggedIn);
+
+      if (loggedIn) who.textContent = session.user?.email || "Signed in";
+      else who.textContent = "";
+    }
+
+    function authHeader() {
+      if (!session?.access_token) return {};
+      return { Authorization: "Bearer " + session.access_token };
+    }
+
+    async function safeJson(r) {
+      try { return await r.json(); }
+      catch { return {}; }
+    }
+
+    async function trySilentRefresh() {
+      if (!sb) return null;
+      try {
+        const { data, error } = await sb.auth.refreshSession();
+        if (error) return null;
+        session = data?.session || null;
+        return session;
+      } catch {
+        return null;
       }
     }
 
-    // --------- views ----------
-    routes['/'] = renderHome;
-    routes['/run'] = renderRun;
-    routes['/playbook'] = renderPlaybook;
-
-    function renderRoute(){
-      const path = location.pathname;
-      setActiveNav(path);
-      if(path.startsWith('/run/')){
-        const id = path.split('/')[2];
-        return renderRun({ runId: id });
-      }
-      if(path.startsWith('/playbook')){
-        return renderPlaybook();
-      }
-      return renderHome();
+    function handleSessionExpired(msg) {
+      if (sessionExpiredHandled) return;
+      sessionExpiredHandled = true;
+      sessionExpiredMessage = msg || "Your session expired. Please sign in again.";
+      session = null;
+      goto("/session-expired");
     }
 
-    // ---------- HOME ----------
-    async function renderHome(){
-      viewRoot.innerHTML = `
-        <div class="grid">
-          <div class="card">
-            <div class="cardInner">
-              <div class="h1">Upload + Analyze</div>
-              <div class="muted">Audio + context in, transcript + coaching out. Keep it short — we infer prospect details from the transcript when possible.</div>
+    async function fetchJsonAuthed(url, options = {}) {
+      if (!session?.access_token) {
+        handleSessionExpired("Session missing. Please sign in again.");
+        return { ok: false, status: 401, json: { error: "Unauthorized" } };
+      }
 
-              <div class="divider"></div>
+      try {
+        const opts1 = { ...options, headers: { ...(options.headers || {}), ...authHeader() } };
+        const r1 = await fetch(url, opts1);
 
-              <label>Audio file</label>
-              <input type="file" class="field" id="audioFile" accept="audio/*" />
-
-              <label>Scenario template (optional)</label>
-              <select id="scenario" class="field">
-                <option value="none">None</option>
-                <option value="b2b">B2B service / software</option>
-                <option value="retail">Local service / retail</option>
-                <option value="recruiting">Recruiting / staffing</option>
-              </select>
-              <div class="hint" id="scenarioHint"></div>
-
-              <label>Legacy scenario (optional)</label>
-              <select id="legacyScenario" class="field">
-                <option value="none">None</option>
-                <option value="seo">SEO</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="ai_receptionist">AI receptionist</option>
-              </select>
-              <div class="hint">Kept for backwards compatibility during MVP.</div>
-
-              <label>Context (required)</label>
-              <textarea id="context" class="field" placeholder="e.g., Selling SEO service to an ecommerce beauty store."></textarea>
-
-              <div class="row" style="margin-top:12px;">
-                <button class="btn" id="btnRun">
-                  <span>Calibrate</span>
-                  <span class="badge" id="btnRunBadge">Ready</span>
-                </button>
-                <button class="btn secondary" id="btnClear">Clear</button>
-              </div>
-
-              <div class="hint mono" id="statusLine" style="margin-top:10px;"></div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="cardInner">
-              <div class="h1">History</div>
-              <div class="muted">Your most recent runs. Click any run to open its report.</div>
-
-              <div class="divider"></div>
-
-              <div class="list" id="runsList"></div>
-              <div class="hint" id="runsHint"></div>
-            </div>
-          </div>
-        </div>
-      `;
-
-      const scenarioEl = document.getElementById('scenario');
-      const scenarioHint = document.getElementById('scenarioHint');
-      const updateHint = () => {
-        const v = scenarioEl.value;
-        scenarioHint.textContent = scenarioTemplates[v]?.helper || '';
-      };
-      scenarioEl.addEventListener('change', updateHint);
-      updateHint();
-
-      const btnRun = document.getElementById('btnRun');
-      const btnRunBadge = document.getElementById('btnRunBadge');
-      const statusLine = document.getElementById('statusLine');
-
-      document.getElementById('btnClear').onclick = () => {
-        document.getElementById('audioFile').value = '';
-        document.getElementById('context').value = '';
-        document.getElementById('legacyScenario').value = 'none';
-        document.getElementById('scenario').value = 'none';
-        updateHint();
-        statusLine.textContent = '';
-        toast('Cleared.');
-      };
-
-      btnRun.onclick = async () => {
-        const file = document.getElementById('audioFile').files?.[0];
-        const context = document.getElementById('context').value.trim();
-        const scenario = document.getElementById('scenario').value;
-        const legacyScenario = document.getElementById('legacyScenario').value;
-
-        if(!file){ toast('Choose an audio file.'); return; }
-        if(!context){ toast('Add context.'); return; }
-
-        btnRun.disabled = true;
-        btnRunBadge.textContent = 'Working…';
-        statusLine.textContent = 'Uploading + running analysis…';
-
-        try{
-          const fd = new FormData();
-          fd.append('audio', file);
-          fd.append('context', context);
-          fd.append('scenario', scenario);
-          fd.append('legacy_scenario', legacyScenario);
-
-          const res = await apiUpload('/api/run', fd);
-
-          statusLine.textContent = 'Done ✅ Opening report…';
-          btnRunBadge.textContent = 'Done';
-          toast('Done ✅');
-          goto('/run/' + res.run_id);
-        }catch(e){
-          console.error(e);
-          statusLine.textContent = 'Error: ' + (e?.message || e);
-          btnRunBadge.textContent = 'Error';
-          toast('Error running analysis.');
-        }finally{
-          btnRun.disabled = false;
-          setTimeout(()=> btnRunBadge.textContent = 'Ready', 900);
-        }
-      };
-
-      await loadRunsList();
-    }
-
-    async function loadRunsList(){
-      const runsList = document.getElementById('runsList');
-      const runsHint = document.getElementById('runsHint');
-
-      runsList.innerHTML = '<div class="small">Loading…</div>';
-      runsHint.textContent = '';
-
-      try{
-        const data = await apiGet('/api/runs');
-        const runs = data?.runs || [];
-
-        if(!runs.length){
-          runsList.innerHTML = '';
-          runsHint.textContent = 'No runs yet.';
-          return;
+        if (r1.status !== 401) {
+          const j1 = await safeJson(r1);
+          return { ok: r1.ok, status: r1.status, json: j1 };
         }
 
-        runsList.innerHTML = '';
-        for(const r of runs){
-          const el = document.createElement('div');
-          el.className = 'listItem';
-          const when = fmtDate(r.created_at);
-          const scenarioLabel = (scenarioTemplates[r.scenario]?.label) || (r.scenario || 'None');
-          const outcomeKey = normalizeOutcomeKey(r.call_outcome);
-          const pill = `<span class="outcomePill ${outcomePillClass(outcomeKey)} hasTip" data-tip="${escapeHtml(outcomeGlossary[outcomeKey] || outcomeGlossary.unknown)}">${escapeHtml(outcomeLabel(outcomeKey))}</span>`;
-          el.innerHTML = `
-            <div class="liLeft">
-              <div class="liTitle">${escapeHtml(r.title || 'Untitled run')}</div>
-              <div class="liMeta">
-                <span>${escapeHtml(when)}</span>
-                <span>•</span>
-                <span>${escapeHtml(scenarioLabel)}</span>
-              </div>
-            </div>
-            <div class="liRight">
-              ${pill}
-              <div class="chev">›</div>
-            </div>
-          `;
-          el.onclick = () => goto('/run/' + r.id);
-          runsList.appendChild(el);
+        const refreshed = await trySilentRefresh();
+        if (!refreshed?.access_token) {
+          const j1 = await safeJson(r1);
+          handleSessionExpired(j1?.error || "Session expired. Please sign in again.");
+          return { ok: false, status: 401, json: j1 };
         }
 
-      }catch(e){
-        console.error(e);
-        runsList.innerHTML = '';
-        runsHint.textContent = 'Could not load runs.';
+        const opts2 = { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + refreshed.access_token } };
+        const r2 = await fetch(url, opts2);
+        const j2 = await safeJson(r2);
+
+        if (r2.status === 401) handleSessionExpired(j2?.error || "Session expired. Please sign in again.");
+
+        return { ok: r2.ok, status: r2.status, json: j2 };
+      } catch (e) {
+        return { ok: false, status: 0, json: { error: e?.message || "Failed to fetch" } };
       }
     }
 
-    // ---------- RUN VIEW ----------
-    async function renderRun({ runId }){
-      viewRoot.innerHTML = `
-        <div class="card">
-          <div class="cardInner">
-            <div class="row" style="justify-content:space-between; align-items:flex-start;">
-              <div style="min-width:0">
-                <div class="h1" id="runTitle">Run</div>
-                <div class="muted" id="runMeta"></div>
-              </div>
-              <div class="row">
-                <button class="btn secondary" id="btnSavePlaybook">Save to Playbook</button>
-                <button class="btn secondary" onclick="goto('/')">Back</button>
-              </div>
-            </div>
+    // ---- Tooltip manager (viewport-clamped; not clipped by scroll containers) ----
+    (function initTooltips(){
+      let tipEl = null;
+      let arrowEl = null;
+      let active = null;
 
-            <div id="runBanners"></div>
-
-            <!-- NEW: 3 main panels -->
-            <div class="triGrid" id="triGrid">
-              <div class="panel center" id="panelResult">
-                <div class="panelHead">
-                  <p class="panelTitle">Call Result</p>
-                  <span id="outcomePillBigWrap"></span>
-                </div>
-                <div class="panelBody">
-                  <div class="outcomeBig" id="callResultLabel">—</div>
-                  <div class="outcomeReason" id="callResultReason">—</div>
-                  <div class="pbSmall" id="callResultEvidence" style="display:none;"></div>
-                  <div class="metaRow">
-                    <span class="pill" id="metaScenario" style="background:rgba(255,255,255,.86); cursor:default;"></span>
-                    <span class="pill" id="metaSubmitted" style="background:rgba(255,255,255,.86); cursor:default;"></span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="panel" id="panelFollowUp">
-                <div class="panelHead">
-                  <p class="panelTitle">Send this follow-up</p>
-                  <div class="panelBtns">
-                    <button class="btn secondary small" id="btnCopyFollowUp">Copy</button>
-                    <button class="btn small" id="btnUseInPlaybook">Save</button>
-                  </div>
-                </div>
-                <div class="panelBody">
-                  <textarea id="followUpText" class="field" style="min-height:110px; resize:vertical"></textarea>
-                  <div class="pbSmall" id="followUpHint">Generated from your coaching report.</div>
-                </div>
-              </div>
-
-              <div class="panel" id="panelFixes">
-                <div class="panelHead">
-                  <p class="panelTitle">Fix these first</p>
-                  <div class="panelBtns">
-                    <button class="btn secondary small" id="btnCopyFixes">Copy</button>
-                  </div>
-                </div>
-                <div class="panelBody">
-                  <div id="fixList" class="fixList"></div>
-                  <div class="pbSmall" id="fixHint">Top 3 priorities pulled from the report.</div>
-                </div>
-              </div>
-            </div>
-
-            <div style="height:12px;"></div>
-
-            <h3 class="sectionTitle">Context</h3>
-            <div class="kv" id="summaryKV2"></div>
-
-            <div class="divider"></div>
-
-            <h3 class="sectionTitle">Transcript</h3>
-            <div class="transcript" id="transcript"></div>
-
-            <div class="divider"></div>
-
-            <h3 class="sectionTitle">Full Coaching Report</h3>
-            <div id="report"></div>
-
-          </div>
-        </div>
-      `;
-
-      const runTitleEl = document.getElementById('runTitle');
-      const runMetaEl = document.getElementById('runMeta');
-      const summaryKVEl2 = document.getElementById('summaryKV2');
-      const transcriptEl = document.getElementById('transcript');
-      const reportEl = document.getElementById('report');
-      const runBanners = document.getElementById('runBanners');
-
-      const btnSavePlaybook = document.getElementById('btnSavePlaybook');
-
-      const outcomePillBigWrap = document.getElementById('outcomePillBigWrap');
-      const callResultLabel = document.getElementById('callResultLabel');
-      const callResultReason = document.getElementById('callResultReason');
-      const callResultEvidence = document.getElementById('callResultEvidence');
-      const metaScenario = document.getElementById('metaScenario');
-      const metaSubmitted = document.getElementById('metaSubmitted');
-
-      const followUpText = document.getElementById('followUpText');
-      const btnCopyFollowUp = document.getElementById('btnCopyFollowUp');
-      const btnUseInPlaybook = document.getElementById('btnUseInPlaybook');
-
-      const fixList = document.getElementById('fixList');
-      const btnCopyFixes = document.getElementById('btnCopyFixes');
-
-      let currentRun = null;
-
-      function renderSummaryInto(el, run){
-        const scenarioLabel = scenarioTemplates[run.scenario]?.label || run.scenario || 'None';
-        const legacyLabel = legacyScenarioMap[run.legacy_scenario] || run.legacy_scenario || 'None';
-
-        const items = [
-          { k:'Scenario (selected)', v: scenarioLabel, sub: scenarioTemplates[run.scenario]?.helper || '' },
-          { k:'Legacy scenario (optional)', v: legacyLabel, sub:'Kept for backwards compatibility during MVP.' },
-          { k:'User Context', v: run.context || '', sub:'' },
-          { k:'Enforcer', v: run.enforcer_version || '—', sub:'' }
-        ];
-        el.innerHTML = '';
-        for(const it of items){
-          const div = document.createElement('div');
-          div.className = 'kvItem';
-          div.innerHTML = `
-            <div class="kvK">${escapeHtml(it.k)}</div>
-            <div class="kvV">${escapeHtml(it.v || '—')}</div>
-            ${it.sub ? `<div class="kvV sub">${escapeHtml(it.sub)}</div>` : ''}
-          `;
-          el.appendChild(div);
-        }
+      function cleanup(){
+        if (tipEl) tipEl.remove();
+        if (arrowEl) arrowEl.remove();
+        tipEl = null;
+        arrowEl = null;
+        active = null;
       }
 
-      function renderTranscript(run){
-        transcriptEl.innerHTML = '';
-        const t = (run.transcript_text || '').trim();
-        if(!t){
-          transcriptEl.innerHTML = '<div class="small">No transcript available.</div>';
-          return;
-        }
-        // parse "Speaker X:" lines
-        const lines = t.split(/\r?\n/).filter(Boolean);
-        for(const raw of lines){
-          const m = raw.match(/^([^:]{1,30}):\s*(.*)$/);
-          if(m){
-            const who = m[1].trim();
-            const text = m[2].trim();
-            const line = document.createElement('div');
-            line.className = 'tLine';
+      function position(el){
+        if (!tipEl || !arrowEl) return;
 
-            const chip = document.createElement('div');
-            chip.className = 'tChip';
-            // heuristic: label mapping is already done server-side (You / Prospect)
-            const low = who.toLowerCase();
-            if(low.includes('you') || low.includes('rep')) chip.classList.add('you');
-            if(low.includes('prospect') || low.includes('customer')) chip.classList.add('pro');
+        const pad = 10;
+        const r = el.getBoundingClientRect();
 
-            chip.textContent = who;
+        tipEl.style.left = "0px";
+        tipEl.style.top = "0px";
 
-            const bubble = document.createElement('div');
-            bubble.className = 'tText';
-            bubble.textContent = text;
+        const tw = tipEl.offsetWidth || 320;
+        const th = tipEl.offsetHeight || 60;
 
-            line.appendChild(chip);
-            line.appendChild(bubble);
-            transcriptEl.appendChild(line);
-          }else{
-            // fallback: treat as continuation
-            const line = document.createElement('div');
-            line.className = 'tLine';
-            const bubble = document.createElement('div');
-            bubble.className = 'tText';
-            bubble.style.marginLeft = '0';
-            bubble.textContent = raw.trim();
-            line.appendChild(document.createElement('div')); // spacer
-            line.appendChild(bubble);
-            transcriptEl.appendChild(line);
-          }
-        }
+        let left = r.left;
+        let top = r.bottom + 10;
+
+        if (left + tw > window.innerWidth - pad) left = window.innerWidth - pad - tw;
+        if (left < pad) left = pad;
+
+        if (top + th > window.innerHeight - pad) top = r.top - th - 10;
+        if (top < pad) top = pad;
+
+        tipEl.style.left = Math.round(left) + "px";
+        tipEl.style.top = Math.round(top) + "px";
+
+        const ax = Math.round(Math.min(Math.max(r.left + 14, left + 14), left + tw - 14));
+        const isBelow = top > r.top;
+        const ay = isBelow ? Math.round(top - 6) : Math.round(top + th - 8);
+
+        arrowEl.style.left = ax + "px";
+        arrowEl.style.top = ay + "px";
+        arrowEl.style.transform = isBelow ? "rotate(180deg)" : "rotate(0deg)";
       }
 
-      function renderReport(run){
-        reportEl.innerHTML = '';
-        const text = (run.report_text || '').trim();
-        if(!text){
-          reportEl.innerHTML = '<div class="small">No report available.</div>';
-          return;
-        }
+      function show(el){
+        const msg = el.getAttribute("data-tip");
+        if (!msg) return;
 
-        const sections = splitReportIntoSections(text);
-        if(!sections.length){
-          reportEl.innerHTML = `<div class="reportBody">${renderMdToHtml(text)}</div>`;
-          return;
-        }
+        cleanup();
+        active = el;
 
-        let idx=0;
-        for(const s of sections){
-          const det = document.createElement('details');
-          // open first section by default
-          if(idx===0) det.open = true;
+        tipEl = document.createElement("div");
+        tipEl.className = "tipBox";
+        tipEl.textContent = msg;
 
-          const sum = document.createElement('summary');
-          sum.innerHTML = `
-            <span>${escapeHtml(s.title || 'Section')}</span>
-            <span class="badge">${idx===0 ? 'Open' : 'Details'}</span>
-          `;
+        arrowEl = document.createElement("div");
+        arrowEl.className = "tipArrow";
 
-          const body = document.createElement('div');
-          body.className = 'reportBody';
-          body.innerHTML = renderMdToHtml(s.body);
+        document.body.appendChild(tipEl);
+        document.body.appendChild(arrowEl);
 
-          det.appendChild(sum);
-          det.appendChild(body);
-          reportEl.appendChild(det);
-
-          idx++;
-        }
+        position(el);
       }
 
-      function renderBanners(run){
-        runBanners.innerHTML = '';
-        const banners = [];
+      document.addEventListener("pointerenter", (e) => {
+        const el = e.target?.closest?.(".hasTip");
+        if (!el) return;
+        if (!el.getAttribute("data-tip")) return;
+        show(el);
+      }, true);
 
-        if(run.scenario_mismatch){
-          banners.push({
-            kind:'warn',
-            title:'⚠ SCENARIO MISMATCH',
-            desc: run.mismatch_reason || 'Selected scenario does not match transcript content.'
-          });
-        }
+      document.addEventListener("pointerleave", (e) => {
+        const el = e.target?.closest?.(".hasTip");
+        if (!el) return;
+        cleanup();
+      }, true);
 
-        // show a banner if transcript is missing or very short
-        const t = (run.transcript_text||'').trim();
-        if(!t || t.length < 60){
-          banners.push({
-            kind:'bad',
-            title:'Transcript may be incomplete',
-            desc:'We couldn’t extract enough dialogue. Try a clearer recording or a longer segment.'
-          });
-        }
+      window.addEventListener("scroll", () => { if (active) position(active); }, true);
+      window.addEventListener("resize", () => { if (active) position(active); });
+    })();
 
-        for(const b of banners){
-          const el = document.createElement('div');
-          el.className = 'banner';
-          el.innerHTML = `
-            <div class="bannerIcon ${b.kind}">${b.kind==='warn'?'!':b.kind==='bad'?'×':'✓'}</div>
-            <div class="bannerText">
-              <div class="bannerTitle">${escapeHtml(b.title)}</div>
-              <div class="bannerDesc">${escapeHtml(b.desc)}</div>
-            </div>
-          `;
-          runBanners.appendChild(el);
-        }
+    // ---- Nav buttons ----
+    btnHome.addEventListener("click", () => goto("/home"));
+    btnNew.addEventListener("click", () => goto("/calibrate"));
+    btnSignIn.addEventListener("click", () => goto("/login"));
+    btnSignOut.addEventListener("click", async () => {
+      if (!sb) return;
+      await sb.auth.signOut();
+      goto("/");
+    });
+
+    btnGetStarted.addEventListener("click", () => {
+      if (session) goto("/home");
+      else goto("/login");
+    });
+
+    btnBackHome.addEventListener("click", () => goto("/home"));
+    btnGoSignIn.addEventListener("click", () => goto("/login"));
+    btnGoLanding.addEventListener("click", () => goto("/"));
+
+    // Sidebar + quick actions
+    navDashboard.addEventListener("click", () => goto("/home"));
+    navUpload.addEventListener("click", () => goto("/calibrate"));
+    navPlaybook.addEventListener("click", () => goto("/playbook"));
+    navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
+    navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
+    navSupport.addEventListener("click", () => goto("/support"));
+    navCurrentRun.addEventListener("click", () => {
+      const rid = navCurrentRun.getAttribute("data-run-id") || "";
+      if (rid) goto("/runs/" + rid);
+    });
+
+    qaUpload.addEventListener("click", () => goto("/calibrate"));
+    qaRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
+    qaPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
+
+    btnSupportBack.addEventListener("click", () => goto("/home"));
+    btnPlaybookBack.addEventListener("click", () => goto("/home"));
+
+    // ---- Login actions ----
+    btnMagicLink.addEventListener("click", async () => {
+      loginBanners.innerHTML = "";
+      loginStatus.textContent = "";
+
+      const email = (emailEl.value || "").trim();
+      if (!email) { loginBanners.appendChild(banner("bad", "Error:", "Enter an email.")); return; }
+
+      try {
+        btnMagicLink.disabled = true;
+        loginStatus.textContent = "Sending magic link…";
+
+        await sb.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.origin + "/home" },
+        });
+
+        loginBanners.appendChild(banner("good", "Sent:", "Check your email for the magic link."));
+        loginStatus.textContent = "";
+      } catch (e) {
+        loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
+        loginStatus.textContent = "";
+      } finally {
+        btnMagicLink.disabled = false;
+      }
+    });
+
+    btnGoogle.addEventListener("click", async () => {
+      loginBanners.innerHTML = "";
+      loginStatus.textContent = "";
+      try {
+        await sb.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: window.location.origin + "/home" },
+        });
+      } catch (e) {
+        loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
+      }
+    });
+
+    // ---- AI assist (simple + conservative) ----
+    function renderAssist() {
+      const scenario = categoryEl.value || "";
+      const ctx = (contextEl.value || "").toLowerCase();
+
+      if (!scenario) {
+        assistCard.classList.add("hidden");
+        return;
       }
 
-      function renderTopPanels(run){
-        const scenarioLabel = scenarioTemplates[run.scenario]?.label || run.scenario || 'None';
-        const when = fmtDate(run.created_at);
-
-        const outcomeKey = normalizeOutcomeKey(run.call_outcome);
-        const label = outcomeLabel(outcomeKey);
-        const tip = outcomeGlossary[outcomeKey] || outcomeGlossary.unknown;
-
-        callResultLabel.textContent = label;
-        callResultReason.textContent = (run.call_outcome_reason || tip || '—').trim();
-
-        // evidence if present
-        const ev = (run.call_outcome_evidence || '').trim();
-        if(ev){
-          callResultEvidence.style.display = '';
-          callResultEvidence.textContent = 'Evidence: ' + ev;
-        }else{
-          callResultEvidence.style.display = 'none';
-          callResultEvidence.textContent = '';
-        }
-
-        // colored pill at top right
-        outcomePillBigWrap.innerHTML = '';
-        const p = document.createElement('span');
-        p.className = `outcomePill ${outcomePillClass(outcomeKey)} hasTip`;
-        p.setAttribute('data-tip', tip);
-        p.textContent = label;
-        outcomePillBigWrap.appendChild(p);
-
-        metaScenario.textContent = `Scenario: ${scenarioLabel}`;
-        metaSubmitted.textContent = when ? `Submitted: ${when}` : 'Submitted: —';
-
-        // follow-up (two-line)
-        const fu = enforceTwoLine(guessScriptFromReport(run.report_text || ''));
-        followUpText.value = fu || '';
-
-        // top fixes
-        const fixes = extractTopFixesFromReport(run.report_text || '');
-        fixList.innerHTML = '';
-        if(!fixes.length){
-          const empty = document.createElement('div');
-          empty.className = 'small';
-          empty.textContent = 'No clear priorities detected in the report.';
-          fixList.appendChild(empty);
-        }else{
-          fixes.forEach((txt, i) => {
-            const item = document.createElement('div');
-            item.className = 'fixItem';
-            item.innerHTML = `
-              <div class="fixNum">${i+1}</div>
-              <div class="fixText">${escapeHtml(txt)}</div>
-            `;
-            fixList.appendChild(item);
-          });
-        }
+      const keys = scenarioKeywords[scenario] || [];
+      let hits = 0;
+      for (const k of keys) {
+        if (ctx.includes(k)) hits++;
       }
 
-      btnCopyFollowUp.onclick = () => copyToClipboard(followUpText.value);
-      btnCopyFixes.onclick = () => {
-        const fixes = Array.from(fixList.querySelectorAll('.fixText')).map(x => x.textContent.trim()).filter(Boolean);
-        if(!fixes.length){ toast('Nothing to copy.'); return; }
-        const text = fixes.map((f,i)=> `${i+1}. ${f}`).join('\n');
-        copyToClipboard(text);
-      };
+      assistCard.classList.remove("hidden");
+      if (hits >= 2) {
+        assistCard.className = "banner good";
+        assistTitle.textContent = "Looks aligned:";
+        assistMsg.textContent = " Context matches this scenario template.";
+      } else if (hits === 1) {
+        assistCard.className = "banner warn";
+        assistTitle.textContent = "Probably fine:";
+        assistMsg.textContent = " If this feels mismatched, switch the scenario or reword the context.";
+      } else {
+        assistCard.className = "banner warn";
+        assistTitle.textContent = "Possible mismatch:";
+        assistMsg.textContent = " Your context doesn’t mention typical keywords for this scenario. Consider switching scenario or rewriting context.";
+      }
+    }
 
-      btnUseInPlaybook.onclick = () => {
-        if(!currentRun){ toast('Run not loaded yet.'); return; }
-        const txt = followUpText.value.trim();
-        if(!txt){ toast('Follow-up is empty.'); return; }
-        const base = maxWords((currentRun.title || 'Follow Up'), 4);
-        const title = maxWords((base ? base + ' ' : '') + 'Follow Up', 5) || 'Follow Up';
-        pbDraft = { title, text: txt, notes: '' };
-        toast('Ready to save in Playbook.');
-        goto('/playbook');
-      };
+    categoryEl.addEventListener("change", renderAssist);
+    contextEl.addEventListener("input", () => {
+      if (window.__assistTimer) clearTimeout(window.__assistTimer);
+      window.__assistTimer = setTimeout(renderAssist, 120);
+    });
 
-      btnSavePlaybook.onclick = () => {
-        if(!currentRun){ toast('Run not loaded yet.'); return; }
-        // Save the report-derived script (existing behavior)
-        const title = maxWords((currentRun.title || 'Script'), 5) || 'Script';
-        const text = guessScriptFromReport(currentRun.report_text || '');
-        pbDraft = { title, text, notes:'' };
-        toast('Ready to save in Playbook.');
-        goto('/playbook');
-      };
+    // ---- History ----
+    let runsLoadSeq = 0;
 
-      // load run
-      try{
-        const data = await apiGet('/api/runs/' + runId);
-        const run = data?.run;
-        currentRun = run;
+    async function loadRuns() {
+      const seq = ++runsLoadSeq;
+      homeBanners.innerHTML = "";
+      homeStatus.textContent = "Loading…";
 
-        runTitleEl.textContent = run.title || 'Run';
-        const scenarioLabel = scenarioTemplates[run.scenario]?.label || run.scenario || 'None';
-        runMetaEl.innerHTML = `
-          <span class="badge">${escapeHtml(scenarioLabel)}</span>
-          <span class="badge">${escapeHtml(fmtDate(run.created_at))}</span>
+      const { ok, json } = await fetchJsonAuthed("/api/runs");
+      if (seq !== runsLoadSeq) return;
+
+      if (!ok) {
+        homeStatus.textContent = "";
+        homeBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load runs."));
+        return;
+      }
+
+      const runs = json.runs || [];
+      runsTbody.innerHTML = "";
+
+      if (!runs.length) {
+        homeStatus.textContent = "No runs yet.";
+        return;
+      }
+
+      homeStatus.textContent = "";
+
+      for (const run of runs) {
+        const tr = document.createElement("tr");
+
+        const title = (run.title || run.run_title || "").trim() || "(untitled)";
+        const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
+
+        const outcomeKey = normalizeOutcomeKey(run.call_outcome || "");
+        const outcomeTxt = outcomeLabel(outcomeKey);
+        const tip = run.call_outcome_reason || outcomeGlossary[outcomeKey] || "—";
+
+        tr.innerHTML = `
+          <td class="reportCell">${escapeHtml(title)}</td>
+          <td class="mutedCell">${escapeHtml(scenario)}</td>
+          <td>
+            <span class="outcomePill hasTip ${outcomePillClass(outcomeKey)}" data-tip="${escapeHtml(tip)}">
+              ${escapeHtml(outcomeTxt)}
+            </span>
+          </td>
         `;
 
-        renderBanners(run);
-        renderTopPanels(run);
-        renderSummaryInto(summaryKVEl2, run);
-        renderTranscript(run);
-        renderReport(run);
-
-      }catch(e){
-        console.error(e);
-        toast('Could not load run.');
-        viewRoot.innerHTML = `
-          <div class="card"><div class="cardInner">
-            <div class="h1">Could not load run</div>
-            <div class="muted">${escapeHtml(e?.message || String(e))}</div>
-            <div class="divider"></div>
-            <button class="btn secondary" onclick="goto('/')">Back</button>
-          </div></div>
-        `;
+        tr.addEventListener("click", () => goto("/runs/" + run.id));
+        runsTbody.appendChild(tr);
       }
     }
 
-    // ---------- PLAYBOOK ----------
-    // Simple: list scripts, view/edit current, add versions.
-    let pbSelectedId = null;
+    // ---- Run viewer ----
+    let runLoadSeq = 0;
+    let currentRunId = "";
+    let currentRun = null;
+
+    async function loadRun(runId) {
+      const seq = ++runLoadSeq;
+
+      runBanners.innerHTML = "";
+      summaryKVEl2.innerHTML = "";
+      transcriptBoxEl2.innerHTML = "";
+      reportGridEl2.innerHTML = "";
+
+      runTitleEl.textContent = "";
+      runMetaEl.textContent = "";
+      btnSavePlaybook.classList.add("hidden");
+
+      const { ok, json } = await fetchJsonAuthed("/api/runs/" + encodeURIComponent(runId));
+      if (seq !== runLoadSeq) return;
+
+      if (!ok) {
+        runBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load run."));
+        return;
+      }
+
+      const run = json.run || {};
+      currentRunId = runId;
+      currentRun = run;
+
+      const title = (run.title || run.run_title || "").trim() || "Call Analysis";
+      runTitleEl.textContent = title;
+
+      const submittedAt = run.created_at ? new Date(run.created_at).toLocaleString() : "";
+      runMetaEl.textContent = submittedAt ? `Submitted at: ${submittedAt}` : "";
+
+      navRunText.textContent = title;
+      navCurrentRun.setAttribute("data-run-id", runId);
+      navCurrentRun.setAttribute("title", title);
+      navRunWrap.classList.remove("hidden");
+
+      if (run.mismatch || run.scenario_mismatch) {
+        runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
+      }
+
+      renderSummaryInto(run, { summaryKVEl: summaryKVEl2 });
+
+      const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : [];
+      renderTranscriptInto(transcriptLines, transcriptBoxEl2);
+
+      const reportMd = run.report_text || "";
+      renderReportInto(reportMd, reportGridEl2);
+
+      btnSavePlaybook.classList.remove("hidden");
+    }
+
+    // ---- Calibrate (new run) ----
+    async function onRun() {
+      const file = audioEl.files?.[0];
+      const ctx = contextEl.value.trim();
+
+      statusEl.textContent = "";
+
+      if (!file) { statusEl.textContent = "Choose an audio file first."; return; }
+      if (ctx.length < 10) { statusEl.textContent = "Context is required (10+ characters)."; return; }
+
+      runBtn.disabled = true;
+      runBtn.textContent = "Calibrating…";
+      statusEl.textContent = "Uploading + transcribing…";
+
+      const fd = new FormData();
+      fd.append("audio", file);
+      fd.append("context", ctx);
+      fd.append("category", categoryEl.value || "");
+
+      const { ok, json } = await fetchJsonAuthed("/api/run", { method: "POST", body: fd });
+
+      try {
+        if (!ok) {
+          statusEl.textContent = "";
+          toast("bad", "Error:", json?.error || "Request failed.");
+          return;
+        }
+
+        if (json.run_id) {
+          goto("/runs/" + json.run_id);
+          return;
+        }
+
+        toast("warn", "Note:", "Unexpected server response.");
+      } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = "Calibrate";
+        statusEl.textContent = "";
+      }
+    }
+
+    runBtn.addEventListener("click", onRun);
+
+    // ---- Support ----
+    btnSupportSend.addEventListener("click", async () => {
+      supportBanners.innerHTML = "";
+      supportStatus.textContent = "";
+
+      const msg = (supportMessage.value || "").trim();
+      const contact = (supportContact.value || "").trim();
+
+      if (msg.length < 5) {
+        supportBanners.appendChild(banner("bad", "Error:", "Message is required (5+ characters)."));
+        return;
+      }
+
+      btnSupportSend.disabled = true;
+      supportStatus.textContent = "Sending…";
+
+      const { ok, json } = await fetchJsonAuthed("/api/support", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: msg, contact, page_url: window.location.pathname }),
+      });
+
+      btnSupportSend.disabled = false;
+      supportStatus.textContent = "";
+
+      if (!ok) {
+        supportBanners.appendChild(banner("bad", "Error:", json?.error || "Support failed."));
+        if (json?.detail) supportBanners.appendChild(banner("warn", "Details:", json.detail));
+        return;
+      }
+
+      supportBanners.appendChild(banner("good", "Sent:", "Thanks — your message was submitted."));
+      supportMessage.value = "";
+      supportContact.value = "";
+    });
+
+    // ---- Playbook (client) ----
+    let pbSelectedId = "";
     let pbDraft = null;
 
-    async function renderPlaybook(){
-      viewRoot.innerHTML = `
-        <div class="card">
-          <div class="cardInner">
-            <div class="row" style="justify-content:space-between; align-items:flex-start;">
-              <div>
-                <div class="h1">Playbook</div>
-                <div class="muted">Save your best follow-ups and scripts. Add new versions as you improve them.</div>
-              </div>
-              <div class="row">
-                <button class="btn secondary" id="btnPbNew">New Script</button>
-                <button class="btn secondary" onclick="goto('/')">Back</button>
-              </div>
-            </div>
-
-            <div class="divider"></div>
-
-            <div class="pbLayout">
-              <div>
-                <h3 class="sectionTitle">Scripts</h3>
-                <div class="pbList" id="pbList"></div>
-                <div class="hint" id="pbHint"></div>
-              </div>
-
-              <div>
-                <h3 class="sectionTitle">Editor</h3>
-                <div class="pbEditor">
-                  <div class="row">
-                    <div style="display:flex; flex-direction:column; gap:6px; flex:1;">
-                      <input class="field" id="pbTitle" placeholder="Title (max 5 words)" />
-                      <div class="pbSmall">Tip: Keep titles short. You can add versions for iteration.</div>
-                    </div>
-                    <div class="row">
-                      <button class="btn secondary" id="btnPbCopy">Copy</button>
-                      <button class="btn" id="btnPbSave">Save</button>
-                    </div>
-                  </div>
-
-                  <label>Script text</label>
-                  <textarea id="pbText" class="field" placeholder="Write a script…"></textarea>
-
-                  <label>Version notes (optional)</label>
-                  <input id="pbNotes" class="field" placeholder="What changed? (e.g., tighter opener, clearer ask)" />
-
-                  <div class="row" style="margin-top:10px;">
-                    <button class="btn secondary" id="btnPbAddVersion">Add as New Version</button>
-                  </div>
-
-                  <div class="divider"></div>
-                  <h3 class="sectionTitle">Versions</h3>
-                  <div class="pbVersions" id="pbVersions"></div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      `;
-
-      const pbListEl = document.getElementById('pbList');
-      const pbHintEl = document.getElementById('pbHint');
-      const pbTitleEl = document.getElementById('pbTitle');
-      const pbTextEl = document.getElementById('pbText');
-      const pbNotesEl = document.getElementById('pbNotes');
-      const pbVersionsEl = document.getElementById('pbVersions');
-
-      const btnPbNew = document.getElementById('btnPbNew');
-      const btnPbCopy = document.getElementById('btnPbCopy');
-      const btnPbSave = document.getElementById('btnPbSave');
-      const btnPbAddVersion = document.getElementById('btnPbAddVersion');
-
-      function setEditor({ title, text }){
-        pbTitleEl.value = title || '';
-        pbTextEl.value = text || '';
-        pbNotesEl.value = '';
-      }
-
-      async function loadScripts(){
-        pbListEl.innerHTML = '<div class="small">Loading…</div>';
-        pbHintEl.textContent = '';
-        try{
-          const data = await apiGet('/api/playbook/scripts');
-          const scripts = data?.scripts || [];
-          pbListEl.innerHTML = '';
-
-          if(!scripts.length){
-            pbHintEl.textContent = 'No scripts yet.';
-          }
-
-          for(const s of scripts){
-            const item = document.createElement('div');
-            item.className = 'pbItem' + (s.id===pbSelectedId ? ' active' : '');
-            item.innerHTML = `
-              <div class="pbTop">
-                <div style="min-width:0">
-                  <div class="pbTitle">${escapeHtml(s.title || 'Untitled')}</div>
-                  <div class="pbMeta">Updated: ${escapeHtml(fmtDate(s.updated_at))}</div>
-                </div>
-                <span class="badge">${escapeHtml((s.version_count||0) + ' ver')}</span>
-              </div>
-            `;
-            item.onclick = async () => {
-              pbSelectedId = s.id;
-              await openScript(s.id);
-            };
-            pbListEl.appendChild(item);
-          }
-
-        }catch(e){
-          console.error(e);
-          pbListEl.innerHTML = '';
-          pbHintEl.textContent = 'Could not load playbook.';
-        }
-      }
-
-      async function openScript(id){
-        try{
-          const data = await apiGet('/api/playbook/scripts/' + id);
-          const script = data?.script;
-          const versions = data?.versions || [];
-          if(!script) return;
-
-          setEditor({ title: script.title, text: script.current_text || '' });
-
-          // versions list
-          pbVersionsEl.innerHTML = '';
-          for(const v of versions){
-            const ver = document.createElement('div');
-            ver.className = 'pbVer';
-            ver.innerHTML = `
-              <div class="pbVerLeft">
-                <div class="pbVerTitle">v${escapeHtml(String(v.version_number))}</div>
-                <div class="pbVerMeta">${escapeHtml(fmtDate(v.created_at))}${v.notes ? ' • ' + escapeHtml(v.notes) : ''}</div>
-              </div>
-              <div class="row">
-                <button class="btn secondary pbVerBtn">Load</button>
-              </div>
-            `;
-            ver.querySelector('button').onclick = () => {
-              pbTextEl.value = v.text || '';
-              pbNotesEl.value = v.notes || '';
-              toast('Loaded v' + v.version_number);
-            };
-            pbVersionsEl.appendChild(ver);
-          }
-
-          // refresh list highlight
-          await loadScripts();
-        }catch(e){
-          console.error(e);
-          toast('Could not open script.');
-        }
-      }
-
-      async function createPlaybookScript(){
-        const title = maxWords(pbTitleEl.value, 5);
-        const text = pbTextEl.value.trim();
-        const notes = pbNotesEl.value.trim();
-
-        if(!title){ toast('Add a title (max 5 words).'); return; }
-        if(!text){ toast('Add script text.'); return; }
-
-        const res = await apiPost('/api/playbook/scripts', { title, text, source_run_id: null, notes });
-        pbSelectedId = res.script_id;
-        toast('Saved.');
-        await openScript(pbSelectedId);
-      }
-
-      async function addPlaybookVersion(){
-        if(!pbSelectedId){ toast('Select a script first.'); return; }
-        const text = pbTextEl.value.trim();
-        const notes = pbNotesEl.value.trim();
-
-        if(!text){ toast('Script text is empty.'); return; }
-
-        await apiPost('/api/playbook/scripts/' + pbSelectedId + '/versions', { text, notes });
-        toast('Added version.');
-        await openScript(pbSelectedId);
-      }
-
-      btnPbCopy.onclick = () => copyToClipboard(pbTextEl.value);
-      btnPbSave.onclick = createPlaybookScript;
-      btnPbAddVersion.onclick = addPlaybookVersion;
-
-      btnPbNew.onclick = () => {
-        pbSelectedId = null;
-        setEditor({ title:'', text:'' });
-        toast('New script.');
-        loadScripts();
-      };
-
-      // If we arrived with a draft from Run view, preload it.
-      if(pbDraft){
-        setEditor({ title: pbDraft.title, text: pbDraft.text });
-        pbNotesEl.value = pbDraft.notes || '';
-        pbDraft = null;
-        pbSelectedId = null;
-        btnPbSave.textContent = 'Save as New Script';
-      } else {
-        btnPbSave.textContent = 'Save';
-      }
-
-      await loadScripts();
-
-      // auto-open first script if none selected and exists
-      try{
-        const data = await apiGet('/api/playbook/scripts');
-        const scripts = data?.scripts || [];
-        if(!pbSelectedId && scripts.length){
-          pbSelectedId = scripts[0].id;
-          await openScript(pbSelectedId);
-        }
-      }catch{}
+    function maxWords(s, n) {
+      const cleaned = String(s || "")
+        .replace(/[“”"’']/g, "")
+        .replace(/[^\w\s-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!cleaned) return "";
+      return cleaned.split(" ").filter(Boolean).slice(0, n).join(" ").trim();
     }
 
-    // init
-    renderRoute();
+    function guessScriptFromReport(md) {
+      const text = String(md || "").trim();
+      if (!text) return "";
+
+      const sections = splitReportIntoSections(text);
+      const preferred = sections.find(s => /follow[- ]?up|next step|two[- ]line|script|message/i.test(s.title || ""));
+      const body = (preferred?.body || text).trim();
+
+      const lines = body.split("\n").map(l => l.trim()).filter(Boolean);
+
+      for (const l of lines) {
+        if (/^(send|text|follow[- ]?up|message)\s*:/i.test(l)) {
+          const after = l.replace(/^(send|text|follow[- ]?up|message)\s*:\s*/i, "").trim();
+          if (after.length >= 10) return after;
+        }
+      }
+
+      const paras = body.split(/\n\s*\n/g).map(p => p.trim()).filter(Boolean);
+      for (const p of paras) {
+        const plain = p.replace(/^[-*]\s+/g, "").trim();
+        if (plain.length >= 20 && plain.length <= 420 && plain.split(/\n/).length <= 3) return plain;
+      }
+
+      return lines.slice(0, 6).join("\n").trim();
+    }
+
+    function resetPlaybookEditorForNew(draft) {
+      pbSelectedId = "";
+      pbRightTitle.textContent = "New Script";
+      pbRightStatus.textContent = "";
+      pbTitle.value = (draft?.title || "").trim();
+      pbText.value = (draft?.text || "").trim();
+      pbNotes.value = (draft?.notes || "").trim();
+      pbVersions.innerHTML = `<div class="pbSmall">Save to create version history.</div>`;
+      btnPbAddVersion.classList.add("hidden");
+      btnPbSave.textContent = "Save";
+      pbLinkHint.textContent = currentRunId ? `Linked to current run: ${currentRunId}` : "";
+    }
+
+    function renderPlaybookList(items) {
+      pbList.innerHTML = "";
+      if (!items.length) {
+        pbList.innerHTML = `<div class="pbSmall">No scripts yet. Click <strong>New</strong>.</div>`;
+        return;
+      }
+
+      for (const s of items) {
+        const btn = document.createElement("button");
+        btn.className = "pbItem" + (s.id === pbSelectedId ? " active" : "");
+        const dt = s.updated_at || s.created_at || "";
+        const when = dt ? new Date(dt).toLocaleDateString() : "";
+        btn.innerHTML = `
+          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.title || "Untitled")}</span>
+          <span class="pbMeta">${escapeHtml(when)}</span>
+        `;
+        btn.addEventListener("click", () => {
+          goto("/playbook");
+          loadPlaybookScript(s.id);
+        });
+        pbList.appendChild(btn);
+      }
+    }
+
+    async function loadPlaybookList() {
+      playbookBanners.innerHTML = "";
+      pbRightStatus.textContent = "Loading…";
+      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts");
+      pbRightStatus.textContent = "";
+
+      if (!ok) {
+        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load playbook."));
+        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
+        renderPlaybookList([]);
+        return;
+      }
+
+      renderPlaybookList(json.scripts || []);
+    }
+
+    async function loadPlaybookScript(id) {
+      playbookBanners.innerHTML = "";
+      pbRightStatus.textContent = "Loading…";
+
+      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts/" + encodeURIComponent(id));
+      pbRightStatus.textContent = "";
+
+      if (!ok) {
+        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load script."));
+        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
+        return;
+      }
+
+      const script = json.script || {};
+      const versions = json.versions || [];
+      pbSelectedId = script.id || "";
+
+      pbRightTitle.textContent = script.title || "Script";
+      pbTitle.value = script.title || "";
+      pbText.value = script.current_text || "";
+      pbNotes.value = "";
+      btnPbAddVersion.classList.remove("hidden");
+      btnPbSave.textContent = "Save as New Script";
+      pbLinkHint.textContent = currentRunId ? `Linked to current run: ${currentRunId}` : "";
+
+      pbVersions.innerHTML = "";
+      if (!versions.length) {
+        pbVersions.innerHTML = `<div class="pbSmall">No versions found.</div>`;
+      } else {
+        for (const v of versions) {
+          const box = document.createElement("div");
+          box.className = "pbVer";
+          const when = v.created_at ? new Date(v.created_at).toLocaleString() : "";
+          box.innerHTML = `
+            <div class="pbVerTop">
+              <div class="vnum">v${escapeHtml(String(v.version || ""))}</div>
+              <div class="vdate">${escapeHtml(when)}</div>
+            </div>
+            <div style="white-space:pre-wrap;">${escapeHtml(v.text || "")}</div>
+            ${v.notes ? `<div class="pbNotes">${escapeHtml(v.notes)}</div>` : ""}
+          `;
+          pbVersions.appendChild(box);
+        }
+      }
+
+      await loadPlaybookList();
+    }
+
+    async function createPlaybookScript() {
+      playbookBanners.innerHTML = "";
+      pbRightStatus.textContent = "";
+
+      const title = maxWords(pbTitle.value || "", 5);
+      const text = String(pbText.value || "").trim();
+
+      if (!title || title.split(/\s+/g).filter(Boolean).length < 1) {
+        playbookBanners.appendChild(banner("bad", "Error:", "Title is required (max 5 words)."));
+        return;
+      }
+      if (title.split(/\s+/g).filter(Boolean).length > 5) {
+        playbookBanners.appendChild(banner("bad", "Error:", "Title must be 5 words or fewer."));
+        return;
+      }
+      if (text.length < 5) {
+        playbookBanners.appendChild(banner("bad", "Error:", "Script text is required (5+ characters)."));
+        return;
+      }
+
+      btnPbSave.disabled = true;
+      pbRightStatus.textContent = "Saving…";
+
+      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          text,
+          source_run_id: currentRunId || null,
+        }),
+      });
+
+      btnPbSave.disabled = false;
+      pbRightStatus.textContent = "";
+
+      if (!ok) {
+        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to save."));
+        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
+        return;
+      }
+
+      const newId = json.id || "";
+      playbookBanners.appendChild(banner("good", "Saved:", "Script added to your Playbook."));
+      pbDraft = null;
+      if (newId) await loadPlaybookScript(newId);
+      else await loadPlaybookList();
+    }
+
+    async function addPlaybookVersion() {
+      playbookBanners.innerHTML = "";
+      pbRightStatus.textContent = "";
+
+      if (!pbSelectedId) {
+        playbookBanners.appendChild(banner("bad", "Error:", "No script selected."));
+        return;
+      }
+
+      const text = String(pbText.value || "").trim();
+      const notes = String(pbNotes.value || "").trim() || null;
+
+      if (text.length < 5) {
+        playbookBanners.appendChild(banner("bad", "Error:", "Script text is required (5+ characters)."));
+        return;
+      }
+
+      btnPbAddVersion.disabled = true;
+      pbRightStatus.textContent = "Saving version…";
+
+      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts/" + encodeURIComponent(pbSelectedId) + "/version", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          text,
+          notes,
+          source_run_id: currentRunId || null,
+        }),
+      });
+
+      btnPbAddVersion.disabled = false;
+      pbRightStatus.textContent = "";
+
+      if (!ok) {
+        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to save version."));
+        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
+        return;
+      }
+
+      playbookBanners.appendChild(banner("good", "Updated:", "New version saved."));
+      pbNotes.value = "";
+      await loadPlaybookScript(pbSelectedId);
+    }
+
+    btnPbRefresh.addEventListener("click", () => loadPlaybookList());
+    btnPbNew.addEventListener("click", () => {
+      resetPlaybookEditorForNew(null);
+      pbSelectedId = "";
+      [...pbList.querySelectorAll(".pbItem")].forEach(x => x.classList.remove("active"));
+    });
+    btnPbSave.addEventListener("click", () => createPlaybookScript());
+    btnPbAddVersion.addEventListener("click", () => addPlaybookVersion());
+
+    btnSavePlaybook.addEventListener("click", () => {
+      if (!currentRun) {
+        toast("warn", "Note:", "No run loaded.");
+        return;
+      }
+      const runTitle = (currentRun.title || currentRun.run_title || "Script").trim();
+      const suggestedTitle = maxWords(runTitle, 5) || "Call Script";
+      const suggestedText = guessScriptFromReport(currentRun.report_text || "");
+      pbDraft = { title: suggestedTitle, text: suggestedText || "", notes: "" };
+      goto("/playbook");
+    });
+
+    // ---- Routing ----
+    async function renderRoute() {
+      if (!sb) return;
+
+      updateTopNav();
+      hideAllViews();
+
+      const path = window.location.pathname || "/";
+      const loggedIn = !!session;
+
+      setActiveNav(path);
+
+      const needsAuth =
+        path === "/home" ||
+        path === "/calibrate" ||
+        path === "/playbook" ||
+        path === "/support" ||
+        path.startsWith("/runs/");
+
+      if (needsAuth && !loggedIn) {
+        goto("/login");
+        return;
+      }
+
+      if (!path.startsWith("/runs/")) {
+        navRunWrap.classList.add("hidden");
+        navRunText.textContent = "";
+        navCurrentRun.removeAttribute("data-run-id");
+      }
+
+      if (path === "/") {
+        if (loggedIn) { goto("/home"); return; }
+        viewLanding.classList.remove("hidden");
+        landingStatus.textContent = "";
+        return;
+      }
+
+      if (path === "/login") {
+        if (loggedIn) { goto("/home"); return; }
+        viewLogin.classList.remove("hidden");
+        return;
+      }
+
+      if (path === "/session-expired") {
+        viewSessionExpired.classList.remove("hidden");
+        expiredBanners.innerHTML = "";
+        expiredBanners.appendChild(banner("warn", "Session expired:", sessionExpiredMessage || "Please sign in again."));
+        return;
+      }
+
+      if (path === "/home") {
+        viewHome.classList.remove("hidden");
+        await loadRuns();
+        return;
+      }
+
+      if (path === "/calibrate") {
+        viewCalibrate.classList.remove("hidden");
+        statusEl.textContent = "";
+        assistCard.classList.add("hidden");
+        renderAssist();
+        return;
+      }
+
+      if (path === "/playbook") {
+        viewPlaybook.classList.remove("hidden");
+        playbookBanners.innerHTML = "";
+        pbRightStatus.textContent = "";
+        if (pbDraft) {
+          resetPlaybookEditorForNew(pbDraft);
+        } else if (!pbSelectedId) {
+          resetPlaybookEditorForNew(null);
+        }
+        await loadPlaybookList();
+        return;
+      }
+
+      if (path === "/support") {
+        viewSupport.classList.remove("hidden");
+        supportBanners.innerHTML = "";
+        supportStatus.textContent = "";
+        return;
+      }
+
+      if (path.startsWith("/runs/")) {
+        viewRun.classList.remove("hidden");
+        const runId = path.split("/runs/")[1] || "";
+        if (!runId) {
+          runBanners.appendChild(banner("bad", "Error:", "Missing run id."));
+          return;
+        }
+        await loadRun(runId);
+        return;
+      }
+
+      goto("/");
+    }
+
+    (async () => {
+      try {
+        await initSupabase();
+        renderRoute();
+      } catch (e) {
+        hideAllViews();
+        viewLanding.classList.remove("hidden");
+        landingStatus.textContent = "Init error: " + (e?.message || String(e));
+      }
+    })();
   </script>
 </body>
 </html>
