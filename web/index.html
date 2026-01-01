@@ -314,7 +314,7 @@
             <div class="tab" data-tab="upload">Upload Call</div>
             <div class="tab" data-tab="entities">Entities</div>
             <div class="tab" data-tab="playbook">Playbook</div>
-            <div class="tab" data-tab="runs">Runs</div>
+            <div class="tab" data-tab="runs">Call Reports</div>
           </div>
         </div>
       </div>
@@ -508,13 +508,14 @@
 
       <!-- RUNS -->
       <div class="card hide" id="tab_runs">
-        <h2>Runs</h2>
+        <h2>Call Reports</h2>
         <p class="muted">Your latest call analyses.</p>
 
         <div class="spacer"></div>
         <table class="table">
           <thead>
             <tr>
+              <th>Name</th>
               <th>Created</th>
               <th>Scenario</th>
               <th>Entity</th>
@@ -885,6 +886,7 @@
       }
       tb.innerHTML = runs.map(r=>`
         <tr>
+          <td>${escapeHtml(r.report_title || "Call")}</td>
           <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
           <td>${escapeHtml(r.scenario || "")}</td>
           <td>${escapeHtml(r.entity_name || "")}</td>
