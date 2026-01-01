@@ -350,6 +350,7 @@
         <h2>Upload Call</h2>
         <p class="muted">Accepts audio + video (MP4). Video audio is extracted server-side.</p>
 
+        <div id="uploadForm">
         <div class="spacer"></div>
 
         <label>Audio/Video file (mp3, wav, m4a, mp4)</label>
@@ -397,6 +398,7 @@
 
         <div class="hr"></div>
 
+        </div>
         <!-- REPORT (hidden until we have real output) -->
         <div class="card hide" id="reportShell" style="box-shadow:none; border-color:var(--border); background:#fff;">
           <h2>Report</h2>
@@ -572,11 +574,16 @@
       });
     }
 
+    function setUploadView(){
+      $("uploadForm").classList.toggle("hide", viewingPastRun);
+    }
+
     // ---- State ----
     let sb = null;
     let cfg = null;
     let currentUser = null;
     let currentSession = null;
+    let viewingPastRun = false;
 
     let entities = [];
     let currentEntityId = null;
@@ -729,8 +736,16 @@
       const t = e.target.closest(".tab");
       if(!t) return;
       setTab(t.dataset.tab);
+      if(t.dataset.tab === "upload"){
+        viewingPastRun = false;
+        setUploadView();
+      }
     });
-    $("goUpload").addEventListener("click", ()=>setTab("upload"));
+    $("goUpload").addEventListener("click", ()=>{
+      viewingPastRun = false;
+      setTab("upload");
+      setUploadView();
+    });
     $("goRuns").addEventListener("click", ()=>setTab("runs"));
 
     // ---- Entities ----
@@ -879,7 +894,9 @@
           const id = btn.getAttribute("data-open");
           const data = await api(`/api/runs/${id}`);
           currentRun = data.run;
+          viewingPastRun = true;
           setTab("upload");
+          setUploadView();
           renderReport(currentRun);
         });
       });
