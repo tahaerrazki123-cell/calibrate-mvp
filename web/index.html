@@ -1,351 +1,831 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Calibrate</title>
+
+  <!-- Supabase UMD (creates global `supabase`) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
     :root{
       --bg:#ffffff;
-      --panel:#ffffff;
-      --muted:#f5f7fb;
-      --border:#e6eaf2;
-      --text:#0b1220;
-      --sub:#5b6475;
+      --text:#0f172a;
+      --muted:#64748b;
+      --border:#e2e8f0;
+      --card:#ffffff;
       --blue:#2563eb;
       --blue2:#1d4ed8;
-      --shadow: 0 8px 22px rgba(10,20,40,.08);
-      --r:14px;
+      --blueSoft:#eff6ff;
+      --green:#16a34a;
+      --red:#dc2626;
+      --amber:#d97706;
+      --shadow:0 10px 30px rgba(2,6,23,.08);
+      --radius:18px;
+      --radius2:14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
     }
     *{box-sizing:border-box}
+    html,body{height:100%}
     body{
       margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      background: var(--bg);
-      color: var(--text);
+      font-family:var(--sans);
+      color:var(--text);
+      background:linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
     }
-    .wrap{max-width:1100px;margin:0 auto;padding:22px}
+
+    a{color:var(--blue); text-decoration:none}
+    a:hover{text-decoration:underline}
+
+    .wrap{max-width:1100px; margin:0 auto; padding:28px 18px 64px}
     .topbar{
-      display:flex;align-items:center;justify-content:space-between;
-      padding:14px 18px;border:1px solid var(--border);border-radius:var(--r);
-      background:var(--panel); box-shadow: var(--shadow);
+      display:flex; align-items:center; justify-content:space-between;
+      padding:14px 16px;
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      background:var(--card);
+      box-shadow:var(--shadow);
+      position:sticky; top:14px; z-index:10;
     }
-    .brand{display:flex;align-items:center;gap:10px}
+    .brand{display:flex; align-items:center; gap:12px}
     .logo{
-      width:36px;height:36px;border-radius:12px;
-      background: linear-gradient(135deg, var(--blue), #60a5fa);
-      box-shadow:0 10px 20px rgba(37,99,235,.25);
+      width:38px; height:38px; border-radius:12px;
+      background:linear-gradient(135deg,var(--blue),#60a5fa);
+      box-shadow:0 10px 18px rgba(37,99,235,.25);
     }
-    .brand h1{font-size:16px;margin:0;font-weight:800;letter-spacing:.2px}
-    .brand .tag{font-size:12px;color:var(--sub);margin-top:2px}
-    .right{display:flex;align-items:center;gap:10px}
+    .brand h1{margin:0; font-size:16px; line-height:1.1}
+    .brand p{margin:0; font-size:12px; color:var(--muted)}
     .pill{
-      font-size:12px;border:1px solid var(--border);padding:8px 10px;border-radius:999px;background:#fff;
-      color:var(--sub)
+      display:inline-flex; align-items:center; gap:8px;
+      padding:8px 10px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      background:#fff;
+      font-size:12px;
+      color:var(--muted);
+      white-space:nowrap;
     }
+    .dot{width:8px;height:8px;border-radius:999px;background:var(--red)}
+    .dot.ok{background:var(--green)}
     .btn{
       border:1px solid var(--border);
-      background:#fff;color:var(--text);
-      padding:10px 12px;border-radius:12px;
-      font-weight:700;cursor:pointer;
+      background:#fff;
+      color:var(--text);
+      border-radius:12px;
+      padding:10px 12px;
+      font-size:13px;
+      cursor:pointer;
+      transition:.15s ease;
+      user-select:none;
     }
+    .btn:hover{transform:translateY(-1px)}
+    .btn:disabled{opacity:.5; cursor:not-allowed; transform:none}
     .btn.primary{
-      background: var(--blue);
-      border-color: var(--blue);
+      background:linear-gradient(135deg,var(--blue),var(--blue2));
+      border-color:transparent;
       color:#fff;
     }
-    .btn.primary:hover{background:var(--blue2)}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-    .grid{display:grid;grid-template-columns: 1fr;gap:14px;margin-top:14px}
+    .btn.ghost{
+      background:transparent;
+    }
+    .btn.small{padding:8px 10px; border-radius:10px; font-size:12px}
+
+    .grid{
+      margin-top:18px;
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:14px;
+    }
+
     .card{
-      background:var(--panel);
       border:1px solid var(--border);
-      border-radius: var(--r);
-      box-shadow: var(--shadow);
+      border-radius:var(--radius);
+      background:var(--card);
+      box-shadow:var(--shadow);
       padding:16px;
     }
-    .card h2{margin:0 0 10px 0;font-size:14px}
-    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+    .card h2{margin:0 0 6px 0; font-size:15px}
+    .card p{margin:0; color:var(--muted); font-size:13px; line-height:1.35}
+
+    .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+    .row.tight{gap:8px}
+    .spacer{height:6px}
+
+    .input{
+      width:100%;
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px 12px;
+      font-size:13px;
+      outline:none;
+      background:#fff;
+    }
+    .input:focus{border-color:#93c5fd; box-shadow:0 0 0 4px rgba(59,130,246,.12)}
+    label{font-size:12px; color:var(--muted); display:block; margin:10px 0 6px}
+
+    .tabs{
+      display:flex; gap:8px; flex-wrap:wrap;
+      margin-top:12px;
+    }
     .tab{
-      padding:10px 12px;border-radius:999px;border:1px solid var(--border);
-      background:#fff;font-weight:800;font-size:12px;color:var(--sub);cursor:pointer;
+      border:1px solid var(--border);
+      background:#fff;
+      border-radius:999px;
+      padding:8px 10px;
+      font-size:12px;
+      color:var(--muted);
+      cursor:pointer;
     }
-    .tab.active{background:var(--muted);color:var(--text);border-color:var(--border)}
-    label{display:block;font-size:12px;color:var(--sub);margin:10px 0 6px}
-    input, select, textarea{
-      width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--border);
-      outline:none;background:#fff;font-size:14px;color:var(--text);
+    .tab.active{
+      background:var(--blueSoft);
+      color:var(--blue2);
+      border-color:#bfdbfe;
+      font-weight:600;
     }
-    textarea{min-height:90px;resize:vertical}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .muted{color:var(--sub);font-size:12px;line-height:1.35}
-    .hr{height:1px;background:var(--border);margin:14px 0}
-    details{border:1px solid var(--border);border-radius:14px;padding:10px;background:#fff}
-    summary{cursor:pointer;font-weight:900}
-    pre{
-      white-space:pre-wrap;word-wrap:break-word;
-      background:var(--muted);border:1px solid var(--border);
-      padding:12px;border-radius:14px;margin:10px 0 0 0;
-      font-size:12px;line-height:1.35;
+
+    .twoCol{
+      display:grid; gap:14px;
+      grid-template-columns: 1.15fr .85fr;
+      align-items:start;
     }
+    @media (max-width: 980px){
+      .twoCol{grid-template-columns:1fr}
+    }
+
+    .kpi{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px;
+      padding:12px 14px;
+      border-radius:var(--radius2);
+      border:1px solid var(--border);
+      background:#fff;
+    }
+    .kpi b{font-size:13px}
+    .badge{
+      display:inline-flex; align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      font-size:12px;
+      border:1px solid var(--border);
+      background:#fff;
+      color:var(--muted);
+      gap:6px;
+    }
+    .badge.good{background:#ecfdf5; color:#065f46; border-color:#bbf7d0}
+    .badge.warn{background:#fffbeb; color:#92400e; border-color:#fde68a}
+    .badge.bad{background:#fef2f2; color:#991b1b; border-color:#fecaca}
+
+    .mono{
+      font-family:var(--mono);
+      font-size:12px;
+      white-space:pre-wrap;
+      word-break:break-word;
+      color:#0b1220;
+    }
+    .muted{color:var(--muted)}
+    .hr{height:1px; background:var(--border); margin:12px 0}
+    .hide{display:none !important}
+
     .toast{
-      position:fixed;left:50%;transform:translateX(-50%);
-      bottom:18px;background:#0b1220;color:#fff;
-      padding:10px 12px;border-radius:999px;font-size:12px;
-      box-shadow:0 14px 40px rgba(0,0,0,.22);
-      display:none;
+      position:fixed;
+      left:50%;
+      bottom:20px;
+      transform:translateX(-50%);
+      background:#0b1220;
+      color:#fff;
+      padding:10px 12px;
+      border-radius:12px;
+      box-shadow:0 14px 30px rgba(2,6,23,.25);
+      font-size:13px;
+      opacity:0;
+      pointer-events:none;
+      transition:.2s ease;
+      max-width:92vw;
     }
-    .authWrap{max-width:520px;margin:22px auto}
+    .toast.show{opacity:1}
+
+    details{
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px 12px;
+      background:#fff;
+    }
+    summary{cursor:pointer; font-weight:600}
+    .hint{font-size:12px; color:var(--muted); margin-top:6px; line-height:1.35}
+
+    .table{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      overflow:hidden;
+      border:1px solid var(--border);
+      border-radius:14px;
+    }
+    .table th, .table td{
+      padding:10px 10px;
+      border-bottom:1px solid var(--border);
+      font-size:12px;
+      text-align:left;
+      vertical-align:top;
+    }
+    .table th{background:#f8fafc; color:#334155}
+    .table tr:last-child td{border-bottom:none}
+
+    .rightActions{display:flex; gap:8px; align-items:center; justify-content:flex-end; flex-wrap:wrap}
+    .grow{flex:1}
   </style>
 </head>
+
 <body>
   <div class="wrap">
+
     <div class="topbar">
       <div class="brand">
-        <div class="logo"></div>
+        <div class="logo" aria-hidden="true"></div>
         <div>
           <h1>Calibrate</h1>
-          <div class="tag">Post-call command center</div>
+          <p>Post-call command center</p>
         </div>
       </div>
-      <div class="right">
-        <div class="pill" id="pillUser">Not signed in</div>
-        <button class="btn" id="btnSignOut" style="display:none">Sign out</button>
+
+      <div class="rightActions">
+        <div class="pill" id="pillUser">
+          <span class="dot" id="dotAuth"></span>
+          <span id="userLabel">Not signed in</span>
+        </div>
+        <button class="btn small ghost" id="btnSignOut">Sign out</button>
       </div>
     </div>
 
-    <!-- IMPORTANT: auth view is visible by default so you never get a blank page -->
-    <div id="authView" class="authWrap">
-      <div class="card">
+    <!-- AUTH -->
+    <div class="grid" id="viewAuth">
+      <div class="card" style="max-width:520px; margin:22px auto 0;">
         <h2>Sign in</h2>
-        <div class="muted">
-          Enter your email. We’ll send a magic link.
-        </div>
-        <label>Email</label>
-        <input id="authEmail" type="email" placeholder="you@domain.com" />
-        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn primary" id="btnSendLink">Send magic link</button>
-          <button class="btn" id="btnRefreshSession">I already clicked the link</button>
-        </div>
-        <div class="muted" style="margin-top:10px" id="authMsg">Loading…</div>
+        <p>Enter your email. We’ll send a magic link.</p>
 
-        <details style="margin-top:12px">
+        <label>Email</label>
+        <input class="input" id="authEmail" placeholder="you@domain.com" />
+
+        <div class="spacer"></div>
+        <div class="row tight">
+          <button class="btn primary" id="btnSendLink">Send magic link</button>
+          <button class="btn" id="btnAlreadyClicked">I already clicked the link</button>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="hint" id="authMsg">Loading…</div>
+
+        <div class="spacer"></div>
+        <details>
           <summary>Troubleshooting</summary>
-          <div class="muted" style="margin-top:10px">
-            If you see only the header, it means the JS boot failed.
-            Check <span class="mono">/api/config</span> and your browser console.
+          <div class="hint">
+            If clicking “Send magic link” shows a “redirect not allowed” error, add your Render domain in Supabase:
+            Authentication → URL Configuration → Additional Redirect URLs.
+            Also set the Site URL to your domain.
           </div>
         </details>
       </div>
     </div>
 
-    <div id="appView" style="display:none">
-      <div class="tabs">
-        <button class="tab active" data-tab="upload">Upload Call</button>
-        <button class="tab" data-tab="runs">Runs</button>
-        <button class="tab" data-tab="entities">Entities</button>
-        <button class="tab" data-tab="playbook">Playbook</button>
+    <!-- APP -->
+    <div class="grid hide" id="viewApp">
+
+      <div class="card">
+        <div class="row">
+          <div class="grow">
+            <h2>Dashboard</h2>
+            <p class="muted">Upload a call, get a transcript + a post-call decision engine report.</p>
+          </div>
+          <div class="tabs" id="tabs">
+            <div class="tab active" data-tab="home">Home</div>
+            <div class="tab" data-tab="upload">Upload Call</div>
+            <div class="tab" data-tab="entities">Entities</div>
+            <div class="tab" data-tab="playbook">Playbook</div>
+            <div class="tab" data-tab="runs">Runs</div>
+          </div>
+        </div>
       </div>
 
-      <div class="grid">
-        <div id="tab-upload" class="card">
-          <h2>Upload Call</h2>
-          <div class="muted">Accepts audio (mp3/wav/m4a) and video (mp4/mov). Video is auto-extracted on the server.</div>
-
-          <label>File</label>
-          <input id="file" type="file" accept=".mp3,.wav,.m4a,.mp4,.mov,video/*,audio/*" />
-
-          <div class="row">
-            <div>
-              <label>Scenario (optional)</label>
-              <input id="scenario" placeholder="B2B service / software" />
-            </div>
-            <div>
-              <label>Entity (optional)</label>
-              <select id="entitySelect">
-                <option value="">None</option>
-              </select>
-            </div>
-          </div>
-
-          <details style="margin-top:10px">
-            <summary>Create new entity (optional)</summary>
-            <div class="row" style="margin-top:10px">
+      <!-- HOME -->
+      <div class="card" id="tab_home">
+        <div class="twoCol">
+          <div>
+            <h2>What you do next</h2>
+            <p class="muted">Fast loop: upload → get result → follow-up → fix top 3 → repeat.</p>
+            <div class="hr"></div>
+            <div class="kpi">
               <div>
-                <label>Entity name</label>
-                <input id="entityName" placeholder="Bright Smile Dental — AI Receptionist" />
+                <b>Last run</b><div class="muted" id="lastRunLabel">None yet</div>
               </div>
-              <div>
-                <label>Industry</label>
-                <input id="entityIndustry" placeholder="Dental / Local services" />
-              </div>
+              <span class="badge" id="lastRunBadge">—</span>
             </div>
-            <label>Offer</label>
-            <input id="entityOffer" placeholder="AI receptionist that answers + books appointments" />
-          </details>
-
-          <label>Context (required)</label>
-          <textarea id="context" placeholder="What you’re selling + who you’re calling + goal of the call."></textarea>
-
-          <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-            <button class="btn primary" id="btnRun">Run analysis</button>
-            <button class="btn" id="btnClear">Clear</button>
           </div>
-
-          <div class="muted" style="margin-top:10px" id="runStatus"></div>
-        </div>
-
-        <div id="reportView" class="card" style="display:none"></div>
-
-        <div id="tab-runs" class="card" style="display:none">
-          <h2>Runs</h2>
-          <div class="muted">Click a run to open the report.</div>
-          <div id="runsList"></div>
-        </div>
-
-        <div id="tab-entities" class="card" style="display:none">
-          <h2>Entities</h2>
-          <div class="muted">Group runs under one business/offer.</div>
-
-          <details>
-            <summary>Create entity</summary>
-            <div style="margin-top:10px">
-              <label>Name</label>
-              <input id="newEntityName" placeholder="Entity name" />
-              <div class="row">
-                <div>
-                  <label>Offer</label>
-                  <input id="newEntityOffer" placeholder="Offer" />
-                </div>
-                <div>
-                  <label>Industry</label>
-                  <input id="newEntityIndustry" placeholder="Industry" />
-                </div>
-              </div>
-              <label>Notes</label>
-              <textarea id="newEntityNotes" placeholder="Notes (optional)"></textarea>
-              <button class="btn primary" id="btnCreateEntity" style="margin-top:10px">Create</button>
-              <div class="muted" id="entityCreateMsg" style="margin-top:8px"></div>
+          <div>
+            <h2>Quick actions</h2>
+            <p class="muted">Jump straight into your workflow.</p>
+            <div class="spacer"></div>
+            <div class="row tight">
+              <button class="btn primary" id="goUpload">Upload a call</button>
+              <button class="btn" id="goRuns">View runs</button>
             </div>
-          </details>
-
-          <div class="hr"></div>
-          <div id="entitiesList"></div>
-        </div>
-
-        <div id="tab-playbook" class="card" style="display:none">
-          <h2>Playbook</h2>
-          <div class="muted">Generate an “ultimate script” + patterns across calls for one entity.</div>
-
-          <label>Select entity</label>
-          <select id="playbookEntitySelect">
-            <option value="">Choose an entity</option>
-          </select>
-
-          <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-            <button class="btn primary" id="btnGenPlaybook">Generate / Refresh Playbook</button>
           </div>
-
-          <div class="muted" id="playbookMsg" style="margin-top:10px"></div>
-          <div id="playbookOut" style="margin-top:10px"></div>
         </div>
       </div>
+
+      <!-- UPLOAD -->
+      <div class="card hide" id="tab_upload">
+        <h2>Upload Call</h2>
+        <p class="muted">Accepts audio + video (MP4). Video audio is extracted server-side.</p>
+
+        <div class="spacer"></div>
+
+        <label>Audio/Video file (mp3, wav, m4a, mp4)</label>
+        <input class="input" id="fileInput" type="file" accept=".mp3,.wav,.m4a,.mp4,video/mp4,audio/*,video/*" />
+
+        <label>Scenario template (optional)</label>
+        <select class="input" id="scenario">
+          <option value="">None</option>
+          <option value="b2b">B2B service / software</option>
+          <option value="ai_receptionist">AI receptionist</option>
+          <option value="website_maintenance">Website maintenance</option>
+          <option value="seo">SEO</option>
+        </select>
+
+        <label>Context (required)</label>
+        <textarea class="input" id="context" rows="3" placeholder="What are you selling, to who, and why would they buy?"></textarea>
+
+        <div class="row">
+          <div class="grow">
+            <label>Attach to Entity (optional)</label>
+            <select class="input" id="entitySelect"></select>
+          </div>
+          <div class="grow">
+            <label>Or create new Entity (name)</label>
+            <input class="input" id="entityName" placeholder="e.g., SEO Agency Pitch" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="grow">
+            <label>Offer (optional)</label>
+            <input class="input" id="entityOffer" placeholder="e.g., SEO retainer" />
+          </div>
+          <div class="grow">
+            <label>Industry (optional)</label>
+            <input class="input" id="entityIndustry" placeholder="e.g., Dental / Ecommerce / SaaS" />
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="row tight">
+          <button class="btn primary" id="btnRun">Calibrate</button>
+          <span class="muted" id="runStatus">—</span>
+        </div>
+
+        <div class="hr"></div>
+
+        <!-- REPORT -->
+        <div class="card" style="box-shadow:none; border-color:var(--border); background:#fff;">
+          <h2>Report</h2>
+          <p class="muted">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
+
+          <div class="spacer"></div>
+
+          <div class="kpi" id="reportKpi">
+            <div>
+              <b id="callResult">—</b>
+              <div class="muted" id="callResultWhy">Run an analysis to see the result + explanation.</div>
+            </div>
+            <div class="row tight">
+              <span class="badge" id="scoreBadge">Score: —</span>
+              <span class="badge" id="signalBadges">Signals: —</span>
+            </div>
+          </div>
+
+          <div class="spacer"></div>
+
+          <div class="twoCol">
+            <div class="card" style="box-shadow:none; border-color:var(--border);">
+              <h2>Follow-Up Generator</h2>
+              <p class="muted">Two-line follow-up you can send right now.</p>
+              <div class="spacer"></div>
+              <textarea class="input" id="followupText" rows="4" placeholder="Run an analysis to generate a follow-up."></textarea>
+              <div class="spacer"></div>
+              <div class="row tight">
+                <button class="btn primary" id="btnCopyFollowup">Copy</button>
+                <button class="btn" id="btnRegenFollowup">Regenerate</button>
+              </div>
+            </div>
+
+            <div class="card" style="box-shadow:none; border-color:var(--border);">
+              <h2>Fix These First (Top 3)</h2>
+              <p class="muted">The highest-leverage corrections to improve the next call.</p>
+              <div class="spacer"></div>
+              <div id="topFixes">
+                <div class="muted">Run an analysis to populate this.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="spacer"></div>
+
+          <details id="transcriptDetails">
+            <summary>View transcript</summary>
+            <div class="hint">Tip: use Ctrl+F to search.</div>
+            <div class="hr"></div>
+            <div class="mono" id="transcriptBox">—</div>
+          </details>
+
+        </div>
+      </div>
+
+      <!-- ENTITIES -->
+      <div class="card hide" id="tab_entities">
+        <div class="row">
+          <div class="grow">
+            <h2>Entities</h2>
+            <p class="muted">Group calls under one business/offer so Calibrate can learn patterns across runs.</p>
+          </div>
+          <button class="btn primary" id="btnNewEntity">New entity</button>
+        </div>
+
+        <div class="spacer"></div>
+        <div id="entitiesList" class="muted">Loading…</div>
+
+        <div class="hr"></div>
+
+        <div class="hide" id="entityEditor">
+          <h2>Edit entity</h2>
+          <label>Name</label>
+          <input class="input" id="entityEditName" />
+          <label>Offer</label>
+          <input class="input" id="entityEditOffer" />
+          <label>Industry</label>
+          <input class="input" id="entityEditIndustry" />
+          <label>Notes</label>
+          <textarea class="input" id="entityEditNotes" rows="3"></textarea>
+
+          <div class="spacer"></div>
+          <div class="row tight">
+            <button class="btn primary" id="btnSaveEntity">Save</button>
+            <button class="btn" id="btnCancelEntity">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PLAYBOOK -->
+      <div class="card hide" id="tab_playbook">
+        <h2>Playbook</h2>
+        <p class="muted">MVP: Generate an “ultimate script” + common objections + do/don’t patterns for an entity.</p>
+
+        <div class="spacer"></div>
+
+        <label>Entity</label>
+        <select class="input" id="playbookEntitySelect"></select>
+
+        <div class="spacer"></div>
+        <div class="row tight">
+          <button class="btn primary" id="btnGenPlaybook">Generate / Refresh</button>
+          <span class="muted" id="playbookStatus">—</span>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="mono" id="playbookBox">Select an entity to generate a playbook.</div>
+      </div>
+
+      <!-- RUNS -->
+      <div class="card hide" id="tab_runs">
+        <h2>Runs</h2>
+        <p class="muted">Your latest call analyses.</p>
+
+        <div class="spacer"></div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Created</th>
+              <th>Scenario</th>
+              <th>Entity</th>
+              <th>Result</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="runsTbody">
+            <tr><td colspan="5" class="muted">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
 
   <script>
-    let supabase = null;
-    let config = null;
-    let entities = [];
-    let runs = [];
-    let currentRun = null;
-
+    // ----- Helpers -----
     const $ = (id) => document.getElementById(id);
-
+    const toastEl = $("toast");
     function toast(msg){
-      const t = $("toast");
-      t.textContent = msg;
-      t.style.display = "block";
-      setTimeout(()=>t.style.display="none", 1400);
-    }
-
-    async function api(path, opts={}){
-      const res = await fetch(path, opts);
-      const txt = await res.text();
-      let data = null;
-      try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-      if (!res.ok) throw new Error(data?.error || txt || `Request failed: ${res.status}`);
-      return data;
-    }
-
-    function setUserUI(email){
-      $("pillUser").textContent = email ? email : "Not signed in";
-      $("btnSignOut").style.display = email ? "inline-block" : "none";
+      toastEl.textContent = msg;
+      toastEl.classList.add("show");
+      setTimeout(()=>toastEl.classList.remove("show"), 2200);
     }
 
     function showAuth(){
-      $("authView").style.display = "block";
-      $("appView").style.display = "none";
+      $("viewAuth").classList.remove("hide");
+      $("viewApp").classList.add("hide");
     }
-
     function showApp(){
-      $("authView").style.display = "none";
-      $("appView").style.display = "block";
+      $("viewAuth").classList.add("hide");
+      $("viewApp").classList.remove("hide");
     }
 
-    function escapeHtml(s){
-      return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+    function setUserUI(user){
+      const pill = $("pillUser");
+      const dot = $("dotAuth");
+      const label = $("userLabel");
+      if(user && user.email){
+        dot.classList.add("ok");
+        label.textContent = user.email;
+        $("btnSignOut").classList.remove("hide");
+      }else{
+        dot.classList.remove("ok");
+        label.textContent = "Not signed in";
+        $("btnSignOut").classList.add("hide");
+      }
     }
 
     function setTab(name){
-      document.querySelectorAll(".tab").forEach(b=>{
-        b.classList.toggle("active", b.dataset.tab === name);
+      document.querySelectorAll(".tab").forEach(t=>{
+        t.classList.toggle("active", t.dataset.tab === name);
       });
-      ["upload","runs","entities","playbook"].forEach(t=>{
-        const el = $("tab-" + t);
-        if (el) el.style.display = (t === name ? "block" : "none");
+      ["home","upload","entities","playbook","runs"].forEach(x=>{
+        $("tab_"+x).classList.toggle("hide", x !== name);
       });
-      if (name !== "upload") $("reportView").style.display = "none";
     }
 
+    // ----- State -----
+    let sb = null;          // ✅ renamed from `supabase` (avoid global redeclare)
+    let cfg = null;
+    let currentUser = null;
+    let entities = [];
+    let currentEntityId = null;
+    let currentRun = null;
+    let currentPlaybook = null;
+
+    // ----- API -----
+    async function api(path, opts={}){
+      const res = await fetch(path, {
+        headers: { ...(opts.headers||{}), "Accept":"application/json" },
+        ...opts
+      });
+      const text = await res.text();
+      let data = null;
+      try{ data = text ? JSON.parse(text) : null; }catch(e){}
+      if(!res.ok){
+        const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || res.statusText);
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    // ----- Init Supabase -----
+    async function initSupabase(){
+      $("authMsg").textContent = "Loading…";
+      cfg = await api("/api/config");
+      const { supabaseUrl, supabaseAnonKey } = cfg;
+      if(!supabaseUrl || !supabaseAnonKey){
+        throw new Error("Missing Supabase config from /api/config");
+      }
+
+      sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
+      });
+
+      const { data: sessionData } = await sb.auth.getSession();
+      currentUser = sessionData?.session?.user || null;
+      setUserUI(currentUser);
+
+      sb.auth.onAuthStateChange((_event, session)=>{
+        currentUser = session?.user || null;
+        setUserUI(currentUser);
+        if(currentUser){
+          showApp();
+          bootstrapApp();
+        }else{
+          showAuth();
+        }
+      });
+
+      if(currentUser){
+        showApp();
+        await bootstrapApp();
+      }else{
+        showAuth();
+      }
+
+      $("authMsg").textContent = "";
+    }
+
+    async function bootstrapApp(){
+      await loadEntities();
+      fillEntitySelects();
+      await loadRuns();
+    }
+
+    // ----- Auth UI -----
+    $("btnSendLink").addEventListener("click", async ()=>{
+      const email = $("authEmail").value.trim();
+      if(!email){ toast("Enter an email"); return; }
+      $("authMsg").textContent = "Sending…";
+      try{
+        const { error } = await sb.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.origin }
+        });
+        if(error) throw error;
+        toast("Magic link sent. Check your inbox.");
+        $("authMsg").textContent = "Sent. Open the email link, then come back.";
+      }catch(e){
+        $("authMsg").textContent = "Error: " + (e.message || String(e));
+      }
+    });
+
+    $("btnAlreadyClicked").addEventListener("click", async ()=>{
+      $("authMsg").textContent = "Checking session…";
+      try{
+        const { data } = await sb.auth.getSession();
+        const u = data?.session?.user || null;
+        if(u){
+          toast("Signed in");
+          $("authMsg").textContent = "";
+        }else{
+          $("authMsg").textContent = "No session yet. Click the email link first.";
+        }
+      }catch(e){
+        $("authMsg").textContent = "Error: " + (e.message || String(e));
+      }
+    });
+
+    $("btnSignOut").addEventListener("click", async ()=>{
+      try{
+        await sb.auth.signOut();
+        toast("Signed out");
+      }catch(e){
+        toast("Sign out failed");
+      }
+    });
+
+    // ----- Tabs -----
+    $("tabs").addEventListener("click", (e)=>{
+      const t = e.target.closest(".tab");
+      if(!t) return;
+      setTab(t.dataset.tab);
+    });
+    $("goUpload").addEventListener("click", ()=>setTab("upload"));
+    $("goRuns").addEventListener("click", ()=>setTab("runs"));
+
+    // ----- Entities -----
     async function loadEntities(){
       const data = await api("/api/entities");
       entities = data.entities || [];
       renderEntities();
     }
 
-    async function loadRuns(){
-      const data = await api("/api/runs");
-      runs = data.runs || [];
-      renderRuns();
-    }
-
     function fillEntitySelects(){
-      const sel = $("entitySelect");
-      const sel2 = $("playbookEntitySelect");
-      sel.innerHTML = `<option value="">None</option>` + entities.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
-      sel2.innerHTML = `<option value="">Choose an entity</option>` + entities.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
+      const selects = [$("entitySelect"), $("playbookEntitySelect")];
+      selects.forEach(sel=>{
+        sel.innerHTML = `<option value="">None</option>` + entities
+          .map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`)
+          .join("");
+      });
     }
 
-    function renderRuns(){
-      const wrap = $("runsList");
-      if (!runs.length){
-        wrap.innerHTML = `<div class="muted" style="margin-top:10px">No runs yet.</div>`;
+    function renderEntities(){
+      const wrap = $("entitiesList");
+      if(!entities.length){
+        wrap.innerHTML = `<div class="muted">No entities yet.</div>`;
         return;
       }
-      wrap.innerHTML = runs.map(r=>`
-        <div class="card" style="box-shadow:none;margin-top:10px;cursor:pointer" data-run="${r.id}">
-          <div style="font-weight:900">${escapeHtml(r.filename || "Run")}</div>
-          <div class="muted" style="margin-top:6px">${escapeHtml(new Date(r.created_at).toLocaleString())} • ${escapeHtml(r.call_result || "Other")} • Grade ${escapeHtml(r.overall_grade || "")} • Score ${escapeHtml(r.overall_score ?? "")}</div>
-        </div>
-      `).join("");
+      wrap.innerHTML = entities.map(e=>{
+        return `
+          <div class="kpi" style="margin-bottom:10px;">
+            <div>
+              <b>${escapeHtml(e.name)}</b>
+              <div class="muted">${escapeHtml(e.offer || "")} ${e.industry ? "• "+escapeHtml(e.industry) : ""}</div>
+            </div>
+            <div class="row tight">
+              <button class="btn small" data-edit="${e.id}">Edit</button>
+            </div>
+          </div>
+        `;
+      }).join("");
 
-      wrap.querySelectorAll("[data-run]").forEach(el=>{
-        el.addEventListener("click", async ()=>{
-          const id = el.getAttribute("data-run");
+      wrap.querySelectorAll("[data-edit]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const id = btn.getAttribute("data-edit");
+          openEntityEditor(id);
+        });
+      });
+    }
+
+    function openEntityEditor(id){
+      const e = entities.find(x=>x.id===id);
+      if(!e) return;
+      currentEntityId = id;
+      $("entityEditor").classList.remove("hide");
+      $("entityEditName").value = e.name || "";
+      $("entityEditOffer").value = e.offer || "";
+      $("entityEditIndustry").value = e.industry || "";
+      $("entityEditNotes").value = e.notes || "";
+    }
+
+    $("btnNewEntity").addEventListener("click", ()=>{
+      currentEntityId = null;
+      $("entityEditor").classList.remove("hide");
+      $("entityEditName").value = "";
+      $("entityEditOffer").value = "";
+      $("entityEditIndustry").value = "";
+      $("entityEditNotes").value = "";
+    });
+
+    $("btnCancelEntity").addEventListener("click", ()=>{
+      $("entityEditor").classList.add("hide");
+      currentEntityId = null;
+    });
+
+    $("btnSaveEntity").addEventListener("click", async ()=>{
+      const payload = {
+        id: currentEntityId,
+        name: $("entityEditName").value.trim(),
+        offer: $("entityEditOffer").value.trim(),
+        industry: $("entityEditIndustry").value.trim(),
+        notes: $("entityEditNotes").value.trim()
+      };
+      if(!payload.name){ toast("Name required"); return; }
+      await api("/api/entities", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      });
+      toast("Saved");
+      $("entityEditor").classList.add("hide");
+      currentEntityId = null;
+      await loadEntities();
+      fillEntitySelects();
+    });
+
+    // ----- Playbook -----
+    $("btnGenPlaybook").addEventListener("click", async ()=>{
+      const entityId = $("playbookEntitySelect").value;
+      if(!entityId){ toast("Pick an entity"); return; }
+      $("playbookStatus").textContent = "Generating…";
+      try{
+        const data = await api(`/api/entities/${entityId}/playbook`, { method:"POST" });
+        currentPlaybook = data.playbook || null;
+        $("playbookBox").textContent = JSON.stringify(currentPlaybook, null, 2);
+        $("playbookStatus").textContent = "Done ✅";
+      }catch(e){
+        $("playbookStatus").textContent = "Error: " + (e.message || String(e));
+      }
+    });
+
+    // ----- Runs -----
+    async function loadRuns(){
+      const data = await api("/api/runs");
+      const runs = data.runs || [];
+      renderRuns(runs);
+
+      if(runs.length){
+        const r = runs[0];
+        $("lastRunLabel").textContent = new Date(r.created_at).toLocaleString();
+        $("lastRunBadge").textContent = r.outcome_label || "—";
+      }
+    }
+
+    function renderRuns(runs){
+      const tb = $("runsTbody");
+      if(!runs.length){
+        tb.innerHTML = `<tr><td colspan="5" class="muted">No runs yet.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = runs.map(r=>{
+        return `
+          <tr>
+            <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
+            <td>${escapeHtml(r.scenario || "")}</td>
+            <td>${escapeHtml(r.entity_name || "")}</td>
+            <td>${escapeHtml(r.outcome_label || "")}</td>
+            <td><button class="btn small" data-open="${r.id}">Open</button></td>
+          </tr>
+        `;
+      }).join("");
+
+      tb.querySelectorAll("[data-open]").forEach(btn=>{
+        btn.addEventListener("click", async ()=>{
+          const id = btn.getAttribute("data-open");
           const data = await api(`/api/runs/${id}`);
           currentRun = data.run;
           setTab("upload");
@@ -354,196 +834,94 @@
       });
     }
 
-    function renderEntities(){
-      const wrap = $("entitiesList");
-      if (!entities.length){
-        wrap.innerHTML = `<div class="muted">No entities yet.</div>`;
-        return;
-      }
-      wrap.innerHTML = entities.map(e=>`
-        <div class="card" style="box-shadow:none;margin-top:10px">
-          <div style="font-weight:900">${escapeHtml(e.name)}</div>
-          <div class="muted" style="margin-top:6px">${escapeHtml(e.industry || "")}${e.offer ? " • " + escapeHtml(e.offer) : ""}</div>
-        </div>
-      `).join("");
-    }
-
+    // ----- Report render -----
     function renderReport(run){
-      const a = run.analysis_json || {};
+      if(!run){ return; }
+      const a = run.analysis_json || run.analysis || null;
+
+      $("callResult").textContent = a?.call_result?.label || run.outcome_label || "—";
+      $("callResultWhy").textContent = a?.call_result?.why || "—";
+
+      const score = a?.score ?? a?.overall_score ?? null;
+      $("scoreBadge").textContent = score == null ? "Score: —" : `Score: ${score}`;
+
+      const signals = (a?.signals && Array.isArray(a.signals)) ? a.signals : [];
+      $("signalBadges").textContent = signals.length ? `Signals: ${signals.slice(0,3).join(", ")}${signals.length>3?"…":""}` : "Signals: —";
+
+      const followUp = a?.follow_up?.text || a?.followup || "";
+      $("followupText").value = followUp || "";
+
+      const fixes = a?.top_fixes || a?.fixes || [];
+      if(Array.isArray(fixes) && fixes.length){
+        $("topFixes").innerHTML = fixes.slice(0,3).map((f,i)=>{
+          const title = f.title || `Fix ${i+1}`;
+          const why = f.why || f.problem || "";
+          const instead = f.do_instead || f.instead || f.fix || "";
+          return `
+            <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
+              <b>${escapeHtml(title)}</b>
+              <div class="hint">${escapeHtml(why)}</div>
+              ${instead ? `<div class="hint"><b>Do this instead:</b> ${escapeHtml(instead)}</div>` : ``}
+            </div>
+          `;
+        }).join("");
+      }else{
+        $("topFixes").innerHTML = `<div class="muted">—</div>`;
+      }
+
+      // transcript
       const transcript = run.transcript_text || "";
-
-      $("reportView").style.display = "block";
-      $("reportView").innerHTML = `
-        <h2>Call Report</h2>
-        <div class="muted" style="margin-top:6px">
-          If this is empty, the run may have failed before saving analysis_json.
-        </div>
-
-        <div class="card" style="box-shadow:none;margin-top:10px;background:var(--muted)">
-          <div style="font-weight:1000;font-size:18px">${escapeHtml(a.call_result || run.call_result || "Other")}</div>
-          <div class="muted" style="margin-top:6px">${escapeHtml(a.call_result_reason || run.call_result_reason || "")}</div>
-        </div>
-
-        <details style="margin-top:10px">
-          <summary>View Transcript</summary>
-          <pre>${escapeHtml(transcript || "No transcript saved.")}</pre>
-        </details>
-
-        <details style="margin-top:10px">
-          <summary>Raw Analysis JSON</summary>
-          <pre>${escapeHtml(JSON.stringify(a || {}, null, 2))}</pre>
-        </details>
-      `;
+      $("transcriptBox").textContent = transcript || "—";
     }
 
-    async function initSupabase(){
-      // show auth by default so you never get a blank screen
-      showAuth();
-      $("authMsg").textContent = "Loading…";
-
-      // confirm supabase-js actually loaded
-      if (!window.supabase || !window.supabase.createClient) {
-        throw new Error("Supabase SDK failed to load. Check CDN/network in DevTools.");
+    $("btnCopyFollowup").addEventListener("click", async ()=>{
+      const txt = $("followupText").value || "";
+      if(!txt){ toast("Nothing to copy"); return; }
+      try{
+        await navigator.clipboard.writeText(txt);
+        toast("Copied");
+      }catch(e){
+        toast("Copy failed");
       }
+    });
 
-      // confirm backend config endpoint exists
-      config = await api("/api/config");
-      if (!config.supabaseUrl || !config.supabaseAnonKey) {
-        throw new Error("API config missing supabaseUrl or supabaseAnonKey.");
+    $("btnRegenFollowup").addEventListener("click", async ()=>{
+      if(!currentRun?.id){ toast("Run a call first"); return; }
+      try{
+        const data = await api(`/api/runs/${currentRun.id}/regen_followup`, { method:"POST" });
+        currentRun = data.run;
+        renderReport(currentRun);
+        toast("Regenerated");
+      }catch(e){
+        toast(e.message || "Error");
       }
+    });
 
-      supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        setUserUI(null);
-        showAuth();
-        $("authMsg").textContent = "";
-      } else {
-        setUserUI(session.user.email);
-        showApp();
-        await bootAppData();
-      }
-
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        if (session?.user) {
-          setUserUI(session.user.email);
-          showApp();
-          await bootAppData();
-        } else {
-          setUserUI(null);
-          showAuth();
-        }
-      });
+    function escapeHtml(s){
+      return String(s ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
     }
 
-    async function bootAppData(){
-      await loadEntities();
-      await loadRuns();
-      fillEntitySelects();
-      setTab("upload");
-    }
-
-    $("btnSendLink").addEventListener("click", async ()=>{
-      const email = $("authEmail").value.trim();
-      $("authMsg").textContent = "";
-      if (!email) return ($("authMsg").textContent = "Enter an email.");
-      try{
-        const { error } = await supabase.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: window.location.origin }
-        });
-        if (error) throw error;
-        $("authMsg").textContent = "Magic link sent. Open your email and click the link.";
-      }catch(e){
-        $("authMsg").textContent = e.message || String(e);
-      }
-    });
-
-    $("btnRefreshSession").addEventListener("click", async ()=>{
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user){
-        setUserUI(session.user.email);
-        showApp();
-        await bootAppData();
-      } else {
-        $("authMsg").textContent = "No active session detected yet.";
-      }
-    });
-
-    $("btnSignOut").addEventListener("click", async ()=>{
-      await supabase.auth.signOut();
-      toast("Signed out");
-    });
-
-    document.querySelectorAll(".tab").forEach(btn=>{
-      btn.addEventListener("click", ()=>setTab(btn.dataset.tab));
-    });
-
-    $("btnClear").addEventListener("click", ()=>{
-      $("file").value = "";
-      $("scenario").value = "";
-      $("context").value = "";
-      $("entitySelect").value = "";
-      $("entityName").value = "";
-      $("entityOffer").value = "";
-      $("entityIndustry").value = "";
-      $("runStatus").textContent = "";
-      $("reportView").style.display = "none";
-    });
-
-    $("btnCreateEntity").addEventListener("click", async ()=>{
-      $("entityCreateMsg").textContent = "";
-      try{
-        const payload = {
-          name: $("newEntityName").value.trim(),
-          offer: $("newEntityOffer").value.trim(),
-          industry: $("newEntityIndustry").value.trim(),
-          notes: $("newEntityNotes").value.trim(),
-        };
-        const data = await api("/api/entities", {
-          method:"POST",
-          headers:{ "content-type":"application/json" },
-          body: JSON.stringify(payload)
-        });
-        $("entityCreateMsg").textContent = "Created.";
-        await loadEntities();
-        fillEntitySelects();
-      }catch(e){
-        $("entityCreateMsg").textContent = e.message || String(e);
-      }
-    });
-
-    $("btnGenPlaybook").addEventListener("click", async ()=>{
-      const id = $("playbookEntitySelect").value;
-      $("playbookMsg").textContent = "";
-      $("playbookOut").innerHTML = "";
-      if (!id) return ($("playbookMsg").textContent = "Select an entity first.");
-      try{
-        $("playbookMsg").textContent = "Generating...";
-        const data = await api(`/api/entities/${id}/playbook`, { method:"POST" });
-        $("playbookMsg").textContent = "Done.";
-        $("playbookOut").innerHTML = `<pre>${escapeHtml(JSON.stringify(data.playbook?.playbook_json || {}, null, 2))}</pre>`;
-      }catch(e){
-        $("playbookMsg").textContent = e.message || String(e);
-      }
-    });
-
+    // ----- Run flow -----
     $("btnRun").addEventListener("click", async ()=>{
-      $("runStatus").textContent = "";
+      const file = $("fileInput").files[0];
+      const scenario = $("scenario").value;
+      const context = $("context").value.trim();
+      if(!file){ toast("Pick a file"); return; }
+      if(!context){ toast("Context required"); return; }
+
+      $("btnRun").disabled = true;
+      $("runStatus").textContent = "Running…";
+
       try{
-        const f = $("file").files?.[0];
-        if (!f) throw new Error("Choose a file first.");
-        const ctx = $("context").value.trim();
-        if (!ctx) throw new Error("Context is required.");
-
-        $("btnRun").disabled = true;
-        $("runStatus").textContent = "Uploading + transcribing + analyzing...";
-
         const fd = new FormData();
-        fd.append("file", f);
-        fd.append("context", ctx);
-        fd.append("scenario", $("scenario").value.trim());
+        fd.append("file", file);
+        fd.append("scenario", scenario);
+        fd.append("context", context);
 
         const entityId = $("entitySelect").value;
         if (entityId) fd.append("entityId", entityId);

@@ -1,333 +1,76 @@
+import fs from "fs";
+import path from "path";
+import os from "os";
+import crypto from "crypto";
 import express from "express";
 import multer from "multer";
-import fs from "fs";
-import fsp from "fs/promises";
-import path from "path";
+import cors from "cors";
 import { fileURLToPath } from "url";
-import crypto from "crypto";
-import { spawn } from "child_process";
-import ffmpegStatic from "ffmpeg-static";
 import { createClient } from "@supabase/supabase-js";
+import ffmpeg from "ffmpeg-static";
+import { spawn } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: "2mb" }));
+
+const upload = multer({ dest: path.join(os.tmpdir(), "calibrate_uploads") });
+
 const PORT = process.env.PORT || 3000;
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
+const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY || "";
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
-
-const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 250);
-const PLAYBOOK_MAX_RUNS = Number(process.env.PLAYBOOK_MAX_RUNS || 30);
-
-function requireEnv(name, value) {
-  if (!value) throw new Error(`Missing required env var: ${name}`);
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn(
+    "⚠ Missing SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY env vars"
+  );
 }
-requireEnv("SUPABASE_URL", SUPABASE_URL);
-requireEnv("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY);
-requireEnv("SUPABASE_ANON_KEY", SUPABASE_ANON_KEY);
-requireEnv("ASSEMBLYAI_API_KEY", ASSEMBLYAI_API_KEY);
-requireEnv("DEEPSEEK_API_KEY", DEEPSEEK_API_KEY);
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
 
-const app = express();
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
-
-const TMP_DIR = path.join(__dirname, "tmp");
-await fsp.mkdir(TMP_DIR, { recursive: true });
-
-function safeId(len = 12) {
-  return crypto.randomBytes(len).toString("hex");
+function sha1(buf) {
+  return crypto.createHash("sha1").update(buf).digest("hex");
 }
 
-function extFromMimetype(mime) {
-  if (!mime) return "";
-  if (mime.includes("mpeg")) return ".mp3";
-  if (mime.includes("wav")) return ".wav";
-  if (mime.includes("mp4")) return ".mp4";
-  if (mime.includes("quicktime")) return ".mov";
-  if (mime.includes("m4a")) return ".m4a";
-  return "";
-}
-
-function isVideoMimetype(mime) {
-  return (mime || "").startsWith("video/");
-}
-
-function isAudioMimetype(mime) {
-  return (mime || "").startsWith("audio/");
-}
-
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, TMP_DIR),
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname) || extFromMimetype(file.mimetype) || "";
-      cb(null, `${Date.now()}_${safeId(8)}${ext}`);
-    },
-  }),
-  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
-});
-
-// ---- AssemblyAI helpers ----
-async function assemblyUpload(filepath) {
-  const stream = fs.createReadStream(filepath);
-  const res = await fetch("https://api.assemblyai.com/v2/upload", {
-    method: "POST",
-    headers: { authorization: ASSEMBLYAI_API_KEY },
-    body: stream,
-    duplex: "half",
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`AssemblyAI upload failed (${res.status}): ${txt}`);
-  }
-  const data = await res.json();
-  if (!data.upload_url) throw new Error("AssemblyAI upload: missing upload_url");
-  return data.upload_url;
-}
-
-async function assemblyCreateTranscript(uploadUrl) {
-  const res = await fetch("https://api.assemblyai.com/v2/transcript", {
-    method: "POST",
-    headers: {
-      authorization: ASSEMBLYAI_API_KEY,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      audio_url: uploadUrl,
-      speaker_labels: true,
-      punctuate: true,
-      format_text: true,
-    }),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`AssemblyAI create transcript failed (${res.status}): ${txt}`);
-  }
-  const data = await res.json();
-  if (!data.id) throw new Error("AssemblyAI create transcript: missing id");
-  return data.id;
-}
-
-async function assemblyPollTranscript(transcriptId, timeoutMs = 12 * 60 * 1000) {
-  const start = Date.now();
-  while (true) {
-    if (Date.now() - start > timeoutMs) throw new Error("AssemblyAI transcript timed out");
-
-    const res = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
-      headers: { authorization: ASSEMBLYAI_API_KEY },
-    });
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`AssemblyAI poll failed (${res.status}): ${txt}`);
-    }
-
-    const data = await res.json();
-    if (data.status === "completed") return data;
-    if (data.status === "error") throw new Error(`AssemblyAI error: ${data.error}`);
-
-    await new Promise((r) => setTimeout(r, 2500));
-  }
-}
-
-// ---- Video -> audio extraction ----
-async function extractAudioToWav(videoPath) {
-  const ffmpegPath = ffmpegStatic;
-  if (!ffmpegPath) throw new Error("ffmpeg-static did not provide a binary path");
-
-  const outPath = path.join(TMP_DIR, `${Date.now()}_${safeId(8)}.wav`);
-  const args = ["-y", "-i", videoPath, "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", outPath];
-
-  await new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
-    let err = "";
-    p.stderr.on("data", (d) => (err += d.toString()));
-    p.on("error", reject);
-    p.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg failed (code ${code}): ${err.slice(0, 1200)}`));
-    });
-  });
-
-  return outPath;
-}
-
-// ---- Transcript formatting ----
-function normalizeTranscript(assemblyData) {
-  const utterances = Array.isArray(assemblyData.utterances) ? assemblyData.utterances : [];
-  if (utterances.length === 0) return { text: assemblyData.text || "", turns: [] };
-
-  const firstSpeaker = utterances[0]?.speaker;
-  const turns = utterances.map((u) => ({
-    speakerRaw: u.speaker,
-    speaker: u.speaker === firstSpeaker ? "You" : "Prospect",
-    start: u.start,
-    end: u.end,
-    text: (u.text || "").trim(),
-  }));
-
-  const text = turns
-    .filter((t) => t.text)
-    .map((t) => `${t.speaker}: ${t.text}`)
-    .join("\n");
-
-  return { text, turns };
-}
-
-// ---- DeepSeek chat ----
-async function deepseekChat({ messages, temperature = 0.2, max_tokens = 1200, model = "deepseek-chat" }) {
-  const res = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature,
-      max_tokens,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`DeepSeek failed (${res.status}): ${txt}`);
-  }
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content || "";
-}
-
-function safeJsonParse(maybeJson) {
+function safeJsonParse(s) {
   try {
-    return JSON.parse(maybeJson);
+    return JSON.parse(s);
   } catch {
-    const m = String(maybeJson).match(/\{[\s\S]*\}/);
-    if (!m) throw new Error("Model did not return JSON.");
-    return JSON.parse(m[0]);
+    return null;
   }
 }
 
-const ENFORCER_VERSION = "ENFORCER_V6_2025-12-31";
-
-function buildCallAnalysisPrompt({ context, scenario, transcriptText }) {
-  return [
-    {
-      role: "system",
-      content:
-        `You are Calibrate: a brutally practical post-call decision engine for sales calls.
-Return ONLY valid JSON (no markdown). No fluff. Make it immediately actionable.
-If transcript is short or unclear, say so and still give best actions.
-Enforcer=${ENFORCER_VERSION}.`,
-    },
-    {
-      role: "user",
-      content: JSON.stringify(
-        {
-          scenario: scenario || null,
-          user_context: context || "",
-          transcript: transcriptText || "",
-          output_contract: {
-            call_result: "One of: Booked Meeting | Rejected | Connected | No Show | Hostile | Voicemail | Other",
-            call_result_reason: "One sentence why",
-            overall_grade: "A|B|C|D|F",
-            overall_score_0_100: 0,
-            signal_badges: ["short badges, 2-6 items"],
-            followup: {
-              two_line: "two lines max, no emojis unless asked",
-              alt_versions: ["optional, up to 2"],
-            },
-            fix_these_first_top3: [
-              {
-                issue: "short name",
-                why_it_hurt: "short explanation",
-                do_this_instead: "specific behavior replacement",
-                example_line: "a single sentence example",
-                evidence_quote: "short quote from transcript if possible",
-              },
-            ],
-            repackaged_sections: {
-              section_1_call_summary: "tight paragraph",
-              section_2_objections: [{ objection: "string", best_response: "string", avoid: "string" }],
-              section_3_offer_clarity: { what_was_clear: "string", what_was_missing: "string" },
-              section_4_script_upgrade: { opener: "string", discovery_questions: ["strings"], close: "string" },
-              section_5_moments_to_review: [{ moment: "string", why: "string", timestamp_hint: "optional" }],
-              section_6_next_call_micro_plan: ["step 1", "step 2", "step 3"],
-            },
-          },
-        },
-        null,
-        2
-      ),
-    },
-  ];
+function nowIso() {
+  return new Date().toISOString();
 }
 
-function buildPlaybookPrompt({ entity, runs }) {
-  const compactRuns = runs.map((r) => ({
-    created_at: r.created_at,
-    call_result: r.call_result,
-    transcript: r.transcript_text,
-  }));
-
-  return [
-    { role: "system", content: `You are Calibrate Playbook Engine. Return ONLY valid JSON. No fluff.` },
-    {
-      role: "user",
-      content: JSON.stringify(
-        {
-          entity: {
-            id: entity.id,
-            name: entity.name,
-            offer: entity.offer || "",
-            industry: entity.industry || "",
-            notes: entity.notes || "",
-          },
-          calls: compactRuns,
-          output_contract: {
-            ultimate_script: {
-              opener: "string",
-              permission_based_bridge: "string",
-              qualifying_block: ["questions"],
-              value_proof_block: "string",
-              objection_map: [
-                { objection: "string", best_response: "string", fallback: "string", dont_say: "string" },
-              ],
-              close: "string",
-            },
-            what_to_say_more: ["bullets"],
-            what_to_stop_saying: ["bullets"],
-            patterns_across_calls: ["bullets"],
-            quick_drills: ["bullets"],
-            next_experiments: [{ experiment: "string", hypothesis: "string", success_metric: "string" }],
-          },
-        },
-        null,
-        2
-      ),
-    },
-  ];
+function requireUser(req) {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
+  return token;
 }
 
-// ---- API ----
-app.get("/health", (req, res) => res.json({ ok: true, service: "calibrate", enforcer: ENFORCER_VERSION }));
+async function getUserFromReq(req) {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
 
-// Frontend needs anon info for auth (safe to expose anon + url)
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error) return null;
+  return data.user || null;
+}
+
 app.get("/api/config", (req, res) => {
   res.json({
     supabaseUrl: SUPABASE_URL,
@@ -335,244 +78,517 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-app.get("/api/entities", async (req, res) => {
-  try {
-    const { data, error } = await supabase.from("entities").select("*").order("created_at", { ascending: false });
-    if (error) throw error;
-    res.json({ entities: data || [] });
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, time: nowIso() });
+});
+
+async function assemblyTranscribe(filePath) {
+  if (!ASSEMBLYAI_API_KEY) throw new Error("Missing ASSEMBLYAI_API_KEY");
+
+  const audioData = fs.readFileSync(filePath);
+
+  // 1) upload file
+  const up = await fetch("https://api.assemblyai.com/v2/upload", {
+    method: "POST",
+    headers: {
+      authorization: ASSEMBLYAI_API_KEY,
+      "content-type": "application/octet-stream",
+    },
+    body: audioData,
+  });
+  if (!up.ok) throw new Error(`AssemblyAI upload failed: ${await up.text()}`);
+  const upJson = await up.json();
+
+  // 2) request transcript
+  const tr = await fetch("https://api.assemblyai.com/v2/transcript", {
+    method: "POST",
+    headers: {
+      authorization: ASSEMBLYAI_API_KEY,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      audio_url: upJson.upload_url,
+      speaker_labels: true,
+      punctuate: true,
+      format_text: true,
+    }),
+  });
+  if (!tr.ok) throw new Error(`AssemblyAI transcript start failed: ${await tr.text()}`);
+  const trJson = await tr.json();
+
+  // 3) poll status
+  const id = trJson.id;
+  for (let i = 0; i < 120; i++) {
+    await new Promise((r) => setTimeout(r, 2500));
+    const st = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
+      headers: { authorization: ASSEMBLYAI_API_KEY },
+    });
+    if (!st.ok) throw new Error(`AssemblyAI transcript status failed: ${await st.text()}`);
+    const stJson = await st.json();
+    if (stJson.status === "completed") {
+      // Build a readable speaker transcript if utterances exist
+      const utterances = stJson.utterances || [];
+      if (utterances.length) {
+        const lines = utterances.map((u) => {
+          const sp = u.speaker != null ? `Speaker ${u.speaker}` : "Speaker";
+          return `${sp}: ${u.text}`;
+        });
+        return { text: lines.join("\n"), raw: stJson };
+      }
+      return { text: stJson.text || "", raw: stJson };
+    }
+    if (stJson.status === "error") throw new Error(`AssemblyAI error: ${stJson.error}`);
   }
+
+  throw new Error("AssemblyAI transcript timed out");
+}
+
+function extractAudioFromMp4(mp4Path) {
+  return new Promise((resolve, reject) => {
+    const outPath = path.join(os.tmpdir(), `calibrate_audio_${Date.now()}.m4a`);
+    const args = [
+      "-y",
+      "-i",
+      mp4Path,
+      "-vn",
+      "-acodec",
+      "aac",
+      "-b:a",
+      "128k",
+      outPath,
+    ];
+    const p = spawn(ffmpeg, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    p.stderr.on("data", (d) => (stderr += d.toString()));
+    p.on("close", (code) => {
+      if (code === 0) resolve(outPath);
+      else reject(new Error("ffmpeg failed: " + stderr.slice(-4000)));
+    });
+  });
+}
+
+async function deepseekJSON(system, user, temperature = 0.2) {
+  if (!DEEPSEEK_API_KEY) throw new Error("Missing DEEPSEEK_API_KEY");
+
+  const resp = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      temperature,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  const txt = await resp.text();
+  if (!resp.ok) throw new Error(`DeepSeek error: ${txt}`);
+
+  const data = safeJsonParse(txt);
+  const content = data?.choices?.[0]?.message?.content || "{}";
+  const parsed = safeJsonParse(content);
+  if (!parsed) throw new Error("DeepSeek returned invalid JSON");
+  return parsed;
+}
+
+function buildAnalysisPrompt({ transcript, context, scenario, entityAggregate }) {
+  const base = `
+You are Calibrate — a post-call decision engine for cold calls.
+
+Output MUST be valid JSON.
+
+Return keys:
+- call_result: { label: string, why: string }
+- score: number (0-100)
+- signals: string[] (short badges)
+- follow_up: { text: string }
+- top_fixes: [{ title: string, why: string, do_instead: string }]
+- notes: { quotes: [{ quote: string, why: string }] }
+
+Rules:
+- Be concise and actionable.
+- Use transcript as source of truth.
+- Follow-up should be 2 lines max.
+- Top fixes must be exactly 3 items.
+- Quotes: include 2-4 short quotes, max 18 words each.
+`;
+
+  const extra = entityAggregate
+    ? `
+Entity aggregate context (patterns across calls):
+${entityAggregate}
+`
+    : "";
+
+  const user = `
+Scenario: ${scenario || "None"}
+User context: ${context || ""}
+${extra}
+
+Transcript:
+${transcript || ""}
+`;
+
+  return { system: base.trim(), user: user.trim() };
+}
+
+async function inferOutcomeLabel(analysisJson) {
+  return analysisJson?.call_result?.label || "Unknown";
+}
+
+// -------- Entities API --------
+
+app.get("/api/entities", async (req, res) => {
+  const user = await getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const { data, error } = await supabaseAdmin
+    .from("entities")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ entities: data || [] });
 });
 
 app.post("/api/entities", async (req, res) => {
-  try {
-    const { name, offer, industry, notes } = req.body || {};
-    if (!name || !String(name).trim()) return res.status(400).json({ error: "Missing entity name" });
+  const user = await getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-    const payload = {
-      name: String(name).trim(),
-      offer: offer ? String(offer).trim() : null,
-      industry: industry ? String(industry).trim() : null,
-      notes: notes ? String(notes).trim() : null,
-    };
+  const { id, name, offer, industry, notes } = req.body || {};
+  if (!name) return res.status(400).json({ error: "Missing name" });
 
-    const { data, error } = await supabase.from("entities").insert(payload).select("*").single();
-    if (error) throw error;
+  if (id) {
+    const { error } = await supabaseAdmin
+      .from("entities")
+      .update({ name, offer, industry, notes })
+      .eq("id", id)
+      .eq("user_id", user.id);
 
-    res.json({ entity: data });
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
+    if (error) return res.status(400).json({ error: error.message });
+    return res.json({ ok: true });
   }
+
+  const { data, error } = await supabaseAdmin
+    .from("entities")
+    .insert([{ user_id: user.id, name, offer, industry, notes }])
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ entity: data });
 });
 
-app.get("/api/entities/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
+async function buildEntityAggregate(userId, entityId) {
+  const { data, error } = await supabaseAdmin
+    .from("runs")
+    .select("transcript_text, analysis_json, created_at")
+    .eq("user_id", userId)
+    .eq("entity_id", entityId)
+    .order("created_at", { ascending: false })
+    .limit(12);
 
-    const { data: entity, error: e1 } = await supabase.from("entities").select("*").eq("id", id).single();
-    if (e1) throw e1;
+  if (error) return null;
+  if (!data?.length) return null;
 
-    const { data: runs, error: e2 } = await supabase
-      .from("runs")
-      .select("id, created_at, filename, call_result, overall_score, overall_grade")
-      .eq("entity_id", id)
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (e2) throw e2;
+  // lightweight summary for prompt
+  const snippets = data
+    .map((r, i) => {
+      const label = r.analysis_json?.call_result?.label || "Unknown";
+      const fixes = (r.analysis_json?.top_fixes || [])
+        .slice(0, 2)
+        .map((f) => f.title)
+        .filter(Boolean)
+        .join(", ");
+      return `Call ${i + 1}: result=${label}; recurring_fixes=${fixes}`;
+    })
+    .join("\n");
 
-    const { data: pb, error: e3 } = await supabase
-      .from("entity_playbooks")
-      .select("*")
-      .eq("entity_id", id)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (e3) throw e3;
-
-    res.json({ entity, runs: runs || [], latest_playbook: (pb && pb[0]) || null });
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
-  }
-});
+  return snippets;
+}
 
 app.post("/api/entities/:id/playbook", async (req, res) => {
-  try {
-    const id = req.params.id;
+  const user = await getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-    const { data: entity, error: e1 } = await supabase.from("entities").select("*").eq("id", id).single();
-    if (e1) throw e1;
+  const entityId = req.params.id;
 
-    const { data: runs, error: e2 } = await supabase
-      .from("runs")
-      .select("created_at, call_result, transcript_text")
-      .eq("entity_id", id)
-      .order("created_at", { ascending: false })
-      .limit(PLAYBOOK_MAX_RUNS);
-    if (e2) throw e2;
+  const { data: entity, error: eErr } = await supabaseAdmin
+    .from("entities")
+    .select("*")
+    .eq("id", entityId)
+    .eq("user_id", user.id)
+    .single();
 
-    const usableRuns = (runs || []).filter((r) => r.transcript_text && String(r.transcript_text).trim().length > 40);
-    if (usableRuns.length === 0) return res.status(400).json({ error: "Not enough transcripts under this entity yet." });
+  if (eErr) return res.status(400).json({ error: eErr.message });
 
-    const prompt = buildPlaybookPrompt({ entity, runs: usableRuns });
-    const raw = await deepseekChat({ messages: prompt, temperature: 0.25, max_tokens: 1600 });
-    const playbook = safeJsonParse(raw);
+  const { data: runs, error: rErr } = await supabaseAdmin
+    .from("runs")
+    .select("transcript_text, analysis_json, created_at")
+    .eq("user_id", user.id)
+    .eq("entity_id", entityId)
+    .order("created_at", { ascending: false })
+    .limit(18);
 
-    const row = {
-      entity_id: id,
-      model: "deepseek-chat",
-      prompt_version: "PLAYBOOK_V1",
-      playbook_json: playbook,
-    };
+  if (rErr) return res.status(400).json({ error: rErr.message });
+  if (!runs?.length) return res.status(400).json({ error: "No runs found for this entity yet." });
 
-    const { data: saved, error: e3 } = await supabase.from("entity_playbooks").insert(row).select("*").single();
-    if (e3) throw e3;
+  const transcripts = runs.map((r) => r.transcript_text).filter(Boolean);
+  const system = `
+You are Calibrate. Generate an MVP playbook for a cold-calling entity.
 
-    res.json({ playbook: saved });
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
-  }
+Return valid JSON:
+{
+  "entity": { "name": string, "offer": string, "industry": string },
+  "ultimate_script": { "opener": string, "pitch": string, "qualify": string, "close": string },
+  "common_objections": [{ "objection": string, "best_response": string }],
+  "dont_say": string[],
+  "say_instead": string[],
+  "patterns": [{ "pattern": string, "impact": string, "fix": string }]
+}
+
+Rules:
+- Keep each script section under ~90 words.
+- Objection responses should be 2-4 sentences.
+- Focus on what repeatedly worked/failed across calls.
+`.trim();
+
+  const userPrompt = `
+Entity:
+name=${entity.name}
+offer=${entity.offer || ""}
+industry=${entity.industry || ""}
+
+Recent transcripts (most recent first):
+${transcripts.slice(0, 10).map((t, i) => `--- TRANSCRIPT ${i + 1} ---\n${t}`).join("\n\n")}
+`.trim();
+
+  const playbook = await deepseekJSON(system, userPrompt, 0.25);
+
+  // store (optional)
+  await supabaseAdmin
+    .from("entity_playbooks")
+    .insert([
+      {
+        user_id: user.id,
+        entity_id: entityId,
+        title: `Playbook ${new Date().toISOString().slice(0, 10)}`,
+        playbook_json: playbook,
+      },
+    ])
+    .select()
+    .maybeSingle();
+
+  res.json({ playbook });
 });
 
+// -------- Runs API --------
+
 app.get("/api/runs", async (req, res) => {
-  try {
-    const entityId = req.query.entity_id || null;
+  const user = await getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-    let q = supabase
-      .from("runs")
-      .select("id, created_at, filename, call_result, overall_grade, overall_score, entity_id")
-      .order("created_at", { ascending: false })
-      .limit(200);
+  const { data, error } = await supabaseAdmin
+    .from("runs")
+    .select("id, created_at, scenario, outcome_label, entity_id, entities(name)")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(50);
 
-    if (entityId) q = q.eq("entity_id", entityId);
+  if (error) return res.status(400).json({ error: error.message });
 
-    const { data, error } = await q;
-    if (error) throw error;
+  const runs = (data || []).map((r) => ({
+    ...r,
+    entity_name: r.entities?.name || "",
+  }));
 
-    res.json({ runs: data || [] });
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
-  }
+  res.json({ runs });
 });
 
 app.get("/api/runs/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const { data, error } = await supabase.from("runs").select("*").eq("id", id).single();
-    if (error) throw error;
-    res.json({ run: data });
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
-  }
+  const user = await getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const id = req.params.id;
+
+  const { data, error } = await supabaseAdmin
+    .from("runs")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ run: data });
 });
+
+app.post("/api/runs/:id/regen_followup", async (req, res) => {
+  const user = await getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const id = req.params.id;
+
+  const { data: run, error } = await supabaseAdmin
+    .from("runs")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  const prompt = `
+Generate a new 2-line follow-up message based on this call transcript and context.
+Return JSON: { "follow_up": { "text": string } }
+Be concise, confident, and specific.
+Transcript:
+${run.transcript_text || ""}
+Context:
+${run.context_text || ""}
+`.trim();
+
+  const system = `You are Calibrate. Return valid JSON only.`.trim();
+  const result = await deepseekJSON(system, prompt, 0.35);
+
+  const updated = {
+    ...(run.analysis_json || {}),
+    follow_up: result.follow_up || { text: "" },
+  };
+
+  const { data: saved, error: uErr } = await supabaseAdmin
+    .from("runs")
+    .update({ analysis_json: updated })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (uErr) return res.status(400).json({ error: uErr.message });
+  res.json({ run: saved });
+});
+
+// -------- Main Run Endpoint --------
 
 app.post("/api/run", upload.single("file"), async (req, res) => {
-  const cleanup = [];
+  const user = await getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "Missing file" });
+
+  const scenario = (req.body.scenario || "").trim();
+  const context = (req.body.context || "").trim();
+
+  const entityId = (req.body.entityId || "").trim() || null;
+  const entityName = (req.body.entityName || "").trim();
+  const entityOffer = (req.body.entityOffer || "").trim();
+  const entityIndustry = (req.body.entityIndustry || "").trim();
+
+  let finalEntityId = entityId;
+
   try {
-    if (!req.file) return res.status(400).json({ error: "Missing file" });
+    let inputPath = file.path;
+    let cleanupPaths = [file.path];
 
-    const {
-      context = "",
-      scenario = "",
-      legacyScenario = "",
-      entityId = "",
-      entityName = "",
-      entityOffer = "",
-      entityIndustry = "",
-    } = req.body || {};
+    // if mp4, extract audio
+    const isMp4 =
+      (file.mimetype || "").includes("video") ||
+      (file.originalname || "").toLowerCase().endsWith(".mp4");
 
-    let entity_id = entityId || null;
-
-    if (!entity_id && entityName && String(entityName).trim()) {
-      const name = String(entityName).trim();
-
-      const { data: found, error: fe } = await supabase.from("entities").select("*").eq("name", name).limit(1);
-      if (fe) throw fe;
-
-      if (found && found[0]) {
-        entity_id = found[0].id;
-      } else {
-        const { data: created, error: ce } = await supabase
-          .from("entities")
-          .insert({
-            name,
-            offer: entityOffer ? String(entityOffer).trim() : null,
-            industry: entityIndustry ? String(entityIndustry).trim() : null,
-          })
-          .select("*")
-          .single();
-        if (ce) throw ce;
-        entity_id = created.id;
-      }
+    if (isMp4) {
+      const audioPath = await extractAudioFromMp4(file.path);
+      inputPath = audioPath;
+      cleanupPaths.push(audioPath);
     }
 
-    const inPath = req.file.path;
-    cleanup.push(inPath);
+    // Create entity on the fly if provided
+    if (!finalEntityId && entityName) {
+      const { data: created, error: cErr } = await supabaseAdmin
+        .from("entities")
+        .insert([
+          {
+            user_id: user.id,
+            name: entityName,
+            offer: entityOffer,
+            industry: entityIndustry,
+          },
+        ])
+        .select()
+        .single();
 
-    const mime = req.file.mimetype || "";
-    const original = req.file.originalname || path.basename(inPath);
-
-    let audioPath = inPath;
-
-    if (isVideoMimetype(mime) || /\.(mp4|mov|mkv|webm)$/i.test(original)) {
-      audioPath = await extractAudioToWav(inPath);
-      cleanup.push(audioPath);
-    } else if (!isAudioMimetype(mime) && !/\.(mp3|wav|m4a|aac|ogg)$/i.test(original)) {
-      return res.status(400).json({ error: "Unsupported file type. Upload audio (mp3/wav/m4a) or video (mp4/mov)." });
+      if (cErr) throw new Error(cErr.message);
+      finalEntityId = created.id;
     }
 
-    const uploadUrl = await assemblyUpload(audioPath);
-    const transcriptId = await assemblyCreateTranscript(uploadUrl);
-    const assemblyData = await assemblyPollTranscript(transcriptId);
+    // Transcribe
+    const tr = await assemblyTranscribe(inputPath);
+    const transcriptText = tr.text || "";
+    const transcriptHash = sha1(Buffer.from(transcriptText, "utf-8"));
 
-    const { text: transcriptText, turns } = normalizeTranscript(assemblyData);
+    // Optional aggregate context for entity
+    let entityAggregate = null;
+    if (finalEntityId) {
+      entityAggregate = await buildEntityAggregate(user.id, finalEntityId);
+    }
 
-    const prompt = buildCallAnalysisPrompt({ context, scenario: scenario || legacyScenario, transcriptText });
-    const raw = await deepseekChat({ messages: prompt, temperature: 0.2, max_tokens: 1700 });
-    const analysis = safeJsonParse(raw);
+    // Analyze
+    const prompt = buildAnalysisPrompt({
+      transcript: transcriptText,
+      context,
+      scenario,
+      entityAggregate,
+    });
 
-    const call_result = analysis?.call_result || "Other";
-    const call_result_reason = analysis?.call_result_reason || "";
-    const overall_grade = analysis?.overall_grade || "C";
-    const overall_score = Number(analysis?.overall_score_0_100 ?? 60);
+    const analysisJson = await deepseekJSON(prompt.system, prompt.user, 0.25);
+    const outcomeLabel = await inferOutcomeLabel(analysisJson);
 
+    // Store run
     const runRow = {
-      filename: original,
-      scenario: scenario || null,
-      legacy_scenario: legacyScenario || null,
-      context: context || "",
-      entity_id,
-      transcript_text: transcriptText || "",
-      transcript_json: { turns, assembly: { id: transcriptId } },
-      analysis_json: analysis,
-      call_result,
-      call_result_reason,
-      overall_grade,
-      overall_score,
-      enforcer_version: ENFORCER_VERSION,
+      user_id: user.id,
+      scenario,
+      context_text: context,
+      transcript_text: transcriptText,
+      transcript_hash: transcriptHash,
+      outcome_label: outcomeLabel,
+      analysis_json: analysisJson,
+      entity_id: finalEntityId,
     };
 
-    const { data: saved, error: se } = await supabase.from("runs").insert(runRow).select("*").single();
-    if (se) throw se;
+    const { data: saved, error: sErr } = await supabaseAdmin
+      .from("runs")
+      .insert([runRow])
+      .select()
+      .single();
+
+    if (sErr) throw new Error(sErr.message);
+
+    // cleanup temp files
+    cleanupPaths.forEach((p) => {
+      try { fs.unlinkSync(p); } catch {}
+    });
 
     res.json({ run: saved });
-  } catch (e) {
-    res.status(500).json({ error: String(e?.message || e) });
-  } finally {
-    for (const p of cleanup) {
-      try { await fsp.unlink(p); } catch {}
-    }
+  } catch (err) {
+    try { fs.unlinkSync(file.path); } catch {}
+    return res.status(400).json({ error: err.message || String(err) });
   }
 });
 
-// Serve frontend
-app.use(express.static(path.join(__dirname)));
+// Serve SPA index for all GET routes (Express 5-safe)
+const webDir = path.join(__dirname);
+const indexPath = path.join(webDir, "index.html");
 
-// SPA fallback (REGEX to avoid path-to-regexp wildcard crash)
-app.get(/^\/(?!api\/).*/, (req, res, next) => {
-  if (req.path.includes(".")) return next();
-  return res.sendFile(path.join(__dirname, "index.html"));
+app.get(/^\/(?!api\/).*/, (req, res) => {
+  res.sendFile(indexPath);
 });
 
 app.listen(PORT, () => {
-  console.log(`Calibrate listening on :${PORT}`);
+  console.log(`Calibrate MVP running on :${PORT}`);
 });
