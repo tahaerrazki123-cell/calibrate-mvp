@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
 
@@ -30,6 +31,7 @@ function requireEnv(name, value) {
 }
 requireEnv("SUPABASE_URL", SUPABASE_URL);
 requireEnv("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY);
+requireEnv("SUPABASE_ANON_KEY", SUPABASE_ANON_KEY);
 requireEnv("ASSEMBLYAI_API_KEY", ASSEMBLYAI_API_KEY);
 requireEnv("DEEPSEEK_API_KEY", DEEPSEEK_API_KEY);
 
@@ -142,7 +144,7 @@ async function assemblyPollTranscript(transcriptId, timeoutMs = 12 * 60 * 1000) 
   }
 }
 
-// ---- Video -> audio extraction (ffmpeg-static) ----
+// ---- Video -> audio extraction ----
 async function extractAudioToWav(videoPath) {
   const ffmpegPath = ffmpegStatic;
   if (!ffmpegPath) throw new Error("ffmpeg-static did not provide a binary path");
@@ -167,9 +169,7 @@ async function extractAudioToWav(videoPath) {
 // ---- Transcript formatting ----
 function normalizeTranscript(assemblyData) {
   const utterances = Array.isArray(assemblyData.utterances) ? assemblyData.utterances : [];
-  if (utterances.length === 0) {
-    return { text: assemblyData.text || "", turns: [] };
-  }
+  if (utterances.length === 0) return { text: assemblyData.text || "", turns: [] };
 
   const firstSpeaker = utterances[0]?.speaker;
   const turns = utterances.map((u) => ({
@@ -326,6 +326,14 @@ function buildPlaybookPrompt({ entity, runs }) {
 
 // ---- API ----
 app.get("/health", (req, res) => res.json({ ok: true, service: "calibrate", enforcer: ENFORCER_VERSION }));
+
+// Frontend needs anon info for auth (safe to expose anon + url)
+app.get("/api/config", (req, res) => {
+  res.json({
+    supabaseUrl: SUPABASE_URL,
+    supabaseAnonKey: SUPABASE_ANON_KEY,
+  });
+});
 
 app.get("/api/entities", async (req, res) => {
   try {
@@ -559,15 +567,8 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
 // Serve frontend
 app.use(express.static(path.join(__dirname)));
 
-/**
- * CRITICAL FIX (for your deploy):
- * Express/path-to-regexp is erroring on "*" and "/*".
- * Use a REGEX fallback instead (bypasses path-to-regexp entirely).
- *
- * This serves index.html for any non-API GET route (SPA fallback).
- */
+// SPA fallback (REGEX to avoid path-to-regexp wildcard crash)
 app.get(/^\/(?!api\/).*/, (req, res, next) => {
-  // if it looks like a file request, let it 404 naturally
   if (req.path.includes(".")) return next();
   return res.sendFile(path.join(__dirname, "index.html"));
 });

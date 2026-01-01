@@ -1,1295 +1,705 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Calibrate MVP</title>
+  <title>Calibrate</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
-      --bg:#0b0f17;
-      --panel:#0f1624;
-      --panel2:#0c1220;
-      --line:#1f2a3d;
-      --text:#e8eefc;
-      --muted:#9fb0cf;
-      --good:#2dd4bf;
-      --warn:#fbbf24;
-      --bad:#fb7185;
-      --accent:#60a5fa;
-      --accent2:#a78bfa;
-      --shadow: 0 18px 50px rgba(0,0,0,.35);
-      --r: 16px;
-      --r2: 22px;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      --bg:#ffffff;
+      --panel:#ffffff;
+      --muted:#f5f7fb;
+      --border:#e6eaf2;
+      --text:#0b1220;
+      --sub:#5b6475;
+      --blue:#2563eb;
+      --blue2:#1d4ed8;
+      --good:#16a34a;
+      --warn:#f59e0b;
+      --bad:#dc2626;
+      --shadow: 0 8px 22px rgba(10,20,40,.08);
+      --r:14px;
     }
     *{box-sizing:border-box}
-    html,body{height:100%}
     body{
       margin:0;
-      font-family:var(--sans);
-      background:
-        radial-gradient(900px 500px at 20% -10%, rgba(96,165,250,.25), transparent 60%),
-        radial-gradient(900px 500px at 90% 10%, rgba(167,139,250,.18), transparent 60%),
-        radial-gradient(900px 500px at 50% 120%, rgba(45,212,191,.12), transparent 60%),
-        var(--bg);
-      color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      background: var(--bg);
+      color: var(--text);
     }
-    a{color:inherit}
-    .app{
-      display:grid;
-      grid-template-columns: 280px 1fr;
-      min-height:100vh;
-    }
-    .nav{
-      border-right:1px solid var(--line);
-      padding:18px;
-      background: rgba(15,22,36,.55);
-      backdrop-filter: blur(10px);
-    }
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding:12px 12px 16px 12px;
-    }
-    .logo{
-      width:36px;height:36px;border-radius:12px;
-      background: linear-gradient(135deg, rgba(96,165,250,1), rgba(167,139,250,1));
-      box-shadow: 0 10px 30px rgba(96,165,250,.18);
-    }
-    .brand h1{font-size:16px;margin:0}
-    .brand p{margin:2px 0 0 0;color:var(--muted);font-size:12px}
-    .navlinks{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-    .navbtn{
-      display:flex;align-items:center;gap:10px;
-      padding:10px 12px;border-radius:14px;
-      border:1px solid rgba(31,42,61,.6);
-      background: rgba(15,22,36,.6);
-      cursor:pointer;
-      transition:.15s transform, .15s background, .15s border;
-      color:var(--text);
-    }
-    .navbtn:hover{transform: translateY(-1px); border-color: rgba(96,165,250,.45)}
-    .navbtn.active{background: rgba(96,165,250,.12); border-color: rgba(96,165,250,.55)}
-    .navbtn span{font-size:13px}
-    .tiny{font-size:12px;color:var(--muted)}
-    .main{
-      padding:22px;
-    }
+    .wrap{max-width:1100px;margin:0 auto;padding:22px}
     .topbar{
       display:flex;align-items:center;justify-content:space-between;
-      gap:12px;
-      margin-bottom:14px;
+      padding:14px 18px;border:1px solid var(--border);border-radius:var(--r);
+      background:var(--panel); box-shadow: var(--shadow);
     }
-    .title{
-      display:flex;flex-direction:column;gap:4px;
+    .brand{display:flex;align-items:center;gap:10px}
+    .logo{
+      width:36px;height:36px;border-radius:12px;
+      background: linear-gradient(135deg, var(--blue), #60a5fa);
+      box-shadow:0 10px 20px rgba(37,99,235,.25);
     }
-    .title h2{margin:0;font-size:18px}
-    .title .sub{color:var(--muted);font-size:13px}
+    .brand h1{font-size:16px;margin:0;font-weight:800;letter-spacing:.2px}
+    .brand .tag{font-size:12px;color:var(--sub);margin-top:2px}
+    .right{display:flex;align-items:center;gap:10px}
     .pill{
-      display:inline-flex;align-items:center;gap:8px;
-      padding:8px 10px;border-radius:999px;
-      background: rgba(15,22,36,.7);
-      border:1px solid rgba(31,42,61,.8);
-      color:var(--muted);
-      font-size:12px;
-    }
-    .grid{
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:14px;
-    }
-    .card{
-      background: rgba(15,22,36,.72);
-      border: 1px solid rgba(31,42,61,.8);
-      border-radius: var(--r2);
-      box-shadow: var(--shadow);
-      overflow:hidden;
-    }
-    .card .hd{
-      padding:14px 16px;
-      border-bottom:1px solid rgba(31,42,61,.75);
-      display:flex;align-items:center;justify-content:space-between;
-      gap:12px;
-      background: rgba(12,18,32,.55);
-    }
-    .card .hd h3{margin:0;font-size:14px}
-    .card .bd{padding:16px}
-    .row{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:14px;
-    }
-    .row3{
-      display:grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap:14px;
-    }
-    @media (max-width: 1000px){
-      .app{grid-template-columns: 1fr}
-      .nav{border-right:none;border-bottom:1px solid var(--line)}
-      .row,.row3{grid-template-columns:1fr}
+      font-size:12px;border:1px solid var(--border);padding:8px 10px;border-radius:999px;background:#fff;
+      color:var(--sub)
     }
     .btn{
-      display:inline-flex;align-items:center;justify-content:center;gap:8px;
-      padding:10px 12px;border-radius:14px;
-      border:1px solid rgba(31,42,61,.9);
-      background: rgba(96,165,250,.12);
-      color: var(--text);
-      cursor:pointer;
-      font-size:13px;
-      transition:.15s transform, .15s background, .15s border;
-      user-select:none;
-      white-space:nowrap;
+      border:1px solid var(--border);
+      background:#fff;color:var(--text);
+      padding:10px 12px;border-radius:12px;
+      font-weight:700;cursor:pointer;
     }
-    .btn:hover{transform: translateY(-1px); border-color: rgba(96,165,250,.55)}
-    .btn.secondary{background: rgba(15,22,36,.7)}
-    .btn.danger{background: rgba(251,113,133,.12); border-color: rgba(251,113,133,.35)}
-    .btn.good{background: rgba(45,212,191,.10); border-color: rgba(45,212,191,.30)}
-    .btn.small{padding:8px 10px;border-radius:12px;font-size:12px}
-    .input, select, textarea{
-      width:100%;
-      padding:10px 12px;
-      border-radius:14px;
-      border:1px solid rgba(31,42,61,.9);
-      background: rgba(12,18,32,.55);
-      color:var(--text);
-      outline:none;
-      font-size:13px;
+    .btn.primary{
+      background: var(--blue);
+      border-color: var(--blue);
+      color:#fff;
     }
-    textarea{min-height:94px; resize: vertical}
-    .muted{color:var(--muted)}
-    .kpi{
-      display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
+    .btn.primary:hover{background:var(--blue2)}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .grid{
+      display:grid;grid-template-columns: 1fr;
+      gap:14px;margin-top:14px;
+    }
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      padding:16px;
+    }
+    .card h2{margin:0 0 10px 0;font-size:14px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+    .tab{
+      padding:10px 12px;border-radius:999px;border:1px solid var(--border);
+      background:#fff;font-weight:800;font-size:12px;color:var(--sub);cursor:pointer;
+    }
+    .tab.active{background:var(--muted);color:var(--text);border-color:var(--border)}
+    label{display:block;font-size:12px;color:var(--sub);margin:10px 0 6px}
+    input, select, textarea{
+      width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--border);
+      outline:none;background:#fff;font-size:14px;color:var(--text);
+    }
+    textarea{min-height:90px;resize:vertical}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    .muted{color:var(--sub);font-size:12px;line-height:1.35}
+    .hr{height:1px;background:var(--border);margin:14px 0}
+    .kpi{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    .badge{
+      border:1px solid var(--border);
+      padding:8px 10px;border-radius:999px;
+      font-size:12px;font-weight:800;background:var(--muted);
     }
     .big{
-      font-size:18px;
-      font-weight:700;
-      letter-spacing:.2px;
+      display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;
     }
-    .tag{
-      display:inline-flex;align-items:center;gap:8px;
-      padding:7px 10px;border-radius:999px;
-      border:1px solid rgba(31,42,61,.9);
-      background: rgba(12,18,32,.55);
-      color:var(--muted);
-      font-size:12px;
+    .result{
+      display:flex;flex-direction:column;gap:6px;
     }
-    .tag.good{border-color: rgba(45,212,191,.35); color: rgba(45,212,191,.95)}
-    .tag.warn{border-color: rgba(251,191,36,.35); color: rgba(251,191,36,.95)}
-    .tag.bad{border-color: rgba(251,113,133,.35); color: rgba(251,113,133,.95)}
-    .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-    .mono{font-family:var(--mono)}
-    .divider{height:1px;background:rgba(31,42,61,.75);margin:14px 0}
-    .list{
-      display:flex;flex-direction:column;gap:10px;
+    .result .label{font-weight:900;font-size:18px}
+    .scorebox{
+      display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:160px;
     }
-    .issue{
-      padding:12px;border-radius:16px;
-      border:1px solid rgba(31,42,61,.85);
-      background: rgba(12,18,32,.45);
+    .grade{
+      font-weight:1000;font-size:18px;
+      padding:10px 12px;border-radius:14px;border:1px solid var(--border);
+      background:var(--muted);
     }
-    .issue .t{font-weight:700;font-size:13px;margin-bottom:6px}
-    .issue .x{color:var(--muted);font-size:12.5px;line-height:1.45}
-    .split{
-      display:grid;
-      grid-template-columns: 1.2fr .8fr;
-      gap:14px;
+    .grade.A{border-color:#bbf7d0;background:#f0fdf4}
+    .grade.B{border-color:#d9f99d;background:#f7fee7}
+    .grade.C{border-color:#fde68a;background:#fffbeb}
+    .grade.D,.grade.F{border-color:#fecaca;background:#fef2f2}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
+    .listItem{
+      border:1px solid var(--border);
+      background:#fff;border-radius:14px;padding:12px;margin-top:10px;
     }
-    @media (max-width: 1200px){
-      .split{grid-template-columns:1fr}
-    }
-
-    /* Transcript drawer */
-    .drawer{
-      position:fixed;
-      inset: 0 0 0 auto;
-      width: 520px;
-      max-width: 92vw;
-      background: rgba(11,15,23,.88);
-      backdrop-filter: blur(14px);
-      border-left: 1px solid rgba(31,42,61,.85);
-      transform: translateX(110%);
-      transition: .18s transform ease;
-      z-index: 50;
-      display:flex;flex-direction:column;
-    }
-    .drawer.open{transform: translateX(0)}
-    .drawer .dh{
-      padding:14px 16px;
-      display:flex;align-items:center;justify-content:space-between;gap:12px;
-      border-bottom:1px solid rgba(31,42,61,.85);
-    }
-    .drawer .db{
-      padding:14px 16px;
-      overflow:auto;
-    }
-    .bubble{
-      padding:10px 12px;
-      border-radius:16px;
-      margin-bottom:10px;
-      border:1px solid rgba(31,42,61,.85);
-      background: rgba(12,18,32,.55);
-    }
-    .bubble.you{border-color: rgba(96,165,250,.35); background: rgba(96,165,250,.08)}
-    .bubble.prospect{border-color: rgba(167,139,250,.35); background: rgba(167,139,250,.08)}
-    .bubble .who{font-size:12px;color:var(--muted);margin-bottom:5px}
-    .bubble .txt{font-size:13px;line-height:1.45}
-    .hidden{display:none !important}
-    .toast{
-      position:fixed; left: 18px; bottom: 18px;
-      padding:10px 12px;
-      border-radius:14px;
-      background: rgba(15,22,36,.88);
-      border:1px solid rgba(31,42,61,.85);
-      color: var(--text);
-      box-shadow: var(--shadow);
-      z-index: 80;
-      opacity:0;
-      transform: translateY(8px);
-      transition:.15s opacity, .15s transform;
-      pointer-events:none;
-      font-size:13px;
-    }
-    .toast.on{opacity:1; transform: translateY(0)}
+    .listItem .t{font-weight:900}
+    .listItem .s{color:var(--sub);font-size:12px;margin-top:6px;line-height:1.35}
     details{
-      border:1px solid rgba(31,42,61,.8);
-      background: rgba(12,18,32,.40);
-      border-radius: 16px;
-      padding: 10px 12px;
+      border:1px solid var(--border);border-radius:14px;padding:10px;background:#fff;
     }
-    details summary{
-      cursor:pointer;
-      font-weight:700;
-      font-size:13px;
-      color: var(--text);
-      list-style:none;
-      display:flex; align-items:center; justify-content:space-between;
+    summary{cursor:pointer;font-weight:900}
+    pre{
+      white-space:pre-wrap;word-wrap:break-word;
+      background:var(--muted);border:1px solid var(--border);
+      padding:12px;border-radius:14px;margin:10px 0 0 0;
+      font-size:12px;line-height:1.35;
     }
-    details summary::-webkit-details-marker{display:none}
-    .kv{display:grid;grid-template-columns: 160px 1fr;gap:10px;margin-top:10px}
-    .kv .k{color:var(--muted);font-size:12px}
-    .kv .v{font-size:12.5px;line-height:1.45}
-    .table{
-      width:100%;
-      border-collapse:separate;
-      border-spacing:0;
-      overflow:hidden;
-      border-radius: 16px;
-      border:1px solid rgba(31,42,61,.8);
+    .toast{
+      position:fixed;left:50%;transform:translateX(-50%);
+      bottom:18px;background:#0b1220;color:#fff;
+      padding:10px 12px;border-radius:999px;font-size:12px;
+      box-shadow:0 14px 40px rgba(0,0,0,.22);
+      display:none;
     }
-    .table th,.table td{
-      padding:10px 10px;
-      border-bottom:1px solid rgba(31,42,61,.75);
-      font-size:12.5px;
-      text-align:left;
-    }
-    .table th{color:var(--muted);font-weight:600;background: rgba(12,18,32,.45)}
-    .table tr:last-child td{border-bottom:none}
+    .authWrap{max-width:520px;margin:22px auto}
   </style>
 </head>
 <body>
-  <div class="app">
-    <aside class="nav">
+  <div class="wrap">
+    <div class="topbar">
       <div class="brand">
         <div class="logo"></div>
         <div>
           <h1>Calibrate</h1>
-          <p>Post-call command center</p>
+          <div class="tag">Post-call command center</div>
         </div>
       </div>
+      <div class="right">
+        <div class="pill" id="pillUser">Not signed in</div>
+        <button class="btn" id="btnSignOut" style="display:none">Sign out</button>
+      </div>
+    </div>
 
-      <div class="navlinks">
-        <button class="navbtn active" data-route="home"><span>Home</span></button>
-        <button class="navbtn" data-route="upload"><span>Upload Call</span></button>
-        <button class="navbtn" data-route="runs"><span>Runs</span></button>
-        <button class="navbtn" data-route="entities"><span>Entities</span></button>
-        <button class="navbtn" data-route="playbook"><span>Playbook</span></button>
+    <div id="authView" class="authWrap" style="display:none">
+      <div class="card">
+        <h2>Sign in</h2>
+        <div class="muted">
+          Enter your email. We’ll send a magic link. This is the landing experience new users should see.
+        </div>
+        <label>Email</label>
+        <input id="authEmail" type="email" placeholder="you@domain.com" />
+        <div style="display:flex;gap:10px;margin-top:10px">
+          <button class="btn primary" id="btnSendLink">Send magic link</button>
+          <button class="btn" id="btnRefreshSession">I already clicked the link</button>
+        </div>
+        <div class="muted" style="margin-top:10px" id="authMsg"></div>
+      </div>
+    </div>
+
+    <div id="appView" style="display:none">
+      <div class="tabs">
+        <button class="tab active" data-tab="upload">Upload Call</button>
+        <button class="tab" data-tab="runs">Runs</button>
+        <button class="tab" data-tab="entities">Entities</button>
+        <button class="tab" data-tab="playbook">Playbook</button>
       </div>
 
-      <div style="margin-top:14px" class="tiny">
-        <div class="pill"><span class="mono" id="healthDot">●</span> <span id="healthText">Checking…</span></div>
-        <div style="margin-top:10px" class="muted">
-          Goal: less reading, more action.<br/>
-          Transcript is proof — not the centerpiece.
-        </div>
-      </div>
-    </aside>
+      <div class="grid">
+        <div id="tab-upload" class="card">
+          <h2>Upload Call</h2>
+          <div class="muted">Accepts audio (mp3/wav/m4a) and video (mp4/mov). Video is auto-extracted to audio on the server.</div>
 
-    <main class="main">
-      <div class="topbar">
-        <div class="title">
-          <h2 id="pageTitle">Home</h2>
-          <div class="sub" id="pageSub">Welcome to Calibrate.</div>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center">
-          <div class="pill" id="activeHint">Ready</div>
-          <button class="btn secondary" id="openTranscriptBtn" style="display:none">View Transcript</button>
-        </div>
-      </div>
+          <label>File</label>
+          <input id="file" type="file" accept=".mp3,.wav,.m4a,.mp4,.mov,video/*,audio/*" />
 
-      <!-- HOME -->
-      <section id="view_home" class="grid">
-        <div class="card">
-          <div class="hd">
-            <h3>Calibrate MVP</h3>
-            <span class="tag">Decision engine, not a report</span>
+          <div class="row">
+            <div>
+              <label>Scenario (optional)</label>
+              <input id="scenario" placeholder="B2B service / software" />
+            </div>
+            <div>
+              <label>Entity (optional)</label>
+              <select id="entitySelect">
+                <option value="">None</option>
+              </select>
+            </div>
           </div>
-          <div class="bd">
-            <div class="split">
+
+          <details style="margin-top:10px">
+            <summary>Create new entity (optional)</summary>
+            <div class="row" style="margin-top:10px">
               <div>
-                <div class="big">Finish a call → open Calibrate → know exactly what to do in 30 seconds.</div>
-                <p class="muted" style="line-height:1.55;margin-top:10px">
-                  This build keeps all your report content, but repackages it into a single command center:
-                  outcome + why, follow-up generator, and the top 3 fixes — with the transcript tucked away as proof.
-                </p>
-                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
-                  <button class="btn" onclick="go('upload')">Upload a call</button>
-                  <button class="btn secondary" onclick="go('runs')">View runs</button>
-                  <button class="btn secondary" onclick="go('entities')">Entities</button>
-                </div>
+                <label>Entity name</label>
+                <input id="entityName" placeholder="Bright Smile Dental — AI Receptionist" />
               </div>
               <div>
-                <div class="issue">
-                  <div class="t">What’s new in this update</div>
-                  <div class="x">
-                    MP4/MOV uploads supported. Entities group runs under one offer. Playbooks synthesize multiple calls.
-                    The report is now a single command center (no more “five tabs to get value”).
-                  </div>
-                </div>
-                <div class="divider"></div>
-                <div class="issue">
-                  <div class="t">How to use it (MVP)</div>
-                  <div class="x">
-                    Create/select an Entity on upload. After a few runs, generate a Playbook to get the “ultimate script”
-                    plus objection responses and patterns across calls.
-                  </div>
-                </div>
+                <label>Industry</label>
+                <input id="entityIndustry" placeholder="Dental / Local services" />
               </div>
             </div>
+            <label>Offer</label>
+            <input id="entityOffer" placeholder="AI receptionist that answers + books appointments" />
+          </details>
+
+          <label>Context (required)</label>
+          <textarea id="context" placeholder="What you’re selling + who you’re calling + goal of the call. Keep it short."></textarea>
+
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button class="btn primary" id="btnRun">Run analysis</button>
+            <button class="btn" id="btnClear">Clear</button>
           </div>
+
+          <div class="muted" style="margin-top:10px" id="runStatus"></div>
         </div>
-      </section>
 
-      <!-- UPLOAD -->
-      <section id="view_upload" class="grid hidden">
-        <div class="card">
-          <div class="hd">
-            <h3>Upload Call</h3>
-            <span class="tag">Audio or Video</span>
-          </div>
-          <div class="bd">
-            <div class="row">
-              <div>
-                <label class="tiny">File (MP3/WAV/M4A/MP4/MOV)</label>
-                <input class="input" id="file" type="file" accept="audio/*,video/*" />
-                <div class="tiny muted" style="margin-top:8px">
-                  Video uploads are converted to 16k mono WAV before transcription.
-                </div>
+        <div id="reportView" class="card" style="display:none"></div>
 
-                <div style="margin-top:12px">
-                  <label class="tiny">Scenario (optional)</label>
-                  <input class="input" id="scenario" placeholder="e.g., B2B service / software" />
-                </div>
-
-                <div style="margin-top:12px">
-                  <label class="tiny">Context (required)</label>
-                  <textarea id="context" class="input" placeholder="What are you selling? Who are you calling? Keep it short."></textarea>
-                </div>
-              </div>
-
-              <div>
-                <div class="issue">
-                  <div class="t">Entity (Organization/Offer)</div>
-                  <div class="x">
-                    Assign this call to an Entity so Calibrate can synthesize multiple calls into one Playbook.
-                  </div>
-                </div>
-
-                <div style="margin-top:12px">
-                  <label class="tiny">Select existing Entity</label>
-                  <select id="entitySelect" class="input"></select>
-                  <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-                    <button class="btn secondary small" onclick="refreshEntities()">Refresh</button>
-                    <button class="btn secondary small" onclick="toggleNewEntity(true)">Create new</button>
-                  </div>
-                </div>
-
-                <div id="newEntityBox" class="hidden" style="margin-top:12px">
-                  <div class="issue">
-                    <div class="t">Create new Entity (MVP)</div>
-                    <div class="x">Name it by business/offer. You can refine later.</div>
-                  </div>
-                  <div style="margin-top:10px">
-                    <label class="tiny">Entity name</label>
-                    <input id="entityName" class="input" placeholder="e.g., Bright Smile Dental – AI Receptionist" />
-                  </div>
-                  <div style="margin-top:10px">
-                    <label class="tiny">Offer (optional)</label>
-                    <input id="entityOffer" class="input" placeholder="e.g., AI receptionist that never misses calls" />
-                  </div>
-                  <div style="margin-top:10px">
-                    <label class="tiny">Industry (optional)</label>
-                    <input id="entityIndustry" class="input" placeholder="e.g., Dental" />
-                  </div>
-                  <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-                    <button class="btn secondary small" onclick="toggleNewEntity(false)">Cancel</button>
-                  </div>
-                </div>
-
-                <div class="divider"></div>
-
-                <div style="display:flex;gap:10px;flex-wrap:wrap">
-                  <button class="btn" id="runBtn" onclick="submitRun()">Run</button>
-                  <button class="btn secondary" onclick="go('runs')">Go to Runs</button>
-                </div>
-
-                <div id="uploadStatus" class="tiny muted" style="margin-top:10px"></div>
-              </div>
-            </div>
-          </div>
+        <div id="tab-runs" class="card" style="display:none">
+          <h2>Runs</h2>
+          <div class="muted">Click a run to open the command center report.</div>
+          <div id="runsList"></div>
         </div>
-      </section>
 
-      <!-- RUNS -->
-      <section id="view_runs" class="grid hidden">
-        <div class="card">
-          <div class="hd">
-            <h3>Runs</h3>
-            <div style="display:flex;gap:10px;align-items:center">
-              <select id="runsEntityFilter" class="input" style="width:240px"></select>
-              <button class="btn secondary small" onclick="loadRuns()">Refresh</button>
-            </div>
-          </div>
-          <div class="bd">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Result</th>
-                  <th>Grade</th>
-                  <th>Entity</th>
-                  <th>Open</th>
-                </tr>
-              </thead>
-              <tbody id="runsTbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
+        <div id="tab-entities" class="card" style="display:none">
+          <h2>Entities</h2>
+          <div class="muted">Group runs under one business/offer.</div>
 
-      <!-- CALL REPORT (Command Center) -->
-      <section id="view_report" class="grid hidden">
-        <div class="card">
-          <div class="hd">
-            <h3>Call Analysis — Command Center</h3>
-            <div style="display:flex;gap:10px;align-items:center">
-              <span class="tag" id="reportEntityTag">Entity: —</span>
-              <button class="btn secondary small" onclick="go('runs')">Back</button>
-              <button class="btn secondary small" onclick="toggleTranscript(true)">Transcript</button>
-            </div>
-          </div>
-          <div class="bd">
-
-            <!-- TOP: Call Result row -->
-            <div class="card" style="box-shadow:none">
-              <div class="hd">
-                <h3>Call Result</h3>
-                <div style="display:flex;gap:10px;align-items:center">
-                  <span class="tag" id="reportGradeTag">Grade: —</span>
-                  <span class="tag" id="reportScoreTag">Score: —</span>
-                </div>
-              </div>
-              <div class="bd">
-                <div class="kpi">
-                  <div>
-                    <div class="big" id="reportResult">—</div>
-                    <div class="muted" style="margin-top:6px;line-height:1.5" id="reportReason">—</div>
-                    <div class="badges" id="reportBadges"></div>
-                  </div>
-                  <div style="min-width: 240px">
-                    <div class="issue">
-                      <div class="t">Money Action</div>
-                      <div class="x" id="moneyAction">
-                        Copy the follow-up, send it now, then fix the top 3 issues before your next dial.
-                      </div>
-                    </div>
-                    <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-                      <button class="btn good small" onclick="copyFollowup()">Copy follow-up</button>
-                      <button class="btn secondary small" onclick="toggleTranscript(true)">View proof</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style="height:14px"></div>
-
-            <!-- MIDDLE: Follow-up -->
-            <div class="card" style="box-shadow:none">
-              <div class="hd">
-                <h3>Follow-Up Generator (2 lines)</h3>
-                <div style="display:flex;gap:10px;align-items:center">
-                  <button class="btn small" onclick="copyFollowup()">Copy</button>
-                  <button class="btn secondary small" onclick="regenFollowup()">Regenerate</button>
-                </div>
-              </div>
-              <div class="bd">
-                <textarea id="followupBox" class="input" style="min-height: 84px"></textarea>
-                <div class="tiny muted" style="margin-top:8px">
-                  This is the fastest “do this right now” action on the page.
-                </div>
-              </div>
-            </div>
-
-            <div style="height:14px"></div>
-
-            <!-- BOTTOM: Fix top 3 -->
-            <div class="card" style="box-shadow:none">
-              <div class="hd">
-                <h3>Fix These First (Top 3)</h3>
-                <span class="tag">Specific replacements, not vibes</span>
-              </div>
-              <div class="bd">
-                <div class="list" id="fixList"></div>
-              </div>
-            </div>
-
-            <div style="height:14px"></div>
-
-            <!-- Repackaged "everything else" (NOT REMOVED) -->
-            <details>
-              <summary>
-                <span>More insights (repackaged — nothing removed)</span>
-                <span class="muted">Expand</span>
-              </summary>
-
-              <div class="divider"></div>
-
-              <div class="issue">
-                <div class="t">Section 1 — Call Summary</div>
-                <div class="x" id="secSummary">—</div>
-              </div>
-
-              <div style="height:10px"></div>
-
-              <div class="issue">
-                <div class="t">Section 2 — Objections</div>
-                <div class="x" id="secObjections">—</div>
-              </div>
-
-              <div style="height:10px"></div>
-
-              <div class="issue">
-                <div class="t">Section 3 — Offer Clarity</div>
-                <div class="x" id="secOffer">—</div>
-              </div>
-
-              <div style="height:10px"></div>
-
-              <div class="issue">
-                <div class="t">Section 4 — Script Upgrade</div>
-                <div class="x" id="secScript">—</div>
-              </div>
-
-              <div style="height:10px"></div>
-
-              <div class="issue">
-                <div class="t">Section 5 — Moments To Review</div>
-                <div class="x" id="secMoments">—</div>
-              </div>
-
-              <div style="height:10px"></div>
-
-              <div class="issue">
-                <div class="t">Section 6 — Next Call Micro-Plan</div>
-                <div class="x" id="secPlan">—</div>
-              </div>
-            </details>
-
-          </div>
-        </div>
-      </section>
-
-      <!-- ENTITIES -->
-      <section id="view_entities" class="grid hidden">
-        <div class="row">
-          <div class="card">
-            <div class="hd">
-              <h3>Entities</h3>
-              <button class="btn secondary small" onclick="loadEntities()">Refresh</button>
-            </div>
-            <div class="bd">
-              <div class="tiny muted" style="margin-bottom:10px">
-                Entities group calls under one business/offer. This is the backbone of Playbooks.
-              </div>
-
+          <details>
+            <summary>Create entity</summary>
+            <div style="margin-top:10px">
+              <label>Name</label>
+              <input id="newEntityName" placeholder="Entity name" />
               <div class="row">
                 <div>
-                  <label class="tiny">Name</label>
-                  <input class="input" id="entName" placeholder="e.g., SEO Agency – Ecommerce brands" />
+                  <label>Offer</label>
+                  <input id="newEntityOffer" placeholder="Offer" />
                 </div>
                 <div>
-                  <label class="tiny">Industry (optional)</label>
-                  <input class="input" id="entIndustry" placeholder="e.g., Ecommerce" />
+                  <label>Industry</label>
+                  <input id="newEntityIndustry" placeholder="Industry" />
                 </div>
               </div>
-
-              <div style="margin-top:10px">
-                <label class="tiny">Offer (optional)</label>
-                <input class="input" id="entOffer" placeholder="e.g., SEO that lifts conversion and revenue" />
-              </div>
-
-              <div style="margin-top:10px">
-                <label class="tiny">Notes (optional)</label>
-                <textarea class="input" id="entNotes" placeholder="Anything useful about this entity..."></textarea>
-              </div>
-
-              <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
-                <button class="btn" onclick="createEntity()">Create Entity</button>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="issue">
-                <div class="t">Existing</div>
-                <div class="x" id="entitiesList">Loading…</div>
-              </div>
+              <label>Notes</label>
+              <textarea id="newEntityNotes" placeholder="Notes (optional)"></textarea>
+              <button class="btn primary" id="btnCreateEntity" style="margin-top:10px">Create</button>
+              <div class="muted" id="entityCreateMsg" style="margin-top:8px"></div>
             </div>
-          </div>
+          </details>
 
-          <div class="card">
-            <div class="hd">
-              <h3>Entity Detail</h3>
-              <span class="tag" id="entityDetailTag">—</span>
-            </div>
-            <div class="bd">
-              <div class="issue">
-                <div class="t">Runs under this Entity</div>
-                <div class="x" id="entityRuns">Select an entity to view runs.</div>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="card" style="box-shadow:none">
-                <div class="hd">
-                  <h3>Playbook (MVP)</h3>
-                  <button class="btn secondary small" onclick="generatePlaybook()">Generate / Refresh</button>
-                </div>
-                <div class="bd">
-                  <div class="tiny muted" style="margin-bottom:8px">
-                    This synthesizes multiple calls into an “ultimate script” + objection map + patterns.
-                  </div>
-                  <textarea id="playbookBox" class="input" style="min-height: 240px" placeholder="Playbook appears here…"></textarea>
-                </div>
-              </div>
-
-            </div>
-          </div>
+          <div class="hr"></div>
+          <div id="entitiesList"></div>
         </div>
-      </section>
 
-      <!-- PLAYBOOK TAB -->
-      <section id="view_playbook" class="grid hidden">
-        <div class="card">
-          <div class="hd">
-            <h3>Playbook</h3>
-            <span class="tag">Entity-driven</span>
+        <div id="tab-playbook" class="card" style="display:none">
+          <h2>Playbook</h2>
+          <div class="muted">Generate an “ultimate script” + patterns across calls for one entity.</div>
+
+          <label>Select entity</label>
+          <select id="playbookEntitySelect">
+            <option value="">Choose an entity</option>
+          </select>
+
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button class="btn primary" id="btnGenPlaybook">Generate / Refresh Playbook</button>
           </div>
-          <div class="bd">
-            <p class="muted" style="line-height:1.55;margin-top:0">
-              Playbook isn’t a random checklist — it’s synthesized from your real calls under a single Entity.
-              Pick an Entity, generate a Playbook, then iterate with more uploads.
-            </p>
 
-            <div class="row">
-              <div>
-                <label class="tiny">Entity</label>
-                <select id="playbookEntitySelect" class="input"></select>
-                <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-                  <button class="btn secondary small" onclick="loadEntities()">Refresh entities</button>
-                  <button class="btn secondary small" onclick="go('entities')">Manage entities</button>
-                </div>
-              </div>
-              <div>
-                <div class="issue">
-                  <div class="t">Recommended workflow</div>
-                  <div class="x">
-                    1) Upload 5+ calls under the same Entity.<br/>
-                    2) Generate a Playbook.<br/>
-                    3) Use it as your baseline script and objection handling map.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="divider"></div>
-
-            <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <button class="btn" onclick="generatePlaybookFromTab()">Generate Playbook</button>
-              <button class="btn secondary" onclick="copyPlaybook()">Copy</button>
-            </div>
-
-            <div style="margin-top:12px">
-              <textarea id="playbookTabBox" class="input" style="min-height: 360px" placeholder="Playbook output…"></textarea>
-            </div>
-          </div>
+          <div class="muted" id="playbookMsg" style="margin-top:10px"></div>
+          <div id="playbookOut" style="margin-top:10px"></div>
         </div>
-      </section>
-
-    </main>
-  </div>
-
-  <!-- Transcript drawer -->
-  <div class="drawer" id="drawer">
-    <div class="dh">
-      <div>
-        <div class="big" style="font-size:14px">Transcript (Proof)</div>
-        <div class="tiny muted" id="transcriptMeta">—</div>
       </div>
-      <button class="btn secondary small" onclick="toggleTranscript(false)">Close</button>
-    </div>
-    <div class="db">
-      <input id="transcriptSearch" class="input" placeholder="Search transcript…" oninput="renderTranscript()" />
-      <div class="divider"></div>
-      <div id="transcriptTurns"></div>
     </div>
   </div>
 
-  <div class="toast" id="toast">Copied</div>
+  <div class="toast" id="toast"></div>
 
-<script>
-  // Simple SPA routing
-  const routes = ["home","upload","runs","report","entities","playbook"];
-  let state = {
-    entities: [],
-    entityById: {},
-    selectedEntityId: null,
-    runs: [],
-    currentRun: null,
-    transcript: { turns: [] },
-    playbookJson: null
-  };
+  <script>
+    let supabase = null;
+    let config = null;
+    let entities = [];
+    let runs = [];
+    let currentRun = null;
 
-  const $ = (id) => document.getElementById(id);
+    const $ = (id) => document.getElementById(id);
 
-  function toast(msg="Done"){
-    const t = $("toast");
-    t.textContent = msg;
-    t.classList.add("on");
-    setTimeout(()=>t.classList.remove("on"), 1300);
-  }
-
-  function setNavActive(route){
-    document.querySelectorAll(".navbtn").forEach(b=>{
-      b.classList.toggle("active", b.dataset.route === route);
-    });
-  }
-
-  function showView(route){
-    routes.forEach(r=>{
-      $("view_"+r).classList.toggle("hidden", r !== route);
-    });
-    setNavActive(route);
-
-    $("openTranscriptBtn").style.display = (route === "report" && state.currentRun) ? "inline-flex" : "none";
-    $("pageTitle").textContent = ({
-      home:"Home",
-      upload:"Upload Call",
-      runs:"Runs",
-      report:"Call Analysis",
-      entities:"Entities",
-      playbook:"Playbook"
-    })[route] || "Calibrate";
-
-    $("pageSub").textContent = ({
-      home:"Welcome to Calibrate.",
-      upload:"Upload audio or video, generate transcript + command-center report.",
-      runs:"Browse recent runs and open reports.",
-      report:"Outcome, follow-up, top fixes — transcript is proof.",
-      entities:"Group calls under an offer and synthesize playbooks.",
-      playbook:"Generate the ultimate script from multiple calls."
-    })[route] || "";
-  }
-
-  function go(route){
-    window.location.hash = route;
-  }
-
-  window.addEventListener("hashchange", ()=>{
-    const r = (window.location.hash || "#home").replace("#","");
-    showView(routes.includes(r) ? r : "home");
-    if (r === "runs") loadRuns();
-    if (r === "entities") loadEntities();
-    if (r === "upload") refreshEntities();
-    if (r === "playbook") loadEntities();
-  });
-
-  document.querySelectorAll(".navbtn").forEach(b=>{
-    b.addEventListener("click", ()=> go(b.dataset.route));
-  });
-
-  $("openTranscriptBtn").addEventListener("click", ()=> toggleTranscript(true));
-
-  async function api(path, opts={}){
-    const res = await fetch(path, opts);
-    const data = await res.json().catch(()=> ({}));
-    if (!res.ok) throw new Error(data.error || ("Request failed: " + res.status));
-    return data;
-  }
-
-  async function checkHealth(){
-    try{
-      const d = await api("/health");
-      $("healthDot").style.color = "var(--good)";
-      $("healthText").textContent = "Online";
-      $("activeHint").textContent = d.enforcer ? d.enforcer : "Ready";
-    }catch(e){
-      $("healthDot").style.color = "var(--bad)";
-      $("healthText").textContent = "Offline";
-      $("activeHint").textContent = "Error";
+    function toast(msg){
+      const t = $("toast");
+      t.textContent = msg;
+      t.style.display = "block";
+      setTimeout(()=>t.style.display="none", 1400);
     }
-  }
 
-  function toggleNewEntity(on){
-    $("newEntityBox").classList.toggle("hidden", !on);
-  }
-
-  function entityNameById(id){
-    return (state.entityById[id]?.name) || "—";
-  }
-
-  async function refreshEntities(){
-    const d = await api("/api/entities");
-    state.entities = d.entities || [];
-    state.entityById = {};
-    state.entities.forEach(e=> state.entityById[e.id] = e);
-
-    // upload select
-    const sel = $("entitySelect");
-    sel.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "No entity (not recommended)";
-    sel.appendChild(opt0);
-
-    state.entities.forEach(e=>{
-      const o = document.createElement("option");
-      o.value = e.id;
-      o.textContent = e.name;
-      sel.appendChild(o);
-    });
-
-    // runs filter
-    const f = $("runsEntityFilter");
-    f.innerHTML = "";
-    const all = document.createElement("option");
-    all.value = "";
-    all.textContent = "All entities";
-    f.appendChild(all);
-    state.entities.forEach(e=>{
-      const o = document.createElement("option");
-      o.value = e.id;
-      o.textContent = e.name;
-      f.appendChild(o);
-    });
-
-    // playbook select
-    const ps = $("playbookEntitySelect");
-    ps.innerHTML = "";
-    const p0 = document.createElement("option");
-    p0.value = "";
-    p0.textContent = "Select an entity…";
-    ps.appendChild(p0);
-    state.entities.forEach(e=>{
-      const o = document.createElement("option");
-      o.value = e.id;
-      o.textContent = e.name;
-      ps.appendChild(o);
-    });
-  }
-
-  async function submitRun(){
-    const file = $("file").files[0];
-    const context = $("context").value.trim();
-    const scenario = $("scenario").value.trim();
-
-    const entityId = $("entitySelect").value || "";
-    const creating = !$("newEntityBox").classList.contains("hidden");
-    const entityName = creating ? $("entityName").value.trim() : "";
-    const entityOffer = creating ? $("entityOffer").value.trim() : "";
-    const entityIndustry = creating ? $("entityIndustry").value.trim() : "";
-
-    if (!file) return toast("Pick a file");
-    if (!context) return toast("Context is required");
-
-    $("runBtn").disabled = true;
-    $("uploadStatus").textContent = "Uploading + transcribing + analyzing…";
-
-    try{
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("context", context);
-      fd.append("scenario", scenario);
-
-      if (entityId) fd.append("entityId", entityId);
-      if (entityName) fd.append("entityName", entityName);
-      if (entityOffer) fd.append("entityOffer", entityOffer);
-      if (entityIndustry) fd.append("entityIndustry", entityIndustry);
-
-      const d = await api("/api/run", { method:"POST", body: fd });
-      toast("Done ✅");
-      $("uploadStatus").textContent = "Done ✅ Opening report…";
-      await openRun(d.run.id);
-      go("report");
-    }catch(e){
-      $("uploadStatus").textContent = "Error: " + e.message;
-      toast("Error");
-    }finally{
-      $("runBtn").disabled = false;
+    async function api(path, opts={}){
+      const res = await fetch(path, opts);
+      const txt = await res.text();
+      let data = null;
+      try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+      if (!res.ok) throw new Error(data?.error || txt || "Request failed");
+      return data;
     }
-  }
 
-  async function loadRuns(){
-    await refreshEntities();
-
-    const filter = $("runsEntityFilter").value || "";
-    let url = "/api/runs";
-    if (filter) url += "?entity_id=" + encodeURIComponent(filter);
-
-    const d = await api(url);
-    state.runs = d.runs || [];
-
-    const tb = $("runsTbody");
-    tb.innerHTML = "";
-    state.runs.forEach(r=>{
-      const tr = document.createElement("tr");
-      const dt = new Date(r.created_at);
-      tr.innerHTML = `
-        <td>${dt.toLocaleString()}</td>
-        <td>${escapeHtml(r.call_result || "—")}</td>
-        <td>${escapeHtml((r.overall_grade || "—") + " (" + (r.overall_score ?? "—") + ")")}</td>
-        <td>${escapeHtml(entityNameById(r.entity_id))}</td>
-        <td><button class="btn secondary small" onclick="openRun('${r.id}')">Open</button></td>
-      `;
-      tb.appendChild(tr);
-    });
-  }
-
-  async function openRun(id){
-    const d = await api("/api/runs/" + id);
-    state.currentRun = d.run;
-    hydrateReport(d.run);
-    go("report");
-  }
-
-  function tagToneFromResult(result){
-    const s = (result || "").toLowerCase();
-    if (s.includes("booked")) return "good";
-    if (s.includes("rejected") || s.includes("hostile")) return "bad";
-    if (s.includes("voicemail")) return "warn";
-    return "";
-  }
-
-  function hydrateReport(run){
-    const a = run.analysis_json || {};
-    const badges = a.signal_badges || [];
-    const fixes = a.fix_these_first_top3 || [];
-    const followup = a.followup?.two_line || "";
-
-    $("reportEntityTag").textContent = "Entity: " + (run.entity_id ? entityNameById(run.entity_id) : "—");
-    $("reportResult").textContent = a.call_result || run.call_result || "—";
-    $("reportReason").textContent = a.call_result_reason || run.call_result_reason || "—";
-
-    $("reportGradeTag").textContent = "Grade: " + (a.overall_grade || run.overall_grade || "—");
-    $("reportScoreTag").textContent = "Score: " + (a.overall_score_0_100 ?? run.overall_score ?? "—");
-
-    const tone = tagToneFromResult(a.call_result || run.call_result);
-    $("reportScoreTag").className = "tag " + (tone || "");
-    $("reportGradeTag").className = "tag " + (tone || "");
-
-    $("followupBox").value = followup;
-
-    const bd = $("reportBadges");
-    bd.innerHTML = "";
-    (badges || []).slice(0, 8).forEach(b=>{
-      const el = document.createElement("span");
-      el.className = "tag";
-      el.textContent = b;
-      bd.appendChild(el);
-    });
-
-    const fixList = $("fixList");
-    fixList.innerHTML = "";
-    (fixes || []).slice(0, 3).forEach((f, idx)=>{
-      const wrap = document.createElement("div");
-      wrap.className = "issue";
-      wrap.innerHTML = `
-        <div class="t">${idx+1}) ${escapeHtml(f.issue || "Issue")}</div>
-        <div class="x"><span class="muted">Why it hurt:</span> ${escapeHtml(f.why_it_hurt || "—")}</div>
-        <div class="x" style="margin-top:6px"><span class="muted">Do this instead:</span> ${escapeHtml(f.do_this_instead || "—")}</div>
-        <div class="x" style="margin-top:6px"><span class="muted">Example line:</span> <span class="mono">${escapeHtml(f.example_line || "—")}</span></div>
-        ${f.evidence_quote ? `<div class="x" style="margin-top:6px"><span class="muted">Evidence:</span> “${escapeHtml(f.evidence_quote)}”</div>` : ``}
-      `;
-      fixList.appendChild(wrap);
-    });
-
-    // repackaged sections (not removed)
-    const s = a.repackaged_sections || {};
-    $("secSummary").textContent = s.section_1_call_summary || "—";
-
-    $("secObjections").innerHTML = formatObjections(s.section_2_objections);
-    $("secOffer").innerHTML = formatOffer(s.section_3_offer_clarity);
-    $("secScript").innerHTML = formatScript(s.section_4_script_upgrade);
-    $("secMoments").innerHTML = formatMoments(s.section_5_moments_to_review);
-    $("secPlan").innerHTML = formatPlan(s.section_6_next_call_micro_plan);
-
-    // transcript drawer source
-    state.transcript = run.transcript_json || { turns: [] };
-    $("transcriptMeta").textContent = run.filename ? ("File: " + run.filename) : "—";
-    $("transcriptSearch").value = "";
-    renderTranscript();
-  }
-
-  function formatObjections(arr){
-    if (!Array.isArray(arr) || arr.length === 0) return "—";
-    return arr.slice(0,8).map(o=>{
-      return `
-        <div class="kv">
-          <div class="k">Objection</div><div class="v">${escapeHtml(o.objection || "—")}</div>
-          <div class="k">Best response</div><div class="v">${escapeHtml(o.best_response || "—")}</div>
-          <div class="k">Avoid</div><div class="v">${escapeHtml(o.avoid || "—")}</div>
-        </div>
-      `;
-    }).join("<div class='divider'></div>");
-  }
-
-  function formatOffer(o){
-    if (!o) return "—";
-    return `
-      <div class="kv">
-        <div class="k">What was clear</div><div class="v">${escapeHtml(o.what_was_clear || "—")}</div>
-        <div class="k">What was missing</div><div class="v">${escapeHtml(o.what_was_missing || "—")}</div>
-      </div>
-    `;
-  }
-
-  function formatScript(s){
-    if (!s) return "—";
-    const qs = Array.isArray(s.discovery_questions) ? s.discovery_questions : [];
-    return `
-      <div class="kv">
-        <div class="k">Opener</div><div class="v">${escapeHtml(s.opener || "—")}</div>
-        <div class="k">Discovery</div><div class="v">${qs.length ? qs.map(q=>"• "+escapeHtml(q)).join("<br/>") : "—"}</div>
-        <div class="k">Close</div><div class="v">${escapeHtml(s.close || "—")}</div>
-      </div>
-    `;
-  }
-
-  function formatMoments(m){
-    if (!Array.isArray(m) || m.length === 0) return "—";
-    return m.slice(0,10).map(x=>{
-      return `<div class="kv">
-        <div class="k">Moment</div><div class="v">${escapeHtml(x.moment || "—")}</div>
-        <div class="k">Why</div><div class="v">${escapeHtml(x.why || "—")}</div>
-      </div>`;
-    }).join("<div class='divider'></div>");
-  }
-
-  function formatPlan(p){
-    if (!Array.isArray(p) || p.length === 0) return "—";
-    return p.slice(0,10).map((x,i)=> `${i+1}. ${escapeHtml(x)}`).join("<br/>");
-  }
-
-  function toggleTranscript(open){
-    $("drawer").classList.toggle("open", !!open);
-  }
-  function renderTranscript(){
-    const q = ($("transcriptSearch").value || "").trim().toLowerCase();
-    const turns = (state.transcript?.turns) || [];
-    const box = $("transcriptTurns");
-    box.innerHTML = "";
-
-    (turns || []).forEach(t=>{
-      const txt = t.text || "";
-      if (q && !txt.toLowerCase().includes(q)) return;
-
-      const b = document.createElement("div");
-      b.className = "bubble " + ((t.speaker === "You") ? "you" : "prospect");
-      b.innerHTML = `
-        <div class="who">${escapeHtml(t.speaker || "Speaker")}</div>
-        <div class="txt">${highlight(escapeHtml(txt), q)}</div>
-      `;
-      box.appendChild(b);
-    });
-
-    if (box.innerHTML.trim() === "") {
-      box.innerHTML = `<div class="tiny muted">No transcript turns found.</div>`;
+    function setUserUI(email){
+      $("pillUser").textContent = email ? email : "Not signed in";
+      $("btnSignOut").style.display = email ? "inline-block" : "none";
     }
-  }
 
-  function highlight(text, q){
-    if (!q) return text;
-    try{
-      const re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
-      return text.replace(re, "<span style='background:rgba(251,191,36,.18);border:1px solid rgba(251,191,36,.22);padding:1px 3px;border-radius:8px'>$1</span>");
-    }catch{
-      return text;
+    function showAuth(){
+      $("authView").style.display = "block";
+      $("appView").style.display = "none";
     }
-  }
 
-  async function loadEntities(){
-    const d = await api("/api/entities");
-    state.entities = d.entities || [];
-    state.entityById = {};
-    state.entities.forEach(e=> state.entityById[e.id] = e);
+    function showApp(){
+      $("authView").style.display = "none";
+      $("appView").style.display = "block";
+    }
 
-    // Render list
-    $("entitiesList").innerHTML = state.entities.length
-      ? state.entities.map(e=> `<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div>
-            <div style="font-weight:700">${escapeHtml(e.name)}</div>
-            <div class="tiny muted">${escapeHtml(e.offer || "")}${e.offer && e.industry ? " • " : ""}${escapeHtml(e.industry || "")}</div>
-          </div>
-          <button class="btn secondary small" onclick="selectEntity('${e.id}')">Select</button>
-        </div>`).join("")
-      : "No entities yet.";
+    async function initSupabase(){
+      config = await api("/api/config");
+      supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
 
-    // Also refresh dropdowns used elsewhere
-    await refreshEntities();
-  }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        setUserUI(null);
+        showAuth();
+      } else {
+        setUserUI(session.user.email);
+        showApp();
+        await bootAppData();
+      }
 
-  async function createEntity(){
-    const name = $("entName").value.trim();
-    const offer = $("entOffer").value.trim();
-    const industry = $("entIndustry").value.trim();
-    const notes = $("entNotes").value.trim();
-    if (!name) return toast("Name required");
-
-    try{
-      const d = await api("/api/entities", {
-        method:"POST",
-        headers: {"content-type":"application/json"},
-        body: JSON.stringify({ name, offer, industry, notes })
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          setUserUI(session.user.email);
+          showApp();
+          await bootAppData();
+        } else {
+          setUserUI(null);
+          showAuth();
+        }
       });
-      toast("Created ✅");
-      $("entName").value = "";
-      $("entOffer").value = "";
-      $("entIndustry").value = "";
-      $("entNotes").value = "";
+    }
+
+    async function bootAppData(){
       await loadEntities();
-      await selectEntity(d.entity.id);
-    }catch(e){
-      toast("Error");
-      alert(e.message);
+      await loadRuns();
+      fillEntitySelects();
     }
-  }
 
-  async function selectEntity(id){
-    state.selectedEntityId = id;
-    $("entityDetailTag").textContent = state.entityById[id]?.name || "—";
-    $("playbookBox").value = "";
-    state.playbookJson = null;
+    function fillEntitySelects(){
+      const sel = $("entitySelect");
+      const sel2 = $("playbookEntitySelect");
+      sel.innerHTML = `<option value="">None</option>` + entities.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
+      sel2.innerHTML = `<option value="">Choose an entity</option>` + entities.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
+    }
 
-    const d = await api("/api/entities/" + id);
-    const runs = d.runs || [];
-    $("entityRuns").innerHTML = runs.length
-      ? runs.slice(0,25).map(r=>{
-          const dt = new Date(r.created_at);
-          return `<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:8px">
-            <div>
-              <div style="font-weight:700">${escapeHtml(r.call_result || "—")} • ${escapeHtml(r.overall_grade || "—")} (${r.overall_score ?? "—"})</div>
-              <div class="tiny muted">${dt.toLocaleString()}</div>
+    function escapeHtml(s){
+      return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+    }
+
+    function setTab(name){
+      document.querySelectorAll(".tab").forEach(b=>{
+        b.classList.toggle("active", b.dataset.tab === name);
+      });
+      ["upload","runs","entities","playbook"].forEach(t=>{
+        const el = $("tab-" + t);
+        if (el) el.style.display = (t === name ? "block" : "none");
+      });
+      // report stays under upload, so hide it when not in upload
+      if (name !== "upload") $("reportView").style.display = "none";
+    }
+
+    async function loadEntities(){
+      const data = await api("/api/entities");
+      entities = data.entities || [];
+      renderEntities();
+    }
+
+    async function loadRuns(){
+      const data = await api("/api/runs");
+      runs = data.runs || [];
+      renderRuns();
+    }
+
+    function renderRuns(){
+      const wrap = $("runsList");
+      if (!runs.length){
+        wrap.innerHTML = `<div class="muted" style="margin-top:10px">No runs yet.</div>`;
+        return;
+      }
+      wrap.innerHTML = runs.map(r=>`
+        <div class="listItem" style="cursor:pointer" data-run="${r.id}">
+          <div class="t">${escapeHtml(r.filename || "Run")}</div>
+          <div class="s">${escapeHtml(new Date(r.created_at).toLocaleString())} • ${escapeHtml(r.call_result || "Other")} • Grade ${escapeHtml(r.overall_grade || "")} • Score ${escapeHtml(r.overall_score ?? "")}</div>
+        </div>
+      `).join("");
+
+      wrap.querySelectorAll("[data-run]").forEach(el=>{
+        el.addEventListener("click", async ()=>{
+          const id = el.getAttribute("data-run");
+          const data = await api(`/api/runs/${id}`);
+          currentRun = data.run;
+          setTab("upload");
+          renderReport(currentRun);
+        });
+      });
+    }
+
+    function renderEntities(){
+      const wrap = $("entitiesList");
+      if (!entities.length){
+        wrap.innerHTML = `<div class="muted">No entities yet.</div>`;
+        return;
+      }
+      wrap.innerHTML = entities.map(e=>`
+        <div class="listItem">
+          <div class="t">${escapeHtml(e.name)}</div>
+          <div class="s">${escapeHtml(e.industry || "")}${e.offer ? " • " + escapeHtml(e.offer) : ""}</div>
+        </div>
+      `).join("");
+    }
+
+    function gradeClass(g){
+      return ["A","B","C","D","F"].includes(g) ? g : "C";
+    }
+
+    function renderReport(run){
+      const a = run.analysis_json || {};
+      const badges = Array.isArray(a.signal_badges) ? a.signal_badges : [];
+
+      const top3 = Array.isArray(a.fix_these_first_top3) ? a.fix_these_first_top3 : [];
+      const follow = a.followup || {};
+      const rep = a.repackaged_sections || {};
+
+      const transcript = run.transcript_text || "";
+
+      $("reportView").style.display = "block";
+      $("reportView").innerHTML = `
+        <h2>Call Report</h2>
+
+        <div class="card" style="box-shadow:none;margin-top:10px;padding:14px;background:var(--muted)">
+          <div class="big">
+            <div class="result">
+              <div class="muted">Call Result</div>
+              <div class="label">${escapeHtml(a.call_result || run.call_result || "Other")}</div>
+              <div class="muted">${escapeHtml(a.call_result_reason || run.call_result_reason || "")}</div>
+              <div class="kpi">
+                ${badges.slice(0,6).map(b=>`<div class="badge">${escapeHtml(b)}</div>`).join("")}
+              </div>
             </div>
-            <button class="btn secondary small" onclick="openRun('${r.id}')">Open</button>
-          </div>`;
-        }).join("")
-      : "No runs yet under this entity. Upload calls and assign them here.";
 
-    if (d.latest_playbook?.playbook_json) {
-      state.playbookJson = d.latest_playbook.playbook_json;
-      $("playbookBox").value = prettyPlaybook(state.playbookJson);
-    } else {
-      $("playbookBox").value = "";
+            <div class="scorebox">
+              <div class="muted">Overall</div>
+              <div class="grade ${gradeClass(a.overall_grade || run.overall_grade || "C")}">
+                Grade ${escapeHtml(a.overall_grade || run.overall_grade || "C")}
+              </div>
+              <div class="pill mono">Score ${escapeHtml(a.overall_score_0_100 ?? run.overall_score ?? "")}/100</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <div class="card" style="box-shadow:none">
+            <h2>Follow-Up (2 lines)</h2>
+            <div class="muted">Fastest “do this now” action.</div>
+            <div class="listItem" style="margin-top:10px">
+              <div class="mono" id="followText">${escapeHtml(follow.two_line || "")}</div>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+              <button class="btn primary" id="btnCopyFollow">Copy</button>
+              <button class="btn" id="btnCopyAlt1" ${follow.alt_versions?.[0] ? "" : "disabled"}>Copy Alt #1</button>
+              <button class="btn" id="btnCopyAlt2" ${follow.alt_versions?.[1] ? "" : "disabled"}>Copy Alt #2</button>
+            </div>
+          </div>
+
+          <div class="card" style="box-shadow:none">
+            <h2>Fix These First (Top 3)</h2>
+            <div class="muted">These are the highest-leverage corrections for the next call.</div>
+            ${top3.length ? top3.slice(0,3).map(x=>`
+              <div class="listItem">
+                <div class="t">${escapeHtml(x.issue || "Issue")}</div>
+                <div class="s"><b>Why:</b> ${escapeHtml(x.why_it_hurt || "")}</div>
+                <div class="s"><b>Do instead:</b> ${escapeHtml(x.do_this_instead || "")}</div>
+                ${x.example_line ? `<div class="s"><b>Example:</b> ${escapeHtml(x.example_line)}</div>` : ""}
+                ${x.evidence_quote ? `<div class="s"><b>Evidence:</b> “${escapeHtml(x.evidence_quote)}”</div>` : ""}
+              </div>
+            `).join("") : `<div class="muted" style="margin-top:10px">No top issues returned.</div>`}
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <details>
+          <summary>View Transcript</summary>
+          <pre>${escapeHtml(transcript || "No transcript saved.")}</pre>
+        </details>
+
+        <details style="margin-top:10px">
+          <summary>More report details (keeps everything, repackaged)</summary>
+
+          <div class="listItem">
+            <div class="t">Call summary</div>
+            <div class="s">${escapeHtml(rep.section_1_call_summary || "")}</div>
+          </div>
+
+          <div class="listItem">
+            <div class="t">Objections</div>
+            <div class="s">
+              ${(rep.section_2_objections || []).map(o=>`• ${escapeHtml(o.objection)} → ${escapeHtml(o.best_response)} (avoid: ${escapeHtml(o.avoid)})`).join("<br>") || "None"}
+            </div>
+          </div>
+
+          <div class="listItem">
+            <div class="t">Offer clarity</div>
+            <div class="s"><b>Clear:</b> ${escapeHtml(rep.section_3_offer_clarity?.what_was_clear || "")}</div>
+            <div class="s"><b>Missing:</b> ${escapeHtml(rep.section_3_offer_clarity?.what_was_missing || "")}</div>
+          </div>
+
+          <div class="listItem">
+            <div class="t">Script upgrade</div>
+            <div class="s"><b>Opener:</b> ${escapeHtml(rep.section_4_script_upgrade?.opener || "")}</div>
+            <div class="s"><b>Discovery:</b><br>${(rep.section_4_script_upgrade?.discovery_questions || []).map(q=>"• "+escapeHtml(q)).join("<br>")}</div>
+            <div class="s"><b>Close:</b> ${escapeHtml(rep.section_4_script_upgrade?.close || "")}</div>
+          </div>
+
+          <div class="listItem">
+            <div class="t">Moments to review</div>
+            <div class="s">
+              ${(rep.section_5_moments_to_review || []).map(m=>`• ${escapeHtml(m.moment)} — ${escapeHtml(m.why)}`).join("<br>") || "None"}
+            </div>
+          </div>
+
+          <div class="listItem">
+            <div class="t">Next call micro-plan</div>
+            <div class="s">${(rep.section_6_next_call_micro_plan || []).map(s=>"• "+escapeHtml(s)).join("<br>") || "None"}</div>
+          </div>
+        </details>
+      `;
+
+      $("btnCopyFollow").onclick = async ()=> {
+        await navigator.clipboard.writeText(follow.two_line || "");
+        toast("Copied follow-up");
+      };
+      $("btnCopyAlt1").onclick = async ()=> {
+        await navigator.clipboard.writeText(follow.alt_versions?.[0] || "");
+        toast("Copied alt #1");
+      };
+      $("btnCopyAlt2").onclick = async ()=> {
+        await navigator.clipboard.writeText(follow.alt_versions?.[1] || "");
+        toast("Copied alt #2");
+      };
     }
-  }
 
-  async function generatePlaybook(){
-    if (!state.selectedEntityId) return toast("Select an entity");
-    $("playbookBox").value = "Generating playbook…";
-    try{
-      const d = await api(`/api/entities/${state.selectedEntityId}/playbook`, { method:"POST" });
-      state.playbookJson = d.playbook.playbook_json;
-      $("playbookBox").value = prettyPlaybook(state.playbookJson);
-      toast("Playbook ready ✅");
-    }catch(e){
-      $("playbookBox").value = "Error: " + e.message;
-      toast("Error");
-    }
-  }
+    $("btnSendLink").addEventListener("click", async ()=>{
+      const email = $("authEmail").value.trim();
+      $("authMsg").textContent = "";
+      if (!email) return ($("authMsg").textContent = "Enter an email.");
+      try{
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.origin }
+        });
+        if (error) throw error;
+        $("authMsg").textContent = "Magic link sent. Open your email and click the link.";
+      }catch(e){
+        $("authMsg").textContent = e.message || String(e);
+      }
+    });
 
-  async function generatePlaybookFromTab(){
-    const id = $("playbookEntitySelect").value || "";
-    if (!id) return toast("Pick an entity");
-    $("playbookTabBox").value = "Generating playbook…";
-    try{
-      const d = await api(`/api/entities/${id}/playbook`, { method:"POST" });
-      $("playbookTabBox").value = prettyPlaybook(d.playbook.playbook_json);
-      toast("Ready ✅");
-    }catch(e){
-      $("playbookTabBox").value = "Error: " + e.message;
-      toast("Error");
-    }
-  }
+    $("btnRefreshSession").addEventListener("click", async ()=>{
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user){
+        setUserUI(session.user.email);
+        showApp();
+        await bootAppData();
+      } else {
+        $("authMsg").textContent = "No active session detected yet.";
+      }
+    });
 
-  function prettyPlaybook(pb){
-    if (!pb) return "";
-    try{
-      return JSON.stringify(pb, null, 2);
-    }catch{
-      return String(pb);
-    }
-  }
+    $("btnSignOut").addEventListener("click", async ()=>{
+      await supabase.auth.signOut();
+      toast("Signed out");
+    });
 
-  async function copyFollowup(){
-    const t = $("followupBox").value || "";
-    if (!t.trim()) return toast("Nothing to copy");
-    await navigator.clipboard.writeText(t);
-    toast("Copied ✅");
-  }
+    document.querySelectorAll(".tab").forEach(btn=>{
+      btn.addEventListener("click", ()=>setTab(btn.dataset.tab));
+    });
 
-  async function regenFollowup(){
-    // MVP: regenerate locally by prompting user to re-run for now.
-    // (If you want server regen endpoint, we can add it next.)
-    toast("Re-run upload for now");
-  }
+    $("btnClear").addEventListener("click", ()=>{
+      $("file").value = "";
+      $("scenario").value = "";
+      $("context").value = "";
+      $("entitySelect").value = "";
+      $("entityName").value = "";
+      $("entityOffer").value = "";
+      $("entityIndustry").value = "";
+      $("runStatus").textContent = "";
+      $("reportView").style.display = "none";
+    });
 
-  async function copyPlaybook(){
-    const t = $("playbookTabBox").value || "";
-    if (!t.trim()) return toast("Nothing to copy");
-    await navigator.clipboard.writeText(t);
-    toast("Copied ✅");
-  }
+    $("btnCreateEntity").addEventListener("click", async ()=>{
+      $("entityCreateMsg").textContent = "";
+      try{
+        const payload = {
+          name: $("newEntityName").value.trim(),
+          offer: $("newEntityOffer").value.trim(),
+          industry: $("newEntityIndustry").value.trim(),
+          notes: $("newEntityNotes").value.trim(),
+        };
+        const data = await api("/api/entities", {
+          method:"POST",
+          headers:{ "content-type":"application/json" },
+          body: JSON.stringify(payload)
+        });
+        $("entityCreateMsg").textContent = "Created.";
+        await loadEntities();
+        fillEntitySelects();
+      }catch(e){
+        $("entityCreateMsg").textContent = e.message || String(e);
+      }
+    });
 
-  function escapeHtml(str){
-    return String(str ?? "").replace(/[&<>"']/g, s=>({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    }[s]));
-  }
+    $("btnGenPlaybook").addEventListener("click", async ()=>{
+      const id = $("playbookEntitySelect").value;
+      $("playbookMsg").textContent = "";
+      $("playbookOut").innerHTML = "";
+      if (!id) return ($("playbookMsg").textContent = "Select an entity first.");
+      try{
+        $("playbookMsg").textContent = "Generating...";
+        const data = await api(`/api/entities/${id}/playbook`, { method:"POST" });
+        const pb = data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook_json || data.playbook;
+        $("playbookMsg").textContent = "Done.";
+        $("playbookOut").innerHTML = `<pre>${escapeHtml(JSON.stringify(data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || (data.playbook?.playbook_json ?? data.playbook?.playbook_json) || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || (data.playbook?.playbook_json ?? {}), null, 2))}</pre>`;
+      }catch(e){
+        $("playbookMsg").textContent = e.message || String(e);
+      }
+    });
 
-  // init
-  (async function init(){
-    await checkHealth();
-    await refreshEntities();
+    $("btnRun").addEventListener("click", async ()=>{
+      $("runStatus").textContent = "";
+      try{
+        const f = $("file").files?.[0];
+        if (!f) throw new Error("Choose a file first.");
+        const ctx = $("context").value.trim();
+        if (!ctx) throw new Error("Context is required.");
 
-    const start = (window.location.hash || "#home").replace("#","");
-    showView(routes.includes(start) ? start : "home");
-    if (start === "runs") loadRuns();
-    if (start === "entities") loadEntities();
-    if (start === "upload") refreshEntities();
-    if (start === "playbook") loadEntities();
-  })();
-</script>
+        $("btnRun").disabled = true;
+        $("runStatus").textContent = "Uploading + transcribing + analyzing...";
+
+        const fd = new FormData();
+        fd.append("file", f);
+        fd.append("context", ctx);
+        fd.append("scenario", $("scenario").value.trim());
+
+        const entityId = $("entitySelect").value;
+        if (entityId) fd.append("entityId", entityId);
+
+        const entityName = $("entityName").value.trim();
+        if (entityName) {
+          fd.append("entityName", entityName);
+          fd.append("entityOffer", $("entityOffer").value.trim());
+          fd.append("entityIndustry", $("entityIndustry").value.trim());
+        }
+
+        const data = await api("/api/run", { method:"POST", body: fd });
+        currentRun = data.run;
+
+        $("runStatus").textContent = "Done ✅";
+        renderReport(currentRun);
+
+        await loadRuns();
+        await loadEntities();
+        fillEntitySelects();
+      }catch(e){
+        $("runStatus").textContent = e.message || String(e);
+      }finally{
+        $("btnRun").disabled = false;
+      }
+    });
+
+    (async function(){
+      try{
+        await initSupabase();
+        setTab("upload");
+      }catch(e){
+        alert("Boot error: " + (e.message || String(e)));
+      }
+    })();
+  </script>
 </body>
 </html>
