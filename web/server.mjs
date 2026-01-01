@@ -20,12 +20,11 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com"; // official base url :contentReference[oaicite:2]{index=2}
+const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
 
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 250);
 const PLAYBOOK_MAX_RUNS = Number(process.env.PLAYBOOK_MAX_RUNS || 30);
 
-// ---- Guardrails ----
 function requireEnv(name, value) {
   if (!value) throw new Error(`Missing required env var: ${name}`);
 }
@@ -42,7 +41,6 @@ const app = express();
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// ---- Temp storage ----
 const TMP_DIR = path.join(__dirname, "tmp");
 await fsp.mkdir(TMP_DIR, { recursive: true });
 
@@ -80,14 +78,12 @@ const upload = multer({
 });
 
 // ---- AssemblyAI helpers ----
-// AssemblyAI upload endpoint is /v2/upload :contentReference[oaicite:3]{index=3}
 async function assemblyUpload(filepath) {
   const stream = fs.createReadStream(filepath);
   const res = await fetch("https://api.assemblyai.com/v2/upload", {
     method: "POST",
     headers: { authorization: ASSEMBLYAI_API_KEY },
     body: stream,
-    // Node fetch streaming hint (safe in Node 18+)
     duplex: "half",
   });
 
@@ -112,7 +108,6 @@ async function assemblyCreateTranscript(uploadUrl) {
       speaker_labels: true,
       punctuate: true,
       format_text: true,
-      // keep MVP stable; add more flags later if needed
     }),
   });
 
@@ -153,21 +148,7 @@ async function extractAudioToWav(videoPath) {
   if (!ffmpegPath) throw new Error("ffmpeg-static did not provide a binary path");
 
   const outPath = path.join(TMP_DIR, `${Date.now()}_${safeId(8)}.wav`);
-
-  // 16k mono WAV is great for STT and small enough
-  const args = [
-    "-y",
-    "-i",
-    videoPath,
-    "-vn",
-    "-ac",
-    "1",
-    "-ar",
-    "16000",
-    "-f",
-    "wav",
-    outPath,
-  ];
+  const args = ["-y", "-i", videoPath, "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", outPath];
 
   await new Promise((resolve, reject) => {
     const p = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -183,17 +164,13 @@ async function extractAudioToWav(videoPath) {
   return outPath;
 }
 
-// ---- Transcript formatting (stable labels: You / Prospect) ----
+// ---- Transcript formatting ----
 function normalizeTranscript(assemblyData) {
   const utterances = Array.isArray(assemblyData.utterances) ? assemblyData.utterances : [];
   if (utterances.length === 0) {
-    return {
-      text: assemblyData.text || "",
-      turns: [],
-    };
+    return { text: assemblyData.text || "", turns: [] };
   }
 
-  // MVP rule: first speaker = You, everyone else = Prospect (prevents Speaker X weirdness)
   const firstSpeaker = utterances[0]?.speaker;
   const turns = utterances.map((u) => ({
     speakerRaw: u.speaker,
@@ -211,8 +188,7 @@ function normalizeTranscript(assemblyData) {
   return { text, turns };
 }
 
-// ---- DeepSeek (OpenAI-compatible-ish) chat ----
-// Endpoint: POST {baseUrl}/chat/completions (DeepSeek docs) :contentReference[oaicite:4]{index=4}
+// ---- DeepSeek chat ----
 async function deepseekChat({ messages, temperature = 0.2, max_tokens = 1200, model = "deepseek-chat" }) {
   const res = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
     method: "POST",
@@ -234,22 +210,19 @@ async function deepseekChat({ messages, temperature = 0.2, max_tokens = 1200, mo
     throw new Error(`DeepSeek failed (${res.status}): ${txt}`);
   }
   const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content || "";
-  return content;
+  return data?.choices?.[0]?.message?.content || "";
 }
 
 function safeJsonParse(maybeJson) {
   try {
     return JSON.parse(maybeJson);
   } catch {
-    // try to extract JSON from codeblock
     const m = String(maybeJson).match(/\{[\s\S]*\}/);
     if (!m) throw new Error("Model did not return JSON.");
     return JSON.parse(m[0]);
   }
 }
 
-// ---- Analysis + Playbook prompts ----
 const ENFORCER_VERSION = "ENFORCER_V6_2025-12-31";
 
 function buildCallAnalysisPrompt({ context, scenario, transcriptText }) {
@@ -290,18 +263,10 @@ Enforcer=${ENFORCER_VERSION}.`,
             ],
             repackaged_sections: {
               section_1_call_summary: "tight paragraph",
-              section_2_objections: [
-                { objection: "string", best_response: "string", avoid: "string" },
-              ],
+              section_2_objections: [{ objection: "string", best_response: "string", avoid: "string" }],
               section_3_offer_clarity: { what_was_clear: "string", what_was_missing: "string" },
-              section_4_script_upgrade: {
-                opener: "string",
-                discovery_questions: ["strings"],
-                close: "string",
-              },
-              section_5_moments_to_review: [
-                { moment: "string", why: "string", timestamp_hint: "optional" },
-              ],
+              section_4_script_upgrade: { opener: "string", discovery_questions: ["strings"], close: "string" },
+              section_5_moments_to_review: [{ moment: "string", why: "string", timestamp_hint: "optional" }],
               section_6_next_call_micro_plan: ["step 1", "step 2", "step 3"],
             },
           },
@@ -314,7 +279,6 @@ Enforcer=${ENFORCER_VERSION}.`,
 }
 
 function buildPlaybookPrompt({ entity, runs }) {
-  // runs: [{created_at, call_result, transcript_text}]
   const compactRuns = runs.map((r) => ({
     created_at: r.created_at,
     call_result: r.call_result,
@@ -322,13 +286,7 @@ function buildPlaybookPrompt({ entity, runs }) {
   }));
 
   return [
-    {
-      role: "system",
-      content:
-        `You are Calibrate Playbook Engine.
-Synthesize multiple calls for the same entity into a single "ultimate" playbook.
-Return ONLY valid JSON. No fluff. Make it usable immediately.`,
-    },
+    { role: "system", content: `You are Calibrate Playbook Engine. Return ONLY valid JSON. No fluff.` },
     {
       role: "user",
       content: JSON.stringify(
@@ -356,9 +314,7 @@ Return ONLY valid JSON. No fluff. Make it usable immediately.`,
             what_to_stop_saying: ["bullets"],
             patterns_across_calls: ["bullets"],
             quick_drills: ["bullets"],
-            next_experiments: [
-              { experiment: "string", hypothesis: "string", success_metric: "string" },
-            ],
+            next_experiments: [{ experiment: "string", hypothesis: "string", success_metric: "string" }],
           },
         },
         null,
@@ -371,14 +327,9 @@ Return ONLY valid JSON. No fluff. Make it usable immediately.`,
 // ---- API ----
 app.get("/health", (req, res) => res.json({ ok: true, service: "calibrate", enforcer: ENFORCER_VERSION }));
 
-// Entities
 app.get("/api/entities", async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from("entities")
-      .select("*")
-      .order("created_at", { ascending: false });
-
+    const { data, error } = await supabase.from("entities").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     res.json({ entities: data || [] });
   } catch (e) {
@@ -420,7 +371,6 @@ app.get("/api/entities/:id", async (req, res) => {
       .eq("entity_id", id)
       .order("created_at", { ascending: false })
       .limit(50);
-
     if (e2) throw e2;
 
     const { data: pb, error: e3 } = await supabase
@@ -429,7 +379,6 @@ app.get("/api/entities/:id", async (req, res) => {
       .eq("entity_id", id)
       .order("created_at", { ascending: false })
       .limit(1);
-
     if (e3) throw e3;
 
     res.json({ entity, runs: runs || [], latest_playbook: (pb && pb[0]) || null });
@@ -451,13 +400,10 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
       .eq("entity_id", id)
       .order("created_at", { ascending: false })
       .limit(PLAYBOOK_MAX_RUNS);
-
     if (e2) throw e2;
 
     const usableRuns = (runs || []).filter((r) => r.transcript_text && String(r.transcript_text).trim().length > 40);
-    if (usableRuns.length === 0) {
-      return res.status(400).json({ error: "Not enough transcripts under this entity yet." });
-    }
+    if (usableRuns.length === 0) return res.status(400).json({ error: "Not enough transcripts under this entity yet." });
 
     const prompt = buildPlaybookPrompt({ entity, runs: usableRuns });
     const raw = await deepseekChat({ messages: prompt, temperature: 0.25, max_tokens: 1600 });
@@ -479,7 +425,6 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
   }
 });
 
-// Runs list (optional entity filter)
 app.get("/api/runs", async (req, res) => {
   try {
     const entityId = req.query.entity_id || null;
@@ -512,7 +457,6 @@ app.get("/api/runs/:id", async (req, res) => {
   }
 });
 
-// Upload Call (audio or video)
 app.post("/api/run", upload.single("file"), async (req, res) => {
   const cleanup = [];
   try {
@@ -530,17 +474,10 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
 
     let entity_id = entityId || null;
 
-    // If entityId not provided, allow quick-create by entityName (MVP convenience)
     if (!entity_id && entityName && String(entityName).trim()) {
       const name = String(entityName).trim();
 
-      // try find existing by exact name first
-      const { data: found, error: fe } = await supabase
-        .from("entities")
-        .select("*")
-        .eq("name", name)
-        .limit(1);
-
+      const { data: found, error: fe } = await supabase.from("entities").select("*").eq("name", name).limit(1);
       if (fe) throw fe;
 
       if (found && found[0]) {
@@ -555,7 +492,6 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
           })
           .select("*")
           .single();
-
         if (ce) throw ce;
         entity_id = created.id;
       }
@@ -569,7 +505,6 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
 
     let audioPath = inPath;
 
-    // If video, extract audio
     if (isVideoMimetype(mime) || /\.(mp4|mov|mkv|webm)$/i.test(original)) {
       audioPath = await extractAudioToWav(inPath);
       cleanup.push(audioPath);
@@ -577,17 +512,14 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "Unsupported file type. Upload audio (mp3/wav/m4a) or video (mp4/mov)." });
     }
 
-    // AssemblyAI pipeline
     const uploadUrl = await assemblyUpload(audioPath);
     const transcriptId = await assemblyCreateTranscript(uploadUrl);
     const assemblyData = await assemblyPollTranscript(transcriptId);
 
     const { text: transcriptText, turns } = normalizeTranscript(assemblyData);
 
-    // AI analysis
     const prompt = buildCallAnalysisPrompt({ context, scenario: scenario || legacyScenario, transcriptText });
     const raw = await deepseekChat({ messages: prompt, temperature: 0.2, max_tokens: 1700 });
-
     const analysis = safeJsonParse(raw);
 
     const call_result = analysis?.call_result || "Other";
@@ -618,7 +550,6 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   } finally {
-    // best-effort cleanup
     for (const p of cleanup) {
       try { await fsp.unlink(p); } catch {}
     }
@@ -628,9 +559,17 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
 // Serve frontend
 app.use(express.static(path.join(__dirname)));
 
-// IMPORTANT: Express 5 can't do app.get("*", ...) — use "/*" instead
-app.get("/*", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
+/**
+ * CRITICAL FIX (for your deploy):
+ * Express/path-to-regexp is erroring on "*" and "/*".
+ * Use a REGEX fallback instead (bypasses path-to-regexp entirely).
+ *
+ * This serves index.html for any non-API GET route (SPA fallback).
+ */
+app.get(/^\/(?!api\/).*/, (req, res, next) => {
+  // if it looks like a file request, let it 404 naturally
+  if (req.path.includes(".")) return next();
+  return res.sendFile(path.join(__dirname, "index.html"));
 });
 
 app.listen(PORT, () => {
