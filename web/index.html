@@ -243,9 +243,17 @@
     #tab_playbook #playbookBox ul { margin: 6px 0 0 0 !important; padding-left: 18px !important; }
     #tab_playbook #playbookBox li { margin: 4px 0 !important; }
     #tab_playbook #playbookBox .twoCol { gap: 10px !important; }
-    #tab_playbook #playbookBox .playbookTitle { font-size:22px; line-height:1.2; color: var(--text, #111) !important; }
-    #tab_playbook #playbookBox .playLine { margin:6px 0 !important; font-size:14px !important; line-height:1.45 !important; color: var(--text, #111) !important; }
-    #tab_playbook #playbookBox h3 { font-size:15px; color: var(--text, #111) !important; }
+    #tab_playbook #playbookBox .playbookTitle { font-size:28px; font-weight:800; color:#111; padding-bottom:10px; border-bottom:1px solid var(--border); margin-bottom:12px; }
+    #tab_playbook #playbookBox .playLine { margin:8px 0 !important; font-size:15px !important; line-height:1.5 !important; color:#111 !important; }
+    #tab_playbook #playbookBox h3 { font-size:18px; font-weight:800; color:#111; margin: 0 0 12px 0; }
+    #tab_playbook #playbookBox details summary { font-size: 15px; font-weight: 700; color:#111; }
+    #tab_playbook #playbookBox details .hint { font-size: 14px; color:#111; line-height:1.5; }
+    #tab_playbook #playbookBox .card b { font-size:14px; color:#111; }
+    #tab_playbook #playbookBox .card .hint { font-size:14px; color:#111; line-height:1.5; }
+    #playbookStatus { font-size:14px; color:#334155; }
+    #brandTitle { font-size: 20px; font-weight: 800; color:#111; line-height:1.1; }
+    #brandSubtitle { font-size: 13px; color: #475569; line-height:1.2; }
+    #dashboardSubtitle { font-size: 14px; color:#334155; line-height:1.35; }
   </style>
 </head>
 
@@ -264,8 +272,8 @@
           </svg>
         </div>
         <div>
-          <h1>Calibrate</h1>
-          <p>Post-call command center</p>
+          <h1><span id="brandTitle">Calibrate</span></h1>
+          <p><span id="brandSubtitle">Post-call command center</span></p>
         </div>
       </div>
 
@@ -322,7 +330,7 @@
         <div class="row">
           <div class="grow">
             <h2>Dashboard</h2>
-            <p class="muted">Upload a call, get a transcript + a post-call decision engine report.</p>
+            <p class="muted" id="dashboardSubtitle">Upload a call, get a transcript + a post-call decision engine report.</p>
           </div>
           <div class="tabs" id="tabs">
             <div class="tab active" data-tab="home">Home</div>
