@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Calibrate</title>
 
+  <!-- Supabase UMD (creates global `supabase`) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
     :root{
       --bg:#ffffff;
@@ -32,7 +35,6 @@
       color:var(--text);
       background:linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
     }
-
     a{color:var(--blue); text-decoration:none}
     a:hover{text-decoration:underline}
 
@@ -51,6 +53,8 @@
       width:38px; height:38px; border-radius:12px;
       background:linear-gradient(135deg,var(--blue),#60a5fa);
       box-shadow:0 10px 18px rgba(37,99,235,.25);
+      display:grid; place-items:center;
+      overflow:hidden;
     }
     .brand h1{margin:0; font-size:16px; line-height:1.1}
     .brand p{margin:0; font-size:12px; color:var(--muted)}
@@ -84,9 +88,7 @@
       border-color:transparent;
       color:#fff;
     }
-    .btn.ghost{
-      background:transparent;
-    }
+    .btn.ghost{background:transparent;}
     .btn.small{padding:8px 10px; border-radius:10px; font-size:12px}
 
     .grid{
@@ -122,10 +124,7 @@
     .input:focus{border-color:#93c5fd; box-shadow:0 0 0 4px rgba(59,130,246,.12)}
     label{font-size:12px; color:var(--muted); display:block; margin:10px 0 6px}
 
-    .tabs{
-      display:flex; gap:8px; flex-wrap:wrap;
-      margin-top:12px;
-    }
+    .tabs{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;}
     .tab{
       border:1px solid var(--border);
       background:#fff;
@@ -237,10 +236,18 @@
 
 <body>
   <div class="wrap">
-
     <div class="topbar">
       <div class="brand">
-        <div class="logo" aria-hidden="true"></div>
+        <div class="logo" aria-hidden="true">
+          <!-- simple inline mark so it never “goes missing” -->
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3v4" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            <path d="M7 6.5l2.2 3.3" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            <path d="M17 6.5l-2.2 3.3" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            <path d="M6 12a6 6 0 1 0 12 0" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            <path d="M8.2 12c.8 1.2 2.1 2 3.8 2s3-.8 3.8-2" stroke="white" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
         <div>
           <h1>Calibrate</h1>
           <p>Post-call command center</p>
@@ -252,39 +259,46 @@
           <span class="dot" id="dotAuth"></span>
           <span id="userLabel">Not signed in</span>
         </div>
-        <button class="btn small ghost" id="btnSignOut">Sign out</button>
+        <button class="btn small ghost hide" id="btnSignOut">Sign out</button>
       </div>
     </div>
 
-    <!-- AUTH -->
-    <div class="grid" id="viewAuth">
-      <div class="card" style="max-width:520px; margin:22px auto 0;">
-        <h2>Sign in</h2>
-        <p>Enter your email. We’ll send a magic link.</p>
+  <!-- AUTH -->
+<div class="grid" id="viewAuth">
+  <div class="card" style="max-width:520px; margin:22px auto 0;">
+    <h2>Sign in</h2>
+    <p>Use Google (fastest) or email magic link.</p>
 
-        <label>Email</label>
-        <input class="input" id="authEmail" placeholder="you@domain.com" />
-
-        <div class="spacer"></div>
-        <div class="row tight">
-          <button class="btn primary" id="btnSendLink">Send magic link</button>
-          <button class="btn" id="btnAlreadyClicked">I already clicked the link</button>
-        </div>
-
-        <div class="spacer"></div>
-        <div class="hint" id="authMsg"></div>
-
-        <div class="spacer"></div>
-        <details>
-          <summary>Troubleshooting</summary>
-          <div class="hint">
-            If clicking “Send magic link” shows a “redirect not allowed” error, add your Render domain in Supabase:
-            Authentication → URL Configuration → Additional Redirect URLs.
-            Also set the Site URL to your domain.
-          </div>
-        </details>
-      </div>
+    <div class="spacer"></div>
+    <div class="row tight">
+      <button class="btn primary" id="btnGoogle">Sign in with Google</button>
     </div>
+
+    <div class="hr"></div>
+
+    <label>Email</label>
+    <input class="input" id="authEmail" placeholder="you@domain.com" />
+
+    <div class="spacer"></div>
+    <div class="row tight">
+      <button class="btn primary" id="btnSendLink">Send magic link</button>
+      <button class="btn" id="btnAlreadyClicked">I already clicked the link</button>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="hint" id="authMsg"></div>
+
+    <div class="spacer"></div>
+    <details>
+      <summary>Troubleshooting</summary>
+      <div class="hint">
+        If you get “redirect not allowed”, add your Render domain in Supabase:
+        Authentication → URL Configuration → Additional Redirect URLs,
+        and set Site URL to your domain.
+      </div>
+    </details>
+  </div>
+</div>
 
     <!-- APP -->
     <div class="grid hide" id="viewApp">
@@ -360,18 +374,18 @@
           </div>
           <div class="grow">
             <label>Or create new Entity (name)</label>
-            <input class="input" id="entityName" placeholder="e.g., SEO Agency Pitch" />
+            <input class="input" id="entityName" placeholder="e.g., TLS Tech - AI receptionist" />
           </div>
         </div>
 
         <div class="row">
           <div class="grow">
             <label>Offer (optional)</label>
-            <input class="input" id="entityOffer" placeholder="e.g., SEO retainer" />
+            <input class="input" id="entityOffer" placeholder="e.g., 24/7 AI receptionist" />
           </div>
           <div class="grow">
             <label>Industry (optional)</label>
-            <input class="input" id="entityIndustry" placeholder="e.g., Dental / Ecommerce / SaaS" />
+            <input class="input" id="entityIndustry" placeholder="e.g., Event venues / Dental / Ecommerce" />
           </div>
         </div>
 
@@ -383,8 +397,8 @@
 
         <div class="hr"></div>
 
-        <!-- REPORT -->
-        <div class="card" style="box-shadow:none; border-color:var(--border); background:#fff;">
+        <!-- REPORT (hidden until we have real output) -->
+        <div class="card hide" id="reportShell" style="box-shadow:none; border-color:var(--border); background:#fff;">
           <h2>Report</h2>
           <p class="muted">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
 
@@ -393,7 +407,7 @@
           <div class="kpi" id="reportKpi">
             <div>
               <b id="callResult">—</b>
-              <div class="muted" id="callResultWhy">Run an analysis to see the result + explanation.</div>
+              <div class="muted" id="callResultWhy">—</div>
             </div>
             <div class="row tight">
               <span class="badge" id="scoreBadge">Score: —</span>
@@ -404,11 +418,11 @@
           <div class="spacer"></div>
 
           <div class="twoCol">
-            <div class="card" style="box-shadow:none; border-color:var(--border);">
+            <div class="card hide" id="reportCard" style="box-shadow:none; border-color:var(--border); background:#fff;">
               <h2>Follow-Up Generator</h2>
               <p class="muted">Two-line follow-up you can send right now.</p>
               <div class="spacer"></div>
-              <textarea class="input" id="followupText" rows="4" placeholder="Run an analysis to generate a follow-up."></textarea>
+              <textarea class="input" id="followupText" rows="4"></textarea>
               <div class="spacer"></div>
               <div class="row tight">
                 <button class="btn primary" id="btnCopyFollowup">Copy</button>
@@ -418,11 +432,9 @@
 
             <div class="card" style="box-shadow:none; border-color:var(--border);">
               <h2>Fix These First (Top 3)</h2>
-              <p class="muted">The highest-leverage corrections to improve the next call.</p>
+              <p class="muted">Highest-leverage corrections to improve the next call.</p>
               <div class="spacer"></div>
-              <div id="topFixes">
-                <div class="muted">Run an analysis to populate this.</div>
-              </div>
+              <div id="topFixes"></div>
             </div>
           </div>
 
@@ -434,7 +446,6 @@
             <div class="hr"></div>
             <div class="mono" id="transcriptBox">—</div>
           </details>
-
         </div>
       </div>
 
@@ -475,7 +486,7 @@
       <!-- PLAYBOOK -->
       <div class="card hide" id="tab_playbook">
         <h2>Playbook</h2>
-        <p class="muted">MVP: Generate an “ultimate script” + common objections + do/don’t patterns for an entity.</p>
+        <p class="muted">MVP: Generate an “ultimate script” + objections + do/don’t patterns for an entity.</p>
 
         <div class="spacer"></div>
 
@@ -520,10 +531,7 @@
 
   <div class="toast" id="toast"></div>
 
-  <script type="module">
-    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
-    // ----- Helpers -----
+  <script>
     const $ = (id) => document.getElementById(id);
     const toastEl = $("toast");
     function toast(msg){
@@ -564,27 +572,28 @@
       });
     }
 
-    // ----- State -----
+    // ---- State ----
     let sb = null;
     let cfg = null;
     let currentUser = null;
-    let accessToken = null;
+    let currentSession = null;
 
     let entities = [];
     let currentEntityId = null;
     let currentRun = null;
     let currentPlaybook = null;
 
-    // ----- API -----
+    // ---- API helper (adds Authorization when available) ----
     async function api(path, opts={}){
       const headers = { ...(opts.headers||{}), "Accept":"application/json" };
-      if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+      if(currentSession?.access_token){
+        headers["Authorization"] = `Bearer ${currentSession.access_token}`;
+      }
 
-      const res = await fetch(path, { headers, ...opts });
+      const res = await fetch(path, { ...opts, headers });
       const text = await res.text();
       let data = null;
       try{ data = text ? JSON.parse(text) : null; }catch(e){}
-
       if(!res.ok){
         const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || res.statusText);
         throw new Error(msg);
@@ -592,43 +601,50 @@
       return data;
     }
 
-    // ----- Init Supabase -----
     async function initSupabase(){
-      $("authMsg").textContent = "Loading config…";
+      $("authMsg").textContent = "Loading…";
       cfg = await api("/api/config");
-      const { supabaseUrl, supabaseAnonKey } = cfg;
 
+      const { supabaseUrl, supabaseAnonKey } = cfg;
       if(!supabaseUrl || !supabaseAnonKey){
         throw new Error("Missing Supabase config from /api/config");
       }
 
-      sb = createClient(supabaseUrl, supabaseAnonKey, {
+      sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
         auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
       });
 
-      $("authMsg").textContent = "Checking session…";
+      // Initial session
       const { data: sessionData } = await sb.auth.getSession();
-      accessToken = sessionData?.session?.access_token || null;
-      currentUser = sessionData?.session?.user || null;
-      setUserUI(currentUser);
+      currentSession = sessionData?.session || null;
+      currentUser = currentSession?.user || null;
 
+      setUserUI(currentUser);
+      if(currentUser) showApp(); else showAuth();
+
+      // Listen for changes
       sb.auth.onAuthStateChange((_event, session)=>{
-        accessToken = session?.access_token || null;
+        currentSession = session || null;
         currentUser = session?.user || null;
         setUserUI(currentUser);
+
         if(currentUser){
           showApp();
-          bootstrapApp();
+          bootstrapApp().catch(err => {
+            console.error(err);
+            toast("Loaded, but data failed: " + (err.message || String(err)));
+          });
         }else{
           showAuth();
         }
       });
 
+      // Bootstrap (do NOT throw auth away if bootstrap fails)
       if(currentUser){
-        showApp();
-        await bootstrapApp();
-      }else{
-        showAuth();
+        bootstrapApp().catch(err => {
+          console.error(err);
+          toast("Signed in, but data failed: " + (err.message || String(err)));
+        });
       }
 
       $("authMsg").textContent = "";
@@ -640,29 +656,34 @@
       await loadRuns();
     }
 
-    // ----- Auth UI -----
+    // ---- Auth UI ----
+    $("btnGoogle").addEventListener("click", async ()=>{
+      $("authMsg").textContent = "Redirecting to Google…";
+      try{
+        const { error } = await sb.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: window.location.origin }
+        });
+        if(error) throw error;
+      }catch(e){
+        $("authMsg").textContent = "Error: " + (e.message || String(e));
+      }
+    });
+
     $("btnSendLink").addEventListener("click", async ()=>{
       const email = $("authEmail").value.trim();
       if(!email){ toast("Enter an email"); return; }
-
-      $("btnSendLink").disabled = true;
       $("authMsg").textContent = "Sending…";
-
       try{
         const { error } = await sb.auth.signInWithOtp({
           email,
-          options: {
-            // Always redirect back to /home so it loads the full app shell
-            emailRedirectTo: `${window.location.origin}/home`
-          }
+          options: { emailRedirectTo: window.location.origin }
         });
         if(error) throw error;
         toast("Magic link sent. Check your inbox.");
         $("authMsg").textContent = "Sent. Open the email link, then come back.";
       }catch(e){
         $("authMsg").textContent = "Error: " + (e.message || String(e));
-      }finally{
-        $("btnSendLink").disabled = false;
       }
     });
 
@@ -670,7 +691,8 @@
       $("authMsg").textContent = "Checking session…";
       try{
         const { data } = await sb.auth.getSession();
-        const u = data?.session?.user || null;
+        currentSession = data?.session || null;
+        const u = currentSession?.user || null;
         if(u){
           toast("Signed in");
           $("authMsg").textContent = "";
@@ -691,7 +713,7 @@
       }
     });
 
-    // ----- Tabs -----
+    // ---- Tabs ----
     $("tabs").addEventListener("click", (e)=>{
       const t = e.target.closest(".tab");
       if(!t) return;
@@ -700,7 +722,7 @@
     $("goUpload").addEventListener("click", ()=>setTab("upload"));
     $("goRuns").addEventListener("click", ()=>setTab("runs"));
 
-    // ----- Entities -----
+    // ---- Entities ----
     async function loadEntities(){
       const data = await api("/api/entities");
       entities = data.entities || [];
@@ -722,19 +744,17 @@
         wrap.innerHTML = `<div class="muted">No entities yet.</div>`;
         return;
       }
-      wrap.innerHTML = entities.map(e=>{
-        return `
-          <div class="kpi" style="margin-bottom:10px;">
-            <div>
-              <b>${escapeHtml(e.name)}</b>
-              <div class="muted">${escapeHtml(e.offer || "")} ${e.industry ? "• "+escapeHtml(e.industry) : ""}</div>
-            </div>
-            <div class="row tight">
-              <button class="btn small" data-edit="${e.id}">Edit</button>
-            </div>
+      wrap.innerHTML = entities.map(e=>`
+        <div class="kpi" style="margin-bottom:10px;">
+          <div>
+            <b>${escapeHtml(e.name)}</b>
+            <div class="muted">${escapeHtml(e.offer || "")} ${e.industry ? "• "+escapeHtml(e.industry) : ""}</div>
           </div>
-        `;
-      }).join("");
+          <div class="row tight">
+            <button class="btn small" data-edit="${e.id}">Edit</button>
+          </div>
+        </div>
+      `).join("");
 
       wrap.querySelectorAll("[data-edit]").forEach(btn=>{
         btn.addEventListener("click", ()=>{
@@ -778,19 +798,25 @@
         notes: $("entityEditNotes").value.trim()
       };
       if(!payload.name){ toast("Name required"); return; }
-      await api("/api/entities", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify(payload)
-      });
-      toast("Saved");
-      $("entityEditor").classList.add("hide");
-      currentEntityId = null;
-      await loadEntities();
-      fillEntitySelects();
+
+      try{
+        await api("/api/entities", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(payload)
+        });
+        toast("Saved");
+        $("entityEditor").classList.add("hide");
+        currentEntityId = null;
+        await loadEntities();
+        fillEntitySelects();
+      }catch(e){
+        toast("Save failed");
+        alert("Entity save failed:\n\n" + (e.message || String(e)));
+      }
     });
 
-    // ----- Playbook -----
+    // ---- Playbook ----
     $("btnGenPlaybook").addEventListener("click", async ()=>{
       const entityId = $("playbookEntitySelect").value;
       if(!entityId){ toast("Pick an entity"); return; }
@@ -805,7 +831,7 @@
       }
     });
 
-    // ----- Runs -----
+    // ---- Runs ----
     async function loadRuns(){
       const data = await api("/api/runs");
       const runs = data.runs || [];
@@ -815,6 +841,9 @@
         const r = runs[0];
         $("lastRunLabel").textContent = new Date(r.created_at).toLocaleString();
         $("lastRunBadge").textContent = r.outcome_label || "—";
+      }else{
+        $("lastRunLabel").textContent = "None yet";
+        $("lastRunBadge").textContent = "—";
       }
     }
 
@@ -824,17 +853,15 @@
         tb.innerHTML = `<tr><td colspan="5" class="muted">No runs yet.</td></tr>`;
         return;
       }
-      tb.innerHTML = runs.map(r=>{
-        return `
-          <tr>
-            <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
-            <td>${escapeHtml(r.scenario || "")}</td>
-            <td>${escapeHtml(r.entity_name || "")}</td>
-            <td>${escapeHtml(r.outcome_label || "")}</td>
-            <td><button class="btn small" data-open="${r.id}">Open</button></td>
-          </tr>
-        `;
-      }).join("");
+      tb.innerHTML = runs.map(r=>`
+        <tr>
+          <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
+          <td>${escapeHtml(r.scenario || "")}</td>
+          <td>${escapeHtml(r.entity_name || "")}</td>
+          <td>${escapeHtml(r.outcome_label || "")}</td>
+          <td><button class="btn small" data-open="${r.id}">Open</button></td>
+        </tr>
+      `).join("");
 
       tb.querySelectorAll("[data-open]").forEach(btn=>{
         btn.addEventListener("click", async ()=>{
@@ -847,15 +874,18 @@
       });
     }
 
-    // ----- Report render -----
+    // ---- Report render ----
     function renderReport(run){
-      if(!run){ return; }
+      if(!run) return;
+      $("reportShell").classList.remove("hide");
+
+
       const a = run.analysis_json || run.analysis || null;
 
       $("callResult").textContent = a?.call_result?.label || run.outcome_label || "—";
-      $("callResultWhy").textContent = a?.call_result?.why || "—";
+      $("callResultWhy").textContent = a?.call_result?.why || run.call_result_reason || "—";
 
-      const score = a?.score ?? a?.overall_score ?? null;
+      const score = a?.score ?? a?.overall_score ?? run.overall_score ?? null;
       $("scoreBadge").textContent = score == null ? "Score: —" : `Score: ${score}`;
 
       const signals = (a?.signals && Array.isArray(a.signals)) ? a.signals : [];
@@ -882,8 +912,7 @@
         $("topFixes").innerHTML = `<div class="muted">—</div>`;
       }
 
-      const transcript = run.transcript_text || "";
-      $("transcriptBox").textContent = transcript || "—";
+      $("transcriptBox").textContent = run.transcript_text || "—";
     }
 
     $("btnCopyFollowup").addEventListener("click", async ()=>{
@@ -918,7 +947,7 @@
         .replaceAll("'","&#039;");
     }
 
-    // ----- Run flow -----
+    // ---- Run flow ----
     $("btnRun").addEventListener("click", async ()=>{
       const file = $("fileInput").files[0];
       const scenario = $("scenario").value;
@@ -928,6 +957,7 @@
 
       $("btnRun").disabled = true;
       $("runStatus").textContent = "Running…";
+      $("reportShell").classList.add("hide");
 
       try{
         const fd = new FormData();
@@ -956,6 +986,7 @@
         fillEntitySelects();
       }catch(e){
         $("runStatus").textContent = e.message || String(e);
+        toast("Run failed");
       }finally{
         $("btnRun").disabled = false;
       }
