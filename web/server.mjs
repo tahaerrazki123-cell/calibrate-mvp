@@ -399,7 +399,7 @@ app.get("/api/runs", async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from("runs")
-    .select("id, created_at, scenario, outcome_label, entity_id, entities(name)")
+    .select("id, created_at, scenario, outcome_label, analysis_json, entity_id, entities(name)")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -408,6 +408,7 @@ app.get("/api/runs", async (req, res) => {
 
   const runs = (data || []).map((r) => ({
     ...r,
+    report_title: r.analysis_json?.report_title || r.outcome_label || "Call",
     entity_name: r.entities?.name || "",
   }));
 
