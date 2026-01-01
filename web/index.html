@@ -401,7 +401,7 @@
         </div>
         <!-- REPORT (hidden until we have real output) -->
         <div class="card hide" id="reportShell" style="box-shadow:none; border-color:var(--border); background:#fff;">
-          <h2>Report</h2>
+          <h2 id="reportTitle">Report</h2>
           <p class="muted">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
 
           <div class="spacer"></div>
@@ -913,6 +913,11 @@
 
 
       const a = run.analysis_json || run.analysis || null;
+      const reportTitle = a?.report_title || a?.call_result?.label || run.outcome_label || "Call";
+      const entityName = run.entity_name || "";
+      $("reportTitle").textContent = entityName
+        ? `${reportTitle} Report — ${entityName}`
+        : `${reportTitle} Report`;
 
       $("callResult").textContent = a?.call_result?.label || run.outcome_label || "—";
       $("callResultWhy").textContent = a?.call_result?.why || run.call_result_reason || "—";
