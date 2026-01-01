@@ -1,1157 +1,638 @@
-// FILE: web/server.mjs
 import express from "express";
 import multer from "multer";
+import fs from "fs";
+import fsp from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
+import { spawn } from "child_process";
+import ffmpegStatic from "ffmpeg-static";
 import { createClient } from "@supabase/supabase-js";
-
-import { runCalibrate, ENFORCER_VERSION } from "../calibrate.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const PORT = process.env.PORT || 3000;
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
+
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com"; // official base url :contentReference[oaicite:2]{index=2}
+
+const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 250);
+const PLAYBOOK_MAX_RUNS = Number(process.env.PLAYBOOK_MAX_RUNS || 30);
+
+// ---- Guardrails ----
+function requireEnv(name, value) {
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+}
+requireEnv("SUPABASE_URL", SUPABASE_URL);
+requireEnv("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY);
+requireEnv("ASSEMBLYAI_API_KEY", ASSEMBLYAI_API_KEY);
+requireEnv("DEEPSEEK_API_KEY", DEEPSEEK_API_KEY);
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false },
+});
+
 const app = express();
-app.set("trust proxy", 1);
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-// Parse JSON + form bodies (support endpoint uses JSON)
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+// ---- Temp storage ----
+const TMP_DIR = path.join(__dirname, "tmp");
+await fsp.mkdir(TMP_DIR, { recursive: true });
 
-// ---- Limits (server truth) ----
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25MB
-const MAX_RUNS_PER_24H = 10;
-
-// One-run-at-a-time per user (simple in-memory lock)
-const activeRunByUser = new Map(); // userId -> startedAtMs
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_UPLOAD_BYTES },
-});
-
-// serve static files (index.html, etc.)
-app.use(express.static(__dirname, { extensions: ["html"] }));
-
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    enforcer: ENFORCER_VERSION,
-    commit: process.env.RENDER_GIT_COMMIT || null,
-  });
-});
-
-// Expose anon config for frontend (SAFE: anon key is meant for browser use)
-app.get("/api/config", (req, res) => {
-  res.json({
-    supabaseUrl: process.env.SUPABASE_URL || "",
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "",
-    enforcer: ENFORCER_VERSION,
-  });
-});
-
-// ---- Supabase clients (lazy singletons) ----
-let _sbAnon = null;
-let _sbService = null;
-
-function supabaseAnon() {
-  if (_sbAnon) return _sbAnon;
-  const url = process.env.SUPABASE_URL;
-  const anon = process.env.SUPABASE_ANON_KEY;
-  if (!url || !anon) throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY");
-  _sbAnon = createClient(url, anon, { auth: { persistSession: false } });
-  return _sbAnon;
+function safeId(len = 12) {
+  return crypto.randomBytes(len).toString("hex");
 }
 
-function supabaseService() {
-  if (_sbService) return _sbService;
-  const url = process.env.SUPABASE_URL;
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !service) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  _sbService = createClient(url, service, { auth: { persistSession: false } });
-  return _sbService;
-}
-
-async function requireUserId(req) {
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return null;
-
-  const sb = supabaseAnon();
-  const { data, error } = await sb.auth.getUser(token);
-  if (error) return null;
-  return data?.user?.id || null;
-}
-
-function pick(obj, keys, fallback = null) {
-  for (const k of keys) {
-    if (obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
-  }
-  return fallback;
-}
-
-// Normalize mismatch across shapes
-function normalizeScenarioMismatch(row) {
-  if (!row || typeof row !== "object") return null;
-  if ("scenario_mismatch" in row) return row.scenario_mismatch;
-  if ("mismatch" in row) return row.mismatch;
-  if ("scenarioMismatch" in row) return row.scenarioMismatch;
-  if ("scenario_mismatch_flag" in row) return row.scenario_mismatch_flag;
-  if ("scenario_mismatch_text" in row) return Boolean(row.scenario_mismatch_text);
-  if ("context_conflict_banner" in row) return Boolean(row.context_conflict_banner);
-  return null;
-}
-
-// Insert, and if DB schema is missing a column, drop it and retry
-async function insertRunResilient(sb, payload) {
-  let p = { ...payload };
-
-  for (let i = 0; i < 20; i++) {
-    const { data, error } = await sb.from("runs").insert([p]).select("id").maybeSingle();
-    if (!error) return data;
-
-    const msg = String(error.message || "");
-
-    let m = msg.match(/column\s+\w+\.(\w+)\s+does not exist/i);
-    if (m && m[1]) {
-      delete p[m[1]];
-      continue;
-    }
-
-    m = msg.match(/Could not find the '(\w+)' column of '(\w+)' in the schema cache/i);
-    if (m && m[1]) {
-      delete p[m[1]];
-      continue;
-    }
-
-    throw new Error(msg);
-  }
-
-  throw new Error("Insert failed after retries (schema mismatch).");
-}
-
-// -------------------- Transcript normalization --------------------
-
-// Stable speaker labeling (never "Speaker X") + optional You/Prospect inference
-const SPEAKER_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-
-function normalizeSpeakerKey(raw) {
-  if (raw === null || raw === undefined) return "unknown";
-  const s = String(raw).trim();
-  return s ? s : "unknown";
-}
-
-function cleanText(s) {
-  return String(s || "").replace(/\s+/g, " ").trim();
-}
-
-// Heuristic role inference: only if exactly 2 speakers and confidence is decent.
-function inferYouProspectMap(lines) {
-  const speakers = [...new Set(lines.map((l) => l.speaker).filter(Boolean))];
-  if (speakers.length !== 2) return null;
-
-  const textFor = (sp) =>
-    lines
-      .filter((l) => l.speaker === sp)
-      .map((l) => l.text || "")
-      .join(" ")
-      .slice(0, 5000);
-
-  const repSignals = [
-    /\bmy name is\b/i,
-    /\bthis is\b/i,
-    /\bi['’]?m calling\b/i,
-    /\breaching out\b/i,
-    /\bquick (one|question|thing)\b/i,
-    /\bdo you have (a moment|a minute)\b/i,
-    /\bcan i\b/i,
-    /\bwould you\b/i,
-    /\bnext step\b/i,
-    /\bschedule\b/i,
-    /\bcalendar\b/i,
-    /\bwalkthrough\b/i,
-    /\b15 minutes\b/i,
-  ];
-
-  const prospectSignals = [
-    /\bwho is this\b/i,
-    /\bnot interested\b/i,
-    /\bstop calling\b/i,
-    /\bjust email\b/i,
-    /\bhow much\b/i,
-    /\bwe already\b/i,
-    /\bwe're good\b/i,
-    /\bbusy\b/i,
-  ];
-
-  const score = (txt) => {
-    let rep = 0,
-      pro = 0;
-    for (const r of repSignals) if (r.test(txt)) rep++;
-    for (const p of prospectSignals) if (p.test(txt)) pro++;
-    return { rep, pro, net: rep - pro };
-  };
-
-  const aSp = speakers[0];
-  const bSp = speakers[1];
-
-  const a = score(textFor(aSp));
-  const b = score(textFor(bSp));
-
-  const diff = Math.abs(a.net - b.net);
-  if (diff < 2) return null;
-
-  const aIsYou = a.net > b.net;
-  return {
-    [aSp]: aIsYou ? "You" : "Prospect",
-    [bSp]: aIsYou ? "Prospect" : "You",
-  };
-}
-
-function normalizeAssemblyUtterances(utterances) {
-  const speakerMap = new Map(); // rawKey -> "Speaker A"
-  let idx = 0;
-
-  const lines = [];
-  for (const u of utterances || []) {
-    const key = normalizeSpeakerKey(u?.speaker);
-    if (!speakerMap.has(key)) {
-      const label =
-        idx < SPEAKER_LETTERS.length ? `Speaker ${SPEAKER_LETTERS[idx]}` : `Speaker ${idx + 1}`;
-      speakerMap.set(key, label);
-      idx++;
-    }
-
-    const speaker = speakerMap.get(key);
-    const text = cleanText(u?.text);
-    if (!text) continue;
-
-    lines.push({ speaker, text });
-  }
-
-  const map = inferYouProspectMap(lines);
-  if (map) {
-    for (const l of lines) l.speaker = map[l.speaker] || l.speaker;
-  }
-
-  const transcript = lines.map((l) => `${l.speaker}: ${l.text}`).join("\n");
-
-  return {
-    transcript,
-    lines,
-    meta: {
-      utterances: Array.isArray(utterances) ? utterances.length : 0,
-      speakers: speakerMap.size,
-      speaker_map: Object.fromEntries(speakerMap.entries()),
-      role_map: map || null,
-    },
-  };
-}
-
-async function transcribeWithAssemblyAI(audioBuffer) {
-  const apiKey = process.env.ASSEMBLYAI_API_KEY;
-  if (!apiKey) throw new Error("Missing ASSEMBLYAI_API_KEY in environment.");
-
-  const uploadRes = await fetch("https://api.assemblyai.com/v2/upload", {
-    method: "POST",
-    headers: { authorization: apiKey },
-    body: audioBuffer,
-  });
-  if (!uploadRes.ok) throw new Error("AssemblyAI upload failed: " + (await uploadRes.text().catch(() => "")));
-  const { upload_url: audio_url } = await uploadRes.json();
-
-  const createRes = await fetch("https://api.assemblyai.com/v2/transcript", {
-    method: "POST",
-    headers: { authorization: apiKey, "content-type": "application/json" },
-    body: JSON.stringify({
-      audio_url,
-      punctuate: true,
-      format_text: true,
-      speaker_labels: true,
-    }),
-  });
-  if (!createRes.ok) throw new Error("AssemblyAI transcript create failed: " + (await createRes.text().catch(() => "")));
-  const { id } = await createRes.json();
-
-  const started = Date.now();
-  while (true) {
-    const pollRes = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
-      headers: { authorization: apiKey },
-    });
-    if (!pollRes.ok) throw new Error("AssemblyAI transcript poll failed: " + (await pollRes.text().catch(() => "")));
-    const pollJson = await pollRes.json();
-
-    if (pollJson.status === "completed") {
-      if (Array.isArray(pollJson.utterances) && pollJson.utterances.length) {
-        return normalizeAssemblyUtterances(pollJson.utterances);
-      }
-      const text = cleanText(pollJson.text || "");
-      const lines = text ? [{ speaker: "Speaker A", text }] : [];
-      return {
-        transcript: lines.map((l) => `${l.speaker}: ${l.text}`).join("\n"),
-        lines,
-        meta: { utterances: 0, speakers: lines.length ? 1 : 0, speaker_map: {}, role_map: null },
-      };
-    }
-
-    if (pollJson.status === "error") throw new Error("AssemblyAI transcription error: " + (pollJson.error || "unknown"));
-    if (Date.now() - started > 4 * 60 * 1000) throw new Error("AssemblyAI transcription timed out.");
-
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-}
-
-// -------------------- Titles (AI: 3–5 words) --------------------
-
-function stripOutcomeSuffix(title) {
-  const s = String(title || "").trim();
-  return s.replace(/\s*(—|-|\|)\s*(booked meeting|connected|rejected|hostile|voicemail|no answer)\s*$/i, "").trim();
-}
-
-function toTitleCase(s) {
-  return String(s || "")
-    .toLowerCase()
-    .split(/\s+/g)
-    .filter(Boolean)
-    .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
-    .join(" ");
-}
-
-function enforce3to5Words(raw) {
-  const cleaned = stripOutcomeSuffix(String(raw || ""))
-    .replace(/[“”"]/g, "")
-    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  let words = cleaned.split(" ").filter(Boolean);
-  if (words.length > 5) words = words.slice(0, 5);
-  return toTitleCase(words.join(" "));
-}
-
-const scenarioKeywordMap = {
-  b2b_service_software: ["pipeline","crm","demo","saas","software","workflow","time saved","roi","automation","platform","integration"],
-  local_service: ["estimate","quote","jobs","service area","clinic","dentist","dental","hvac","roof","plumbing","patients","appointments","front desk"],
-  ecommerce: ["shopify","ecommerce","d2c","cart","conversion","roas","checkout","aov","product page"],
-  agency_services: ["seo","agency","retainer","audit","rank","keywords","google ads","meta ads","creative"],
-  recruiting_staffing: ["hire","hiring","staffing","recruiting","candidates","roles","openings"],
-  real_estate: ["listing","realtor","buyer","seller","open house","zillow","mls","showing","offer"],
-  coaching_consulting: ["coaching","consulting","clients","program","course","mentorship","1:1","funnel"],
-};
-
-function countScenarioHits(category, combinedLower) {
-  const keys = scenarioKeywordMap[String(category || "")] || [];
-  let hits = 0;
-  for (const k of keys) if (combinedLower.includes(k)) hits++;
-  return hits;
-}
-
-function heuristicFallbackTitle({ userContext, transcript, category }) {
-  const combined = `${userContext || ""}\n${transcript || ""}`.toLowerCase();
-
-  const patterns = [
-    { re: /\bai receptionist\b|\breceptionist\b|\bfront desk\b/i, title: "AI Receptionist Pitch" },
-    { re: /\bseo\b|\bkeywords?\b|\brank\b|\bgoogle search\b/i, title: "SEO Agency Pitch" },
-    { re: /\bshopify\b|\becommerce\b|\bcheckout\b|\bcart\b/i, title: "Shopify Growth Pitch" },
-    { re: /\bgoogle ads\b|\bmeta ads\b|\broas\b|\bads\b/i, title: "Paid Ads Pitch" },
-    { re: /\bwebsite maintenance\b|\bmaintenance\b|\bwebsite\b/i, title: "Website Maintenance Pitch" },
-    { re: /\brecruit(ing)?\b|\bstaffing\b|\bcandidates?\b/i, title: "Recruiting Service Pitch" },
-    { re: /\brealtor\b|\blisting\b|\bmls\b|\bopen house\b/i, title: "Real Estate Pitch" },
-    { re: /\bcoaching\b|\bconsulting\b|\bprogram\b|\bmentorship\b/i, title: "Coaching Offer Pitch" },
-  ];
-
-  for (const p of patterns) {
-    if (p.re.test(combined)) return p.title;
-  }
-
-  const scenarioLabel =
-    category === "b2b_service_software" ? "B2B Software Pitch" :
-    category === "local_service" ? "Local Service Pitch" :
-    category === "ecommerce" ? "Ecommerce Pitch" :
-    category === "agency_services" ? "Agency Pitch" :
-    category === "recruiting_staffing" ? "Recruiting Pitch" :
-    category === "real_estate" ? "Real Estate Pitch" :
-    category === "coaching_consulting" ? "Coaching Pitch" :
-    "";
-
-  if (scenarioLabel) return scenarioLabel;
-
-  const base = stripOutcomeSuffix(String(userContext || "")).trim() || "Call Analysis";
-  const cleaned = base
-    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const words = cleaned.split(" ").filter(Boolean).slice(0, 5);
-  return toTitleCase(words.join(" ")) || "Call Analysis";
-}
-
-function fallbackShortTitle({ userContext, transcript, category }) {
-  const t = heuristicFallbackTitle({ userContext, transcript, category });
-  const enforced = enforce3to5Words(t);
-  const wc = enforced.split(/\s+/g).filter(Boolean).length;
-  if (wc >= 3) return enforced;
-  return enforce3to5Words("Call Analysis");
-}
-
-function titleLLMConfig() {
-  const apiKey =
-    process.env.TITLE_LLM_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || "";
-
-  let baseUrl =
-    process.env.TITLE_LLM_BASE_URL ||
-    process.env.DEEPSEEK_BASE_URL ||
-    process.env.OPENAI_BASE_URL ||
-    "";
-
-  if (!baseUrl) {
-    if (process.env.DEEPSEEK_API_KEY) baseUrl = "https://api.deepseek.com";
-    else if (process.env.OPENAI_API_KEY) baseUrl = "https://api.openai.com";
-  }
-
-  const model =
-    process.env.TITLE_LLM_MODEL ||
-    process.env.DEEPSEEK_MODEL ||
-    process.env.OPENAI_MODEL ||
-    (process.env.OPENAI_API_KEY ? "gpt-4o-mini" : "deepseek-chat");
-
-  return { apiKey, baseUrl, model };
-}
-
-async function generateAiShortTitle({ userContext, transcript, category }) {
-  const { apiKey, baseUrl, model } = titleLLMConfig();
-
-  if (!apiKey || !baseUrl) return fallbackShortTitle({ userContext, transcript, category });
-
-  const t = String(transcript || "");
-  const ctx = String(userContext || "");
-  const transcriptSnippet = t.split("\n").slice(0, 40).join("\n").slice(0, 3500);
-
-  const prompt = [
-    "Create a SHORT title for this call analysis.",
-    "Rules:",
-    "- Output ONLY the title text (no quotes, no bullets, no punctuation at the end).",
-    "- 3 to 5 words maximum.",
-    "- Title Case.",
-    "- Use the transcript + context (do not copy the context verbatim).",
-    "- Do NOT include outcome words (Booked/Connected/Rejected/Hostile/etc).",
-    "",
-    `Scenario (optional): ${String(category || "None")}`,
-    "",
-    `User context: ${ctx}`,
-    "",
-    "Transcript (excerpt):",
-    transcriptSnippet,
-  ].join("\n");
-
-  try {
-    const url = baseUrl.replace(/\/+$/, "") + "/v1/chat/completions";
-    const r = await fetch(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        max_tokens: 24,
-        messages: [
-          {
-            role: "system",
-            content: "You write ultra-short, high-signal titles for call analyses. Follow the rules exactly.",
-          },
-          { role: "user", content: prompt },
-        ],
-      }),
-    });
-
-    const j = await r.json().catch(() => ({}));
-    const raw = j?.choices?.[0]?.message?.content || j?.choices?.[0]?.text || "";
-
-    const enforced = enforce3to5Words(raw);
-    if (enforced && enforced.split(/\s+/g).filter(Boolean).length >= 3) return enforced;
-
-    return fallbackShortTitle({ userContext, transcript, category });
-  } catch {
-    return fallbackShortTitle({ userContext, transcript, category });
-  }
-}
-
-// -------------------- Outcome detection (override for Booked Meeting accuracy) --------------------
-
-function normalizeOutcomeKey(raw) {
-  const s = String(raw || "").trim();
-  if (!s) return "";
-  const up = s.toUpperCase().replace(/\s+/g, "_").replace(/-+/g, "_");
-
-  const map = {
-    BOOKED: "BOOKED_MEETING",
-    BOOKEDCALL: "BOOKED_MEETING",
-    BOOKED_CALL: "BOOKED_MEETING",
-    MEETING_BOOKED: "BOOKED_MEETING",
-    BOOKED_MEETING: "BOOKED_MEETING",
-
-    CONNECTED: "CONNECTED",
-    CONVERSATION: "CONNECTED",
-
-    HOSTILE: "HOSTILE",
-    ABUSIVE: "HOSTILE",
-
-    REJECTED: "REJECTED",
-    DECLINED: "REJECTED",
-
-    VOICEMAIL: "VOICEMAIL",
-    NO_ANSWER: "NO_ANSWER",
-    NOANSWER: "NO_ANSWER",
-  };
-
-  return map[up] || up;
-}
-
-function firstRegexHit(text, regexes) {
-  for (const r of regexes) {
-    const m = text.match(r);
-    if (m && m[0]) return m[0];
-  }
+function extFromMimetype(mime) {
+  if (!mime) return "";
+  if (mime.includes("mpeg")) return ".mp3";
+  if (mime.includes("wav")) return ".wav";
+  if (mime.includes("mp4")) return ".mp4";
+  if (mime.includes("quicktime")) return ".mov";
+  if (mime.includes("m4a")) return ".m4a";
   return "";
 }
 
-function detectBookedMeeting(transcriptLower) {
-  const platform = firstRegexHit(transcriptLower, [
-    /\bzoom\b/i,
-    /\bgoogle meet\b/i,
-    /\bmeet link\b/i,
-    /\bmicrosoft teams\b/i,
-    /\bteams link\b/i,
-    /\bcalendar invite\b/i,
-    /\bcalendly\b/i,
-    /\bcalendar link\b/i,
-    /\binvite you\b/i,
-    /\bsend (you|ya) (a|the) (link|invite)\b/i,
-    /\bi['’]?ll (send|text|email) (you|ya) (a|the) (zoom|meet|teams)? ?(link|invite)\b/i,
-    /\blet['’]?s (do|hop on|jump on)\b.*\b(zoom|call|meeting)\b/i,
-    /\b(discovery|consultation|intro)\s+call\b/i,
-  ]);
-
-  const scheduling = firstRegexHit(transcriptLower, [
-    /\b(at|around)\s+\d{1,2}(:\d{2})?\s*(am|pm)\b/i,
-    /\b\d{1,2}(:\d{2})?\s*(am|pm)\b/i,
-    /\b(tomorrow|today|next week|next monday|next tuesday|next wednesday|next thursday|next friday)\b/i,
-    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
-    /\b(once|when) (you|ya) (get|receive) (the )?(invite|link)\b/i,
-    /\b(send|text|email) (me|him|her|you) (the )?(invite|link)\b/i,
-    /\b(i['’]?ll|we['’]?ll) (schedule|set up|book)\b/i,
-  ]);
-
-  const acceptance = firstRegexHit(transcriptLower, [
-    /\bthat works\b/i,
-    /\bsounds good\b/i,
-    /\bokay\b/i,
-    /\byes\b/i,
-    /\bperfect\b/i,
-    /\bdeal\b/i,
-    /\blet['’]?s do it\b/i,
-  ]);
-
-  let score = 0;
-  if (platform) score += 2;
-  if (scheduling) score += 2;
-  if (acceptance) score += 1;
-
-  const hit = score >= 4;
-  let evidence = "";
-  if (hit) evidence = [platform, scheduling, acceptance].filter(Boolean).join(" • ");
-  return { hit, evidence };
+function isVideoMimetype(mime) {
+  return (mime || "").startsWith("video/");
 }
 
-function detectHostile(transcriptLower) {
-  const hit = firstRegexHit(transcriptLower, [
-    /\bfuck (off|you)\b/i,
-    /\bgo to hell\b/i,
-    /\bstop calling\b/i,
-    /\bdon't call (me|us) again\b/i,
-    /\btake (me|us) off (your|the) list\b/i,
-    /\basshole\b/i,
-    /\bidiot\b/i,
-  ]);
-  return { hit: !!hit, evidence: hit };
+function isAudioMimetype(mime) {
+  return (mime || "").startsWith("audio/");
 }
 
-function detectRejected(transcriptLower) {
-  const hit = firstRegexHit(transcriptLower, [
-    /\bnot interested\b/i,
-    /\bno thanks\b/i,
-    /\bwe['’]?re good\b/i,
-    /\bwe already have\b/i,
-    /\bdo not need\b/i,
-    /\bnot right now\b/i,
-    /\bmaybe later\b/i,
-    /\bjust email\b/i,
-  ]);
-  return { hit: !!hit, evidence: hit };
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, TMP_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || extFromMimetype(file.mimetype) || "";
+      cb(null, `${Date.now()}_${safeId(8)}${ext}`);
+    },
+  }),
+  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
+});
+
+// ---- AssemblyAI helpers ----
+// AssemblyAI upload endpoint is /v2/upload :contentReference[oaicite:3]{index=3}
+async function assemblyUpload(filepath) {
+  const stream = fs.createReadStream(filepath);
+  const res = await fetch("https://api.assemblyai.com/v2/upload", {
+    method: "POST",
+    headers: { authorization: ASSEMBLYAI_API_KEY },
+    body: stream,
+    // Node fetch streaming hint (safe in Node 18+)
+    duplex: "half",
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`AssemblyAI upload failed (${res.status}): ${txt}`);
+  }
+  const data = await res.json();
+  if (!data.upload_url) throw new Error("AssemblyAI upload: missing upload_url");
+  return data.upload_url;
 }
 
-function detectVoicemail(transcriptLower) {
-  const hit = firstRegexHit(transcriptLower, [
-    /\bvoicemail\b/i,
-    /\bleave (a )?message\b/i,
-    /\bafter the tone\b/i,
-    /\bbeep\b/i,
-  ]);
-  return { hit: !!hit, evidence: hit };
+async function assemblyCreateTranscript(uploadUrl) {
+  const res = await fetch("https://api.assemblyai.com/v2/transcript", {
+    method: "POST",
+    headers: {
+      authorization: ASSEMBLYAI_API_KEY,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      audio_url: uploadUrl,
+      speaker_labels: true,
+      punctuate: true,
+      format_text: true,
+      // keep MVP stable; add more flags later if needed
+    }),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`AssemblyAI create transcript failed (${res.status}): ${txt}`);
+  }
+  const data = await res.json();
+  if (!data.id) throw new Error("AssemblyAI create transcript: missing id");
+  return data.id;
 }
 
-function computeOutcome({ llmOutcome, transcript }) {
-  const raw = String(transcript || "");
-  const lower = raw.toLowerCase();
+async function assemblyPollTranscript(transcriptId, timeoutMs = 12 * 60 * 1000) {
+  const start = Date.now();
+  while (true) {
+    if (Date.now() - start > timeoutMs) throw new Error("AssemblyAI transcript timed out");
 
-  const booked = detectBookedMeeting(lower);
-  if (booked.hit) {
-    return {
-      key: "BOOKED_MEETING",
-      reason: `Booked meeting detected from transcript evidence: ${booked.evidence || "meeting language + scheduling cues"}.`,
-      evidence: booked.evidence || "",
-    };
+    const res = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+      headers: { authorization: ASSEMBLYAI_API_KEY },
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`AssemblyAI poll failed (${res.status}): ${txt}`);
+    }
+
+    const data = await res.json();
+    if (data.status === "completed") return data;
+    if (data.status === "error") throw new Error(`AssemblyAI error: ${data.error}`);
+
+    await new Promise((r) => setTimeout(r, 2500));
   }
-
-  const hostile = detectHostile(lower);
-  if (hostile.hit) {
-    return {
-      key: "HOSTILE",
-      reason: `Hostile rejection detected from transcript evidence: ${hostile.evidence}.`,
-      evidence: hostile.evidence || "",
-    };
-  }
-
-  const rejected = detectRejected(lower);
-  if (rejected.hit) {
-    return {
-      key: "REJECTED",
-      reason: `Rejection detected from transcript evidence: ${rejected.evidence}.`,
-      evidence: rejected.evidence || "",
-    };
-  }
-
-  const vm = detectVoicemail(lower);
-  if (vm.hit) {
-    return {
-      key: "VOICEMAIL",
-      reason: `Voicemail detected from transcript evidence: ${vm.evidence}.`,
-      evidence: vm.evidence || "",
-    };
-  }
-
-  const norm = normalizeOutcomeKey(llmOutcome || "");
-  if (norm) {
-    return {
-      key: norm,
-      reason: `Classified as ${norm.replace(/_/g, " ").toLowerCase()} based on overall call content.`,
-      evidence: "",
-    };
-  }
-
-  return {
-    key: "CONNECTED",
-    reason:
-      "Reached a real person and had a conversation. No strong evidence of a booked meeting or explicit rejection was detected.",
-    evidence: "",
-  };
 }
 
-// -------------------- Report sanitization (remove internal jargon) --------------------
+// ---- Video -> audio extraction (ffmpeg-static) ----
+async function extractAudioToWav(videoPath) {
+  const ffmpegPath = ffmpegStatic;
+  if (!ffmpegPath) throw new Error("ffmpeg-static did not provide a binary path");
 
-function sanitizeReportForUsers(reportText) {
-  let t = String(reportText || "");
+  const outPath = path.join(TMP_DIR, `${Date.now()}_${safeId(8)}.wav`);
 
-  const replacements = [
-    [/multiple label turns detected/gi, "Multiple speakers were detected in the call"],
-    [/label turns detected/gi, "speaker turns were detected"],
-    [/diarization/gi, "speaker detection"],
-    [/token limit/gi, "length limit"],
+  // 16k mono WAV is great for STT and small enough
+  const args = [
+    "-y",
+    "-i",
+    videoPath,
+    "-vn",
+    "-ac",
+    "1",
+    "-ar",
+    "16000",
+    "-f",
+    "wav",
+    outPath,
   ];
 
-  for (const [re, rep] of replacements) t = t.replace(re, rep);
-  return t;
+  await new Promise((resolve, reject) => {
+    const p = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    p.stderr.on("data", (d) => (err += d.toString()));
+    p.on("error", reject);
+    p.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg failed (code ${code}): ${err.slice(0, 1200)}`));
+    });
+  });
+
+  return outPath;
 }
 
-// -------------------- Support endpoint --------------------
+// ---- Transcript formatting (stable labels: You / Prospect) ----
+function normalizeTranscript(assemblyData) {
+  const utterances = Array.isArray(assemblyData.utterances) ? assemblyData.utterances : [];
+  if (utterances.length === 0) {
+    return {
+      text: assemblyData.text || "",
+      turns: [],
+    };
+  }
 
-app.post("/api/support", async (req, res) => {
+  // MVP rule: first speaker = You, everyone else = Prospect (prevents Speaker X weirdness)
+  const firstSpeaker = utterances[0]?.speaker;
+  const turns = utterances.map((u) => ({
+    speakerRaw: u.speaker,
+    speaker: u.speaker === firstSpeaker ? "You" : "Prospect",
+    start: u.start,
+    end: u.end,
+    text: (u.text || "").trim(),
+  }));
+
+  const text = turns
+    .filter((t) => t.text)
+    .map((t) => `${t.speaker}: ${t.text}`)
+    .join("\n");
+
+  return { text, turns };
+}
+
+// ---- DeepSeek (OpenAI-compatible-ish) chat ----
+// Endpoint: POST {baseUrl}/chat/completions (DeepSeek docs) :contentReference[oaicite:4]{index=4}
+async function deepseekChat({ messages, temperature = 0.2, max_tokens = 1200, model = "deepseek-chat" }) {
+  const res = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature,
+      max_tokens,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`DeepSeek failed (${res.status}): ${txt}`);
+  }
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content || "";
+  return content;
+}
+
+function safeJsonParse(maybeJson) {
   try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    return JSON.parse(maybeJson);
+  } catch {
+    // try to extract JSON from codeblock
+    const m = String(maybeJson).match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("Model did not return JSON.");
+    return JSON.parse(m[0]);
+  }
+}
 
-    const message = String(req.body?.message || "").trim();
-    const contact = String(req.body?.contact || "").trim();
-    const page_url = String(req.body?.page_url || "").trim();
+// ---- Analysis + Playbook prompts ----
+const ENFORCER_VERSION = "ENFORCER_V6_2025-12-31";
 
-    if (!message || message.length < 5) {
-      return res.status(400).json({ error: "Message is required (5+ characters)." });
-    }
+function buildCallAnalysisPrompt({ context, scenario, transcriptText }) {
+  return [
+    {
+      role: "system",
+      content:
+        `You are Calibrate: a brutally practical post-call decision engine for sales calls.
+Return ONLY valid JSON (no markdown). No fluff. Make it immediately actionable.
+If transcript is short or unclear, say so and still give best actions.
+Enforcer=${ENFORCER_VERSION}.`,
+    },
+    {
+      role: "user",
+      content: JSON.stringify(
+        {
+          scenario: scenario || null,
+          user_context: context || "",
+          transcript: transcriptText || "",
+          output_contract: {
+            call_result: "One of: Booked Meeting | Rejected | Connected | No Show | Hostile | Voicemail | Other",
+            call_result_reason: "One sentence why",
+            overall_grade: "A|B|C|D|F",
+            overall_score_0_100: 0,
+            signal_badges: ["short badges, 2-6 items"],
+            followup: {
+              two_line: "two lines max, no emojis unless asked",
+              alt_versions: ["optional, up to 2"],
+            },
+            fix_these_first_top3: [
+              {
+                issue: "short name",
+                why_it_hurt: "short explanation",
+                do_this_instead: "specific behavior replacement",
+                example_line: "a single sentence example",
+                evidence_quote: "short quote from transcript if possible",
+              },
+            ],
+            repackaged_sections: {
+              section_1_call_summary: "tight paragraph",
+              section_2_objections: [
+                { objection: "string", best_response: "string", avoid: "string" },
+              ],
+              section_3_offer_clarity: { what_was_clear: "string", what_was_missing: "string" },
+              section_4_script_upgrade: {
+                opener: "string",
+                discovery_questions: ["strings"],
+                close: "string",
+              },
+              section_5_moments_to_review: [
+                { moment: "string", why: "string", timestamp_hint: "optional" },
+              ],
+              section_6_next_call_micro_plan: ["step 1", "step 2", "step 3"],
+            },
+          },
+        },
+        null,
+        2
+      ),
+    },
+  ];
+}
 
-    const sb = supabaseService();
+function buildPlaybookPrompt({ entity, runs }) {
+  // runs: [{created_at, call_result, transcript_text}]
+  const compactRuns = runs.map((r) => ({
+    created_at: r.created_at,
+    call_result: r.call_result,
+    transcript: r.transcript_text,
+  }));
+
+  return [
+    {
+      role: "system",
+      content:
+        `You are Calibrate Playbook Engine.
+Synthesize multiple calls for the same entity into a single "ultimate" playbook.
+Return ONLY valid JSON. No fluff. Make it usable immediately.`,
+    },
+    {
+      role: "user",
+      content: JSON.stringify(
+        {
+          entity: {
+            id: entity.id,
+            name: entity.name,
+            offer: entity.offer || "",
+            industry: entity.industry || "",
+            notes: entity.notes || "",
+          },
+          calls: compactRuns,
+          output_contract: {
+            ultimate_script: {
+              opener: "string",
+              permission_based_bridge: "string",
+              qualifying_block: ["questions"],
+              value_proof_block: "string",
+              objection_map: [
+                { objection: "string", best_response: "string", fallback: "string", dont_say: "string" },
+              ],
+              close: "string",
+            },
+            what_to_say_more: ["bullets"],
+            what_to_stop_saying: ["bullets"],
+            patterns_across_calls: ["bullets"],
+            quick_drills: ["bullets"],
+            next_experiments: [
+              { experiment: "string", hypothesis: "string", success_metric: "string" },
+            ],
+          },
+        },
+        null,
+        2
+      ),
+    },
+  ];
+}
+
+// ---- API ----
+app.get("/health", (req, res) => res.json({ ok: true, service: "calibrate", enforcer: ENFORCER_VERSION }));
+
+// Entities
+app.get("/api/entities", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("entities")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ entities: data || [] });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.post("/api/entities", async (req, res) => {
+  try {
+    const { name, offer, industry, notes } = req.body || {};
+    if (!name || !String(name).trim()) return res.status(400).json({ error: "Missing entity name" });
 
     const payload = {
-      user_id: userId,
-      message,
-      contact: contact || null,
-      page_url: page_url || null,
-      created_at: new Date().toISOString(),
+      name: String(name).trim(),
+      offer: offer ? String(offer).trim() : null,
+      industry: industry ? String(industry).trim() : null,
+      notes: notes ? String(notes).trim() : null,
     };
 
-    const { error } = await sb.from("support_tickets").insert([payload]);
-    if (error) {
-      return res.status(500).json({
-        error:
-          "Support submission failed. If this is your first time using support, make sure the 'support_tickets' table exists in Supabase.",
-        detail: error.message,
-      });
-    }
+    const { data, error } = await supabase.from("entities").insert(payload).select("*").single();
+    if (error) throw error;
 
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
+    res.json({ entity: data });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
   }
 });
 
-// -------------------- Playbook API --------------------
-
-app.get("/api/playbook/scripts", async (req, res) => {
+app.get("/api/entities/:id", async (req, res) => {
   try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const id = req.params.id;
 
-    const sb = supabaseService();
-    const { data, error } = await sb
-      .from("playbook_scripts")
-      .select("id,title,updated_at,created_at")
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false })
-      .limit(200);
+    const { data: entity, error: e1 } = await supabase.from("entities").select("*").eq("id", id).single();
+    if (e1) throw e1;
 
-    if (error) {
-      return res.status(500).json({
-        error:
-          "Playbook query failed. Ensure playbook tables exist (playbook_scripts, playbook_versions).",
-        detail: error.message,
-      });
-    }
-    return res.json({ scripts: data || [] });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
-  }
-});
-
-app.get("/api/playbook/scripts/:id", async (req, res) => {
-  try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const sb = supabaseService();
-    const scriptId = req.params.id;
-
-    const { data: script, error: e1 } = await sb
-      .from("playbook_scripts")
-      .select("*")
-      .eq("id", scriptId)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (e1) {
-      return res.status(500).json({
-        error: "Playbook read failed. Ensure playbook tables exist.",
-        detail: e1.message,
-      });
-    }
-    if (!script) return res.status(404).json({ error: "Script not found" });
-
-    const { data: versions, error: e2 } = await sb
-      .from("playbook_versions")
-      .select("id,version,text,notes,source_run_id,created_at")
-      .eq("script_id", scriptId)
-      .eq("user_id", userId)
-      .order("version", { ascending: false })
-      .limit(50);
-
-    if (e2) {
-      return res.status(500).json({
-        error: "Playbook versions read failed. Ensure playbook_versions table exists.",
-        detail: e2.message,
-      });
-    }
-
-    return res.json({ script, versions: versions || [] });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
-  }
-});
-
-app.post("/api/playbook/scripts", async (req, res) => {
-  try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const title = String(req.body?.title || "").trim();
-    const text = String(req.body?.text || "").trim();
-    const source_run_id = String(req.body?.source_run_id || "").trim() || null;
-
-    if (!title) return res.status(400).json({ error: "Title is required." });
-    if (title.split(/\s+/g).filter(Boolean).length > 5) {
-      return res.status(400).json({ error: "Title must be 5 words or fewer." });
-    }
-    if (text.length < 5) return res.status(400).json({ error: "Script text is required (5+ chars)." });
-
-    const sb = supabaseService();
-    const now = new Date().toISOString();
-
-    const { data: inserted, error } = await sb
-      .from("playbook_scripts")
-      .insert([
-        {
-          user_id: userId,
-          title,
-          current_text: text,
-          created_at: now,
-          updated_at: now,
-        },
-      ])
-      .select("id")
-      .maybeSingle();
-
-    if (error) {
-      return res.status(500).json({
-        error: "Playbook create failed. Ensure playbook tables exist.",
-        detail: error.message,
-      });
-    }
-
-    const { error: e2 } = await sb.from("playbook_versions").insert([
-      {
-        user_id: userId,
-        script_id: inserted.id,
-        version: 1,
-        text,
-        notes: "Initial version",
-        source_run_id,
-        created_at: now,
-      },
-    ]);
-
-    if (e2) {
-      return res.status(500).json({
-        error: "Playbook version create failed. Ensure playbook_versions exists.",
-        detail: e2.message,
-      });
-    }
-
-    return res.json({ id: inserted.id });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
-  }
-});
-
-app.post("/api/playbook/scripts/:id/version", async (req, res) => {
-  try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const sb = supabaseService();
-    const scriptId = req.params.id;
-
-    const text = String(req.body?.text || "").trim();
-    const notes = String(req.body?.notes || "").trim() || null;
-    const source_run_id = String(req.body?.source_run_id || "").trim() || null;
-
-    if (text.length < 5) return res.status(400).json({ error: "Script text is required (5+ chars)." });
-
-    const { data: last, error: e1 } = await sb
-      .from("playbook_versions")
-      .select("version")
-      .eq("script_id", scriptId)
-      .eq("user_id", userId)
-      .order("version", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (e1) {
-      return res.status(500).json({
-        error: "Failed to read last version.",
-        detail: e1.message,
-      });
-    }
-
-    const nextV = (last?.version || 0) + 1;
-    const now = new Date().toISOString();
-
-    const { error: e2 } = await sb.from("playbook_versions").insert([
-      {
-        user_id: userId,
-        script_id: scriptId,
-        version: nextV,
-        text,
-        notes,
-        source_run_id,
-        created_at: now,
-      },
-    ]);
-
-    if (e2) {
-      return res.status(500).json({
-        error: "Failed to create new version.",
-        detail: e2.message,
-      });
-    }
-
-    const { error: e3 } = await sb
-      .from("playbook_scripts")
-      .update({ current_text: text, updated_at: now })
-      .eq("id", scriptId)
-      .eq("user_id", userId);
-
-    if (e3) {
-      return res.status(500).json({
-        error: "Failed to update current script.",
-        detail: e3.message,
-      });
-    }
-
-    return res.json({ ok: true, version: nextV });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
-  }
-});
-
-// -------------------- Runs API (history + details) --------------------
-
-function enforceShortDisplayTitle(title) {
-  const cleaned = String(title || "").trim();
-  if (!cleaned) return "Call Analysis";
-  const words = cleaned
-    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean);
-  if (words.length <= 5) return toTitleCase(words.join(" "));
-  return toTitleCase(words.slice(0, 5).join(" "));
-}
-
-app.get("/api/runs", async (req, res) => {
-  try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const sb = supabaseService();
-
-    const { data, error } = await sb
+    const { data: runs, error: e2 } = await supabase
       .from("runs")
-      .select("*")
-      .eq("user_id", userId)
+      .select("id, created_at, filename, call_result, overall_score, overall_grade")
+      .eq("entity_id", id)
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (e2) throw e2;
 
-    const runs = (data || []).map((r) => {
-      const mismatch = Boolean(normalizeScenarioMismatch(r));
+    const { data: pb, error: e3 } = await supabase
+      .from("entity_playbooks")
+      .select("*")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1);
 
-      const runTypeRaw = r.run_type ?? r.runType ?? r.type ?? "upload";
-      const type =
-        String(runTypeRaw).toLowerCase() === "upload"
-          ? "Upload"
-          : String(runTypeRaw).toLowerCase() === "record"
-          ? "Record"
-          : String(runTypeRaw).toLowerCase() === "practice"
-          ? "Practice"
-          : "Upload";
+    if (e3) throw e3;
 
-      const scenario_template = r.scenario_template ?? r.scenarioTemplate ?? r.category ?? null;
+    res.json({ entity, runs: runs || [], latest_playbook: (pb && pb[0]) || null });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 
-      const titleFromDb = pick(r, ["run_title", "title", "report_title"], "");
-      const titleComputed = enforceShortDisplayTitle(
-        titleFromDb || pick(r, ["user_context", "userContext"], "") || "Call Analysis"
-      );
+app.post("/api/entities/:id/playbook", async (req, res) => {
+  try {
+    const id = req.params.id;
 
-      const call_outcome = pick(r, ["call_outcome", "callOutcome", "outcome"], null);
-      const call_outcome_reason = pick(r, ["call_outcome_reason", "outcome_reason", "callOutcomeReason"], null);
+    const { data: entity, error: e1 } = await supabase.from("entities").select("*").eq("id", id).single();
+    if (e1) throw e1;
 
-      return {
-        id: r.id,
-        created_at: r.created_at,
-        title: titleComputed,
-        run_title: titleComputed,
-        scenario_template,
-        call_outcome,
-        call_outcome_reason,
-        type,
-        run_type: runTypeRaw,
-        mismatch,
-        scenario_mismatch: mismatch,
-        mismatch_reason: pick(r, ["mismatch_reason"], null),
-      };
-    });
+    const { data: runs, error: e2 } = await supabase
+      .from("runs")
+      .select("created_at, call_result, transcript_text")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: false })
+      .limit(PLAYBOOK_MAX_RUNS);
 
-    return res.json({ runs });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
+    if (e2) throw e2;
+
+    const usableRuns = (runs || []).filter((r) => r.transcript_text && String(r.transcript_text).trim().length > 40);
+    if (usableRuns.length === 0) {
+      return res.status(400).json({ error: "Not enough transcripts under this entity yet." });
+    }
+
+    const prompt = buildPlaybookPrompt({ entity, runs: usableRuns });
+    const raw = await deepseekChat({ messages: prompt, temperature: 0.25, max_tokens: 1600 });
+    const playbook = safeJsonParse(raw);
+
+    const row = {
+      entity_id: id,
+      model: "deepseek-chat",
+      prompt_version: "PLAYBOOK_V1",
+      playbook_json: playbook,
+    };
+
+    const { data: saved, error: e3 } = await supabase.from("entity_playbooks").insert(row).select("*").single();
+    if (e3) throw e3;
+
+    res.json({ playbook: saved });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// Runs list (optional entity filter)
+app.get("/api/runs", async (req, res) => {
+  try {
+    const entityId = req.query.entity_id || null;
+
+    let q = supabase
+      .from("runs")
+      .select("id, created_at, filename, call_result, overall_grade, overall_score, entity_id")
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (entityId) q = q.eq("entity_id", entityId);
+
+    const { data, error } = await q;
+    if (error) throw error;
+
+    res.json({ runs: data || [] });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
   }
 });
 
 app.get("/api/runs/:id", async (req, res) => {
   try {
-    const userId = await requireUserId(req);
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const runId = req.params.id;
-    const sb = supabaseService();
-
-    const { data, error } = await sb.from("runs").select("*").eq("id", runId).eq("user_id", userId).maybeSingle();
-
-    if (error) return res.status(500).json({ error: error.message });
-    if (!data) return res.status(404).json({ error: "Run not found" });
-
-    const mismatch = Boolean(normalizeScenarioMismatch(data));
-
-    const runTypeRaw = data.run_type ?? data.runType ?? data.type ?? "upload";
-    const type =
-      String(runTypeRaw).toLowerCase() === "upload"
-        ? "Upload"
-        : String(runTypeRaw).toLowerCase() === "record"
-        ? "Record"
-        : String(runTypeRaw).toLowerCase() === "practice"
-        ? "Practice"
-        : "Upload";
-
-    const scenario_template = data.scenario_template ?? data.scenarioTemplate ?? data.category ?? null;
-
-    const titleFromDb = pick(data, ["run_title", "title", "report_title"], "");
-    const titleComputed = enforceShortDisplayTitle(
-      titleFromDb || pick(data, ["user_context", "userContext"], "") || "Call Analysis"
-    );
-
-    const run = {
-      ...data,
-      mismatch,
-      scenario_mismatch: mismatch,
-      mismatch_reason: pick(data, ["mismatch_reason"], null),
-      run_type: runTypeRaw,
-      type,
-      title: titleComputed,
-      run_title: titleComputed,
-      scenario_template,
-    };
-
-    return res.json({ run });
-  } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
+    const id = req.params.id;
+    const { data, error } = await supabase.from("runs").select("*").eq("id", id).single();
+    if (error) throw error;
+    res.json({ run: data });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
   }
 });
 
-// -------------------- Calibrate endpoint (PERSIST RUNS) --------------------
-
-app.post("/api/run", upload.single("audio"), async (req, res) => {
-  const userId = await requireUserId(req);
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-  if (activeRunByUser.has(userId)) {
-    return res.status(429).json({ error: "A run is already in progress. Please wait." });
-  }
-
+// Upload Call (audio or video)
+app.post("/api/run", upload.single("file"), async (req, res) => {
+  const cleanup = [];
   try {
-    activeRunByUser.set(userId, Date.now());
+    if (!req.file) return res.status(400).json({ error: "Missing file" });
 
-    const file = req.file;
-    if (!file?.buffer) return res.status(400).json({ error: "No audio file uploaded (field name must be 'audio')." });
+    const {
+      context = "",
+      scenario = "",
+      legacyScenario = "",
+      entityId = "",
+      entityName = "",
+      entityOffer = "",
+      entityIndustry = "",
+    } = req.body || {};
 
-    const userContext = (req.body?.context || "").trim();
-    const category = (req.body?.category || "").trim();
-    if (userContext.length < 10) return res.status(400).json({ error: "Context is required (10+ characters)." });
+    let entity_id = entityId || null;
 
-    const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const sb = supabaseService();
+    // If entityId not provided, allow quick-create by entityName (MVP convenience)
+    if (!entity_id && entityName && String(entityName).trim()) {
+      const name = String(entityName).trim();
 
-    const { count, error: countErr } = await sb
-      .from("runs")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .gte("created_at", cutoffIso);
+      // try find existing by exact name first
+      const { data: found, error: fe } = await supabase
+        .from("entities")
+        .select("*")
+        .eq("name", name)
+        .limit(1);
 
-    if (countErr) return res.status(500).json({ error: countErr.message });
-    if ((count || 0) >= MAX_RUNS_PER_24H) {
-      return res.status(429).json({ error: `Daily limit reached (${MAX_RUNS_PER_24H}/24h). Try again later.` });
+      if (fe) throw fe;
+
+      if (found && found[0]) {
+        entity_id = found[0].id;
+      } else {
+        const { data: created, error: ce } = await supabase
+          .from("entities")
+          .insert({
+            name,
+            offer: entityOffer ? String(entityOffer).trim() : null,
+            industry: entityIndustry ? String(entityIndustry).trim() : null,
+          })
+          .select("*")
+          .single();
+
+        if (ce) throw ce;
+        entity_id = created.id;
+      }
     }
 
-    const asr = await transcribeWithAssemblyAI(file.buffer);
-    const transcript = asr.transcript;
-    const transcriptLines = asr.lines;
+    const inPath = req.file.path;
+    cleanup.push(inPath);
 
-    const [result, aiTitleRaw] = await Promise.all([
-      runCalibrate({ transcript, userContext, category, legacyScenario: "" }),
-      generateAiShortTitle({ userContext, transcript, category }),
-    ]);
+    const mime = req.file.mimetype || "";
+    const original = req.file.originalname || path.basename(inPath);
 
-    const computedTitle = enforceShortDisplayTitle(aiTitleRaw || "");
+    let audioPath = inPath;
 
-    const reportRaw = pick(result, ["report", "coachingReport", "report_md", "reportMarkdown"], "") || "";
-    const reportText = sanitizeReportForUsers(reportRaw);
+    // If video, extract audio
+    if (isVideoMimetype(mime) || /\.(mp4|mov|mkv|webm)$/i.test(original)) {
+      audioPath = await extractAudioToWav(inPath);
+      cleanup.push(audioPath);
+    } else if (!isAudioMimetype(mime) && !/\.(mp3|wav|m4a|aac|ogg)$/i.test(original)) {
+      return res.status(400).json({ error: "Unsupported file type. Upload audio (mp3/wav/m4a) or video (mp4/mov)." });
+    }
 
-    const mismatchReasonRaw =
-      pick(result, ["context_conflict_banner", "contextConflictBanner", "scenarioMismatch", "scenario_mismatch"], "") ||
-      "";
+    // AssemblyAI pipeline
+    const uploadUrl = await assemblyUpload(audioPath);
+    const transcriptId = await assemblyCreateTranscript(uploadUrl);
+    const assemblyData = await assemblyPollTranscript(transcriptId);
 
-    const mismatchReason = category ? String(mismatchReasonRaw || "").trim() : "";
-    const combinedLower = `${userContext}\n${transcript}`.toLowerCase();
-    const hits = category ? countScenarioHits(category, combinedLower) : 0;
+    const { text: transcriptText, turns } = normalizeTranscript(assemblyData);
 
-    // Conservative: only flag mismatch when category chosen AND model produced a mismatch message AND we see zero matching keywords.
-    const mismatch = Boolean(category && mismatchReason && hits === 0);
+    // AI analysis
+    const prompt = buildCallAnalysisPrompt({ context, scenario: scenario || legacyScenario, transcriptText });
+    const raw = await deepseekChat({ messages: prompt, temperature: 0.2, max_tokens: 1700 });
 
-    const llmOutcome = pick(result, ["call_outcome", "callOutcome", "outcome"], "");
-    const outcome = computeOutcome({ llmOutcome, transcript });
+    const analysis = safeJsonParse(raw);
 
-    const row = {
-      user_id: userId,
-      run_type: "upload",
+    const call_result = analysis?.call_result || "Other";
+    const call_result_reason = analysis?.call_result_reason || "";
+    const overall_grade = analysis?.overall_grade || "C";
+    const overall_score = Number(analysis?.overall_score_0_100 ?? 60);
 
-      user_context: userContext,
-      scenario_template: category || null,
-
-      run_title: computedTitle,
-      title: computedTitle,
-
-      transcript_lines: transcriptLines,
-      report_text: reportText,
-
-      diagnostics: { ...result, _transcript_meta: asr.meta },
-
-      call_outcome: outcome.key,
-      call_outcome_reason: outcome.reason,
-      call_outcome_evidence: outcome.evidence || null,
-
-      enforcer: ENFORCER_VERSION,
-      scenario_mismatch: mismatch,
-      mismatch_reason: mismatch ? (mismatchReason || null) : null,
+    const runRow = {
+      filename: original,
+      scenario: scenario || null,
+      legacy_scenario: legacyScenario || null,
+      context: context || "",
+      entity_id,
+      transcript_text: transcriptText || "",
+      transcript_json: { turns, assembly: { id: transcriptId } },
+      analysis_json: analysis,
+      call_result,
+      call_result_reason,
+      overall_grade,
+      overall_score,
+      enforcer_version: ENFORCER_VERSION,
     };
 
-    const inserted = await insertRunResilient(sb, row);
-    return res.json({ run_id: inserted?.id || null });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: err?.message || String(err) });
+    const { data: saved, error: se } = await supabase.from("runs").insert(runRow).select("*").single();
+    if (se) throw se;
+
+    res.json({ run: saved });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
   } finally {
-    activeRunByUser.delete(userId);
+    // best-effort cleanup
+    for (const p of cleanup) {
+      try { await fsp.unlink(p); } catch {}
+    }
   }
 });
 
-// If someone hits an unknown /api route, return JSON (NOT index.html)
-app.use("/api", (req, res) => res.status(404).json({ error: "Unknown API route" }));
+// Serve frontend
+app.use(express.static(path.join(__dirname)));
 
-// ✅ SPA fallback (NO wildcard path parsing — fixes Render/Express crash)
-app.use((req, res) => {
+// IMPORTANT: Express 5 can't do app.get("*", ...) — use "/*" instead
+app.get("/*", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(PORT, () => {
-  console.log(`Calibrate MVP running on port ${PORT}`);
-  console.log(`Enforcer loaded: ${ENFORCER_VERSION}`);
+  console.log(`Calibrate listening on :${PORT}`);
 });

@@ -1,2263 +1,1295 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Calibrate</title>
-
-  <!-- Inline SVG favicon (Calibrate mark) -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231d4ed8'/%3E%3Cstop offset='1' stop-color='%2338bdf8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M32 6a26 26 0 1 0 18.38 7.62' fill='none' stroke='url(%23g)' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M28 33l6 6 14-14' fill='none' stroke='url(%23g)' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
-
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Calibrate MVP</title>
   <style>
     :root{
-      --bg:#f4f8ff;
-      --bg2:#eef6ff;
-      --card:#ffffff;
-      --muted:#64748b;
-      --text:#0f172a;
-      --line:rgba(15,23,42,0.10);
-      --good:#16a34a;
-      --warn:#f59e0b;
-      --bad:#ef4444;
-
-      --blue:#2563eb;
-      --blue2:#38bdf8;
-
-      --shadow:0 18px 45px rgba(2,6,23,0.10);
-      --radius:18px;
+      --bg:#0b0f17;
+      --panel:#0f1624;
+      --panel2:#0c1220;
+      --line:#1f2a3d;
+      --text:#e8eefc;
+      --muted:#9fb0cf;
+      --good:#2dd4bf;
+      --warn:#fbbf24;
+      --bad:#fb7185;
+      --accent:#60a5fa;
+      --accent2:#a78bfa;
+      --shadow: 0 18px 50px rgba(0,0,0,.35);
+      --r: 16px;
+      --r2: 22px;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
     }
-
     *{box-sizing:border-box}
+    html,body{height:100%}
     body{
       margin:0;
       font-family:var(--sans);
-      color:var(--text);
       background:
-        radial-gradient(900px 500px at 20% -10%, rgba(37,99,235,0.18), transparent 60%),
-        radial-gradient(800px 450px at 100% 0%, rgba(56,189,248,0.18), transparent 55%),
-        linear-gradient(180deg, var(--bg), var(--bg2));
+        radial-gradient(900px 500px at 20% -10%, rgba(96,165,250,.25), transparent 60%),
+        radial-gradient(900px 500px at 90% 10%, rgba(167,139,250,.18), transparent 60%),
+        radial-gradient(900px 500px at 50% 120%, rgba(45,212,191,.12), transparent 60%),
+        var(--bg);
+      color:var(--text);
     }
-
-    .wrap{max-width:1120px;margin:24px auto;padding:0 16px;}
-
-    .header{
-      display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;
+    a{color:inherit}
+    .app{
+      display:grid;
+      grid-template-columns: 280px 1fr;
+      min-height:100vh;
     }
-
-    .brand{display:flex;flex-direction:column;gap:2px}
-    .brandTitle{
-      margin:0;
+    .nav{
+      border-right:1px solid var(--line);
+      padding:18px;
+      background: rgba(15,22,36,.55);
+      backdrop-filter: blur(10px);
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:12px 12px 16px 12px;
+    }
+    .logo{
+      width:36px;height:36px;border-radius:12px;
+      background: linear-gradient(135deg, rgba(96,165,250,1), rgba(167,139,250,1));
+      box-shadow: 0 10px 30px rgba(96,165,250,.18);
+    }
+    .brand h1{font-size:16px;margin:0}
+    .brand p{margin:2px 0 0 0;color:var(--muted);font-size:12px}
+    .navlinks{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+    .navbtn{
       display:flex;align-items:center;gap:10px;
-      font-size:22px;letter-spacing:0.2px;
-      font-weight:900;
+      padding:10px 12px;border-radius:14px;
+      border:1px solid rgba(31,42,61,.6);
+      background: rgba(15,22,36,.6);
+      cursor:pointer;
+      transition:.15s transform, .15s background, .15s border;
+      color:var(--text);
     }
-    .brandSub{margin:0;color:var(--muted);font-size:13.5px}
-
-    .logoMark{
-      width:28px;height:28px;flex:0 0 28px;
-      display:grid;place-items:center;
-      border-radius:10px;
-      background:rgba(37,99,235,0.08);
-      border:1px solid rgba(37,99,235,0.15);
+    .navbtn:hover{transform: translateY(-1px); border-color: rgba(96,165,250,.45)}
+    .navbtn.active{background: rgba(96,165,250,.12); border-color: rgba(96,165,250,.55)}
+    .navbtn span{font-size:13px}
+    .tiny{font-size:12px;color:var(--muted)}
+    .main{
+      padding:22px;
     }
-    .logoMark svg{width:20px;height:20px;display:block}
-
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:12px;
+      margin-bottom:14px;
+    }
+    .title{
+      display:flex;flex-direction:column;gap:4px;
+    }
+    .title h2{margin:0;font-size:18px}
+    .title .sub{color:var(--muted);font-size:13px}
     .pill{
-      font-size:12px;padding:6px 10px;border-radius:999px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,0.80);
-      color:var(--text);
-      font-weight:800;
-    }
-
-    .btn{
-      appearance:none;border:0;
-      background:linear-gradient(135deg, rgba(37,99,235,0.95), rgba(56,189,248,0.85));
-      color:#ffffff;
-      font-weight:900;
-      padding:10px 14px;
-      border-radius:12px;
-      cursor:pointer;
-      box-shadow:0 10px 22px rgba(37,99,235,0.18);
-    }
-    .btn.secondary{
-      background:rgba(255,255,255,0.86);
-      border:1px solid var(--line);
-      color:var(--text);
-      font-weight:900;
-      box-shadow:none;
-    }
-    .btn:disabled{opacity:0.55;cursor:not-allowed}
-
-    .status{color:var(--muted);font-size:13px}
-    .hidden{display:none !important}
-    .link{color:var(--blue);text-decoration:none;font-weight:900}
-
-    .card{
-      background:rgba(255,255,255,0.86);
-      border:1px solid var(--line);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-      padding:16px;
-    }
-
-    /* Layout (sidebar + main) */
-    .appLayout{
-      display:grid;
-      grid-template-columns: 260px 1fr;
-      gap:16px;
-      align-items:start;
-    }
-    .appLayout.noSidebar{
-      grid-template-columns: 1fr;
-    }
-    @media (max-width: 960px){
-      .appLayout{grid-template-columns:1fr;}
-      .sidebar{position:relative;top:auto}
-    }
-
-    .sidebar{
-      position:sticky;
-      top:16px;
-      padding:14px;
-    }
-    .sideHead{
-      display:flex;align-items:center;justify-content:space-between;
-      margin-bottom:10px;
-    }
-    .sideTitle{
-      font-size:12px;
-      letter-spacing:0.12em;
-      text-transform:uppercase;
-      color:var(--muted);
-      font-weight:900;
-      margin:0;
-    }
-    .navList{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-    .navItem{
-      width:100%;
-      display:flex;align-items:center;justify-content:space-between;
-      gap:10px;
-      padding:10px 12px;
-      border-radius:14px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,0.80);
-      cursor:pointer;
-      font-weight:900;
-      color:var(--text);
-    }
-    .navItem:hover{background:rgba(37,99,235,0.06);border-color:rgba(37,99,235,0.20)}
-    .navItem.active{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.28)}
-    .navItem .tag{
-      font-size:11px;
-      padding:3px 8px;
-      border-radius:999px;
-      border:1px solid rgba(37,99,235,0.18);
-      background:rgba(37,99,235,0.08);
-      color:var(--blue);
-      font-weight:900;
-      white-space:nowrap;
-    }
-
-    /* Sub-item indicator under Home (NOT inside Home button) */
-    .navSubWrap{margin-top:-4px;margin-bottom:2px;padding-left:10px;}
-    .navSubItem{
-      width:100%;
-      display:flex;align-items:center;gap:8px;
-      padding:7px 10px;
-      border-radius:12px;
-      border:1px solid rgba(37,99,235,0.14);
-      background:rgba(37,99,235,0.06);
-      color:var(--text);
-      cursor:pointer;
-      font-weight:850;
-      font-size:12.5px;
-    }
-    .navSubItem:hover{background:rgba(37,99,235,0.09);border-color:rgba(37,99,235,0.20)}
-    .navSubDot{
-      width:8px;height:8px;border-radius:999px;
-      background:rgba(37,99,235,0.70);
-      flex:0 0 8px;
-      margin-top:1px;
-    }
-    .navSubText{
-      min-width:0;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:nowrap;
-    }
-
-    /* Quick actions */
-    .sectionTitle{font-size:15px;font-weight:950;margin:0 0 10px}
-    .actionGrid{
-      display:grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap:12px;
-      margin-top:10px;
-    }
-    @media (max-width: 960px){ .actionGrid{grid-template-columns:1fr;} }
-
-    .actionCard{
-      border:1px solid var(--line);
-      background:rgba(255,255,255,0.88);
-      border-radius:18px;
-      padding:14px;
-      cursor:pointer;
-      position:relative;
-      overflow:hidden;
-      min-height:92px;
-    }
-    .actionCard:hover{border-color:rgba(37,99,235,0.24); box-shadow:0 16px 34px rgba(37,99,235,0.12)}
-    .actionCard .aTitle{font-weight:950;margin:0 0 6px;font-size:14px}
-    .actionCard .aDesc{margin:0;color:var(--muted);font-size:12.5px;line-height:1.35}
-    .actionCard .aBadge{
-      position:absolute;top:12px;right:12px;
-      font-size:11px;font-weight:950;
-      padding:4px 8px;border-radius:999px;
-      border:1px solid rgba(37,99,235,0.18);
-      background:rgba(37,99,235,0.08);
-      color:var(--blue);
-    }
-    .actionCard.soon .aBadge{
-      border-color:rgba(245,158,11,0.22);
-      background:rgba(245,158,11,0.10);
-      color:#92400e;
-    }
-    .actionCard::after{
-      content:"";
-      position:absolute;inset:-40px -60px auto auto;
-      width:160px;height:160px;border-radius:999px;
-      background:radial-gradient(circle at 30% 30%, rgba(56,189,248,0.30), transparent 60%);
-      transform:rotate(25deg);
-      pointer-events:none;
-    }
-
-    /* Table */
-    .tableWrap{overflow:auto;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,0.92)}
-    .table{width:100%;border-collapse:collapse}
-    .table th,.table td{
-      padding:12px 10px;border-top:1px solid var(--line);
-      font-size:13.5px;text-align:left;
-      vertical-align:middle;
-    }
-    .table th{color:var(--muted);font-weight:950;background:rgba(15,23,42,0.02)}
-    .table tr:hover td{background:rgba(37,99,235,0.05);cursor:pointer}
-
-    .colReport{width:55%}
-    .colScenario{width:25%}
-    .colOutcome{width:20%}
-
-    .reportCell{
-      max-width:520px;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      font-weight:850;
-    }
-    .mutedCell{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;}
-
-    /* Outcome pill */
-    .outcomePill{
       display:inline-flex;align-items:center;gap:8px;
-      padding:5px 10px;border-radius:999px;
-      border:1px solid var(--line);
-      background:rgba(2,6,23,0.03);
-      font-weight:950;
-      font-size:12.5px;
-      white-space:nowrap;
-      position:relative;
-    }
-    .outcomePill.good{border-color:rgba(22,163,74,0.25); background:rgba(22,163,74,0.10)}
-    .outcomePill.warn{border-color:rgba(245,158,11,0.28); background:rgba(245,158,11,0.10)}
-    .outcomePill.bad{border-color:rgba(239,68,68,0.28); background:rgba(239,68,68,0.10)}
-
-    /* Tooltip: viewport-clamped (JS-driven). No ::before/::after tooltips anymore. */
-    .hasTip{position:relative}
-    .tipBox{
-      position:fixed;
-      min-width:260px;
-      max-width:420px;
-      padding:10px 12px;
-      border-radius:12px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,0.98);
-      box-shadow:0 18px 45px rgba(2,6,23,0.14);
-      color:var(--text);
-      font-weight:800;
-      font-size:12.5px;
-      line-height:1.35;
-      white-space:normal;
-      z-index:999999;
-      pointer-events:none;
-    }
-    .tipArrow{
-      position:fixed;
-      width:0;height:0;
-      border:7px solid transparent;
-      border-bottom-color:rgba(15,23,42,0.12);
-      z-index:1000000;
-      pointer-events:none;
-    }
-
-    /* Banners */
-    .banner{
-      border-radius:14px;padding:10px 12px;border:1px solid var(--line);
-      margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;
-      background:rgba(255,255,255,0.92);
-    }
-    .banner .dot{width:10px;height:10px;border-radius:999px;margin-top:4px}
-    .banner.good .dot{background:var(--good)}
-    .banner.warn .dot{background:var(--warn)}
-    .banner.bad  .dot{background:var(--bad)}
-    .banner .txt{font-size:13.5px;line-height:1.35;color:var(--text)}
-    .banner .txt strong{font-weight:950}
-
-    /* Transcript */
-    .transcriptBox{border:1px solid var(--line);border-radius:14px;background:rgba(15,23,42,0.02);overflow:hidden}
-
-    .tLine{
-      display:grid;
-      grid-template-columns:34px 92px 1fr;
-      column-gap:10px;
-      align-items:start;
-      padding:10px 12px;
-      border-top:1px solid var(--line);
-    }
-    .tLine:first-child{border-top:0}
-
-    .ln{
-      text-align:right;
+      padding:8px 10px;border-radius:999px;
+      background: rgba(15,22,36,.7);
+      border:1px solid rgba(31,42,61,.8);
       color:var(--muted);
-      font-family:var(--mono);
       font-size:12px;
-      padding-top:2px;
-      font-variant-numeric: tabular-nums;
     }
-
-    .chip{
-      width:92px;
-      font-size:12px;
-      padding:4px 8px;
-      border-radius:999px;
-      background:rgba(37,99,235,0.08);
-      border:1px solid rgba(37,99,235,0.16);
-      color:var(--text);
-      font-weight:850;
-      text-align:center;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-    .chip.you{background:rgba(37,99,235,0.14);border-color:rgba(37,99,235,0.24)}
-    .chip.pro{background:rgba(22,163,74,0.12);border-color:rgba(22,163,74,0.22)}
-    .chip.other{background:rgba(2,6,23,0.04);border-color:rgba(2,6,23,0.10)}
-
-    .tText{
-      min-width:0;
-      font-size:13.5px;
-      line-height:1.35;
-      white-space:pre-wrap;
-      overflow-wrap:anywhere;
-      word-break:break-word;
-    }
-
-    /* Report */
-    .reportGrid{display:grid;gap:10px}
-    .reportCard{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.90);overflow:hidden}
-    .reportHead{
-      padding:10px 12px;font-weight:950;display:flex;align-items:center;justify-content:space-between;
-      cursor:pointer;user-select:none;background:rgba(15,23,42,0.02);
-    }
-    .reportBody{padding:10px 12px;border-top:1px solid var(--line)}
-    .reportBody p{margin:0 0 8px;color:var(--text);font-size:13.5px;line-height:1.4}
-    .reportBody ul,.reportBody ol{margin:6px 0 10px 18px}
-    .reportBody li{margin:4px 0;font-size:13.5px;line-height:1.35}
-    .reportBody strong{font-weight:950}
-
-    /* Key/Value */
-    .kv{display:grid;gap:8px}
-    .kv .item{
-      display:grid;grid-template-columns:180px 1fr;gap:10px;padding:10px 12px;
-      border-radius:14px;background:rgba(15,23,42,0.02);border:1px solid var(--line);
-    }
-    .kv .k{color:var(--muted);font-size:13px;font-weight:900}
-    .kv .v{font-size:13.5px;white-space:pre-wrap}
-
-    .bullets{margin:0;padding-left:18px}
-    .bullets li{margin:4px 0;color:var(--text);font-size:13.5px}
-
-    details{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,0.92);padding:10px 12px}
-    details summary{cursor:pointer;font-weight:950}
-    .mono{font-family:var(--mono);font-size:12px;white-space:pre-wrap;color:var(--muted);margin-top:10px}
-    .footerNote{color:var(--muted);font-size:12px;margin-top:10px}
-
-    /* Toast */
-    .toastHost{
-      position:fixed;right:18px;bottom:18px;z-index:9999;
-      display:flex;flex-direction:column;gap:10px;
-      max-width:min(420px, calc(100vw - 36px));
-      pointer-events:none;
-    }
-    .toast{
-      pointer-events:auto;
-      border-radius:14px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,0.96);
-      box-shadow:0 18px 45px rgba(2,6,23,0.14);
-      padding:10px 12px;
-      display:flex;gap:10px;align-items:flex-start;
-    }
-    .toast .dot{width:10px;height:10px;border-radius:999px;margin-top:4px}
-    .toast.good .dot{background:var(--good)}
-    .toast.warn .dot{background:var(--warn)}
-    .toast.bad  .dot{background:var(--bad)}
-    .toast .txt{font-size:13.5px;line-height:1.35}
-    .toast .txt strong{font-weight:950}
-
-    /* Landing centering */
-    .landingWrap{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      min-height: calc(100vh - 170px);
-    }
-    .landingCard{
-      width:min(620px, 100%);
-      text-align:left;
-    }
-
-    /* Support */
-    .field{
-      width:100%;
-      background:rgba(15,23,42,0.02);
-      color:var(--text);
-      border:1px solid var(--line);
-      border-radius:12px;
-      padding:10px 12px;
-      outline:none;
-    }
-
-    /* Playbook */
-    .pbLayout{
+    .grid{
       display:grid;
-      grid-template-columns: 320px 1fr;
-      gap:12px;
-      align-items:start;
-      margin-top:12px;
+      grid-template-columns: 1fr;
+      gap:14px;
     }
-    @media (max-width: 960px){
-      .pbLayout{grid-template-columns:1fr;}
-    }
-    .pbLeft{
-      border:1px solid var(--line);
-      border-radius:14px;
-      background:rgba(255,255,255,0.92);
+    .card{
+      background: rgba(15,22,36,.72);
+      border: 1px solid rgba(31,42,61,.8);
+      border-radius: var(--r2);
+      box-shadow: var(--shadow);
       overflow:hidden;
     }
-    .pbLeftHead{
-      padding:10px 12px;
-      border-bottom:1px solid var(--line);
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      background:rgba(15,23,42,0.02);
+    .card .hd{
+      padding:14px 16px;
+      border-bottom:1px solid rgba(31,42,61,.75);
+      display:flex;align-items:center;justify-content:space-between;
+      gap:12px;
+      background: rgba(12,18,32,.55);
     }
-    .pbList{
-      max-height:520px;
-      overflow:auto;
-      padding:10px;
-      display:flex;
-      flex-direction:column;
-      gap:8px;
+    .card .hd h3{margin:0;font-size:14px}
+    .card .bd{padding:16px}
+    .row{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:14px;
     }
-    .pbItem{
-      width:100%;
-      text-align:left;
-      padding:10px 12px;
-      border-radius:14px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,0.86);
+    .row3{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:14px;
+    }
+    @media (max-width: 1000px){
+      .app{grid-template-columns: 1fr}
+      .nav{border-right:none;border-bottom:1px solid var(--line)}
+      .row,.row3{grid-template-columns:1fr}
+    }
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:8px;
+      padding:10px 12px;border-radius:14px;
+      border:1px solid rgba(31,42,61,.9);
+      background: rgba(96,165,250,.12);
+      color: var(--text);
       cursor:pointer;
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      font-weight:950;
-      color:var(--text);
-    }
-    .pbItem:hover{background:rgba(37,99,235,0.06);border-color:rgba(37,99,235,0.20)}
-    .pbItem.active{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.28)}
-    .pbMeta{
-      font-size:11px;
-      font-weight:900;
-      color:var(--muted);
+      font-size:13px;
+      transition:.15s transform, .15s background, .15s border;
+      user-select:none;
       white-space:nowrap;
     }
-    .pbRight{
-      border:1px solid var(--line);
-      border-radius:14px;
-      background:rgba(255,255,255,0.92);
-      overflow:hidden;
-    }
-    .pbRightHead{
+    .btn:hover{transform: translateY(-1px); border-color: rgba(96,165,250,.55)}
+    .btn.secondary{background: rgba(15,22,36,.7)}
+    .btn.danger{background: rgba(251,113,133,.12); border-color: rgba(251,113,133,.35)}
+    .btn.good{background: rgba(45,212,191,.10); border-color: rgba(45,212,191,.30)}
+    .btn.small{padding:8px 10px;border-radius:12px;font-size:12px}
+    .input, select, textarea{
+      width:100%;
       padding:10px 12px;
-      border-bottom:1px solid var(--line);
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      background:rgba(15,23,42,0.02);
+      border-radius:14px;
+      border:1px solid rgba(31,42,61,.9);
+      background: rgba(12,18,32,.55);
+      color:var(--text);
+      outline:none;
+      font-size:13px;
     }
-    .pbBody{
-      padding:12px;
-      display:grid;
-      gap:12px;
+    textarea{min-height:94px; resize: vertical}
+    .muted{color:var(--muted)}
+    .kpi{
+      display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
     }
-    .pbSmall{
-      font-size:12.5px;
+    .big{
+      font-size:18px;
+      font-weight:700;
+      letter-spacing:.2px;
+    }
+    .tag{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:7px 10px;border-radius:999px;
+      border:1px solid rgba(31,42,61,.9);
+      background: rgba(12,18,32,.55);
       color:var(--muted);
-      line-height:1.35;
+      font-size:12px;
     }
-    .pbVersions{
-      border-top:1px solid var(--line);
-      padding-top:10px;
+    .tag.good{border-color: rgba(45,212,191,.35); color: rgba(45,212,191,.95)}
+    .tag.warn{border-color: rgba(251,191,36,.35); color: rgba(251,191,36,.95)}
+    .tag.bad{border-color: rgba(251,113,133,.35); color: rgba(251,113,133,.95)}
+    .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .mono{font-family:var(--mono)}
+    .divider{height:1px;background:rgba(31,42,61,.75);margin:14px 0}
+    .list{
+      display:flex;flex-direction:column;gap:10px;
+    }
+    .issue{
+      padding:12px;border-radius:16px;
+      border:1px solid rgba(31,42,61,.85);
+      background: rgba(12,18,32,.45);
+    }
+    .issue .t{font-weight:700;font-size:13px;margin-bottom:6px}
+    .issue .x{color:var(--muted);font-size:12.5px;line-height:1.45}
+    .split{
       display:grid;
-      gap:8px;
+      grid-template-columns: 1.2fr .8fr;
+      gap:14px;
     }
-    .pbVer{
-      border:1px solid var(--line);
-      border-radius:14px;
-      background:rgba(15,23,42,0.02);
+    @media (max-width: 1200px){
+      .split{grid-template-columns:1fr}
+    }
+
+    /* Transcript drawer */
+    .drawer{
+      position:fixed;
+      inset: 0 0 0 auto;
+      width: 520px;
+      max-width: 92vw;
+      background: rgba(11,15,23,.88);
+      backdrop-filter: blur(14px);
+      border-left: 1px solid rgba(31,42,61,.85);
+      transform: translateX(110%);
+      transition: .18s transform ease;
+      z-index: 50;
+      display:flex;flex-direction:column;
+    }
+    .drawer.open{transform: translateX(0)}
+    .drawer .dh{
+      padding:14px 16px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      border-bottom:1px solid rgba(31,42,61,.85);
+    }
+    .drawer .db{
+      padding:14px 16px;
+      overflow:auto;
+    }
+    .bubble{
       padding:10px 12px;
+      border-radius:16px;
+      margin-bottom:10px;
+      border:1px solid rgba(31,42,61,.85);
+      background: rgba(12,18,32,.55);
     }
-    .pbVerTop{
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      align-items:flex-start;
-      margin-bottom:6px;
+    .bubble.you{border-color: rgba(96,165,250,.35); background: rgba(96,165,250,.08)}
+    .bubble.prospect{border-color: rgba(167,139,250,.35); background: rgba(167,139,250,.08)}
+    .bubble .who{font-size:12px;color:var(--muted);margin-bottom:5px}
+    .bubble .txt{font-size:13px;line-height:1.45}
+    .hidden{display:none !important}
+    .toast{
+      position:fixed; left: 18px; bottom: 18px;
+      padding:10px 12px;
+      border-radius:14px;
+      background: rgba(15,22,36,.88);
+      border:1px solid rgba(31,42,61,.85);
+      color: var(--text);
+      box-shadow: var(--shadow);
+      z-index: 80;
+      opacity:0;
+      transform: translateY(8px);
+      transition:.15s opacity, .15s transform;
+      pointer-events:none;
+      font-size:13px;
     }
-    .pbVerTop .vnum{font-weight:950}
-    .pbVerTop .vdate{color:var(--muted);font-size:12px;white-space:nowrap}
-    .pbNotes{color:var(--muted);font-size:12.5px;margin-top:6px}
+    .toast.on{opacity:1; transform: translateY(0)}
+    details{
+      border:1px solid rgba(31,42,61,.8);
+      background: rgba(12,18,32,.40);
+      border-radius: 16px;
+      padding: 10px 12px;
+    }
+    details summary{
+      cursor:pointer;
+      font-weight:700;
+      font-size:13px;
+      color: var(--text);
+      list-style:none;
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    details summary::-webkit-details-marker{display:none}
+    .kv{display:grid;grid-template-columns: 160px 1fr;gap:10px;margin-top:10px}
+    .kv .k{color:var(--muted);font-size:12px}
+    .kv .v{font-size:12.5px;line-height:1.45}
+    .table{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      overflow:hidden;
+      border-radius: 16px;
+      border:1px solid rgba(31,42,61,.8);
+    }
+    .table th,.table td{
+      padding:10px 10px;
+      border-bottom:1px solid rgba(31,42,61,.75);
+      font-size:12.5px;
+      text-align:left;
+    }
+    .table th{color:var(--muted);font-weight:600;background: rgba(12,18,32,.45)}
+    .table tr:last-child td{border-bottom:none}
   </style>
 </head>
-
 <body>
-  <div class="wrap">
-    <div class="header">
+  <div class="app">
+    <aside class="nav">
       <div class="brand">
-        <h1 id="brandTitle" class="brandTitle">
-          <span class="logoMark" aria-hidden="true">
-            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stop-color="#1d4ed8"/>
-                  <stop offset="1" stop-color="#38bdf8"/>
-                </linearGradient>
-              </defs>
-              <path d="M32 6a26 26 0 1 0 18.38 7.62" stroke="url(#g)" stroke-width="8" stroke-linecap="round"/>
-              <path d="M28 33l6 6 14-14" stroke="url(#g)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </span>
-          Calibrate
-        </h1>
-        <p id="brandSub" class="brandSub">Upload a call. Get a transcript + coaching report.</p>
+        <div class="logo"></div>
+        <div>
+          <h1>Calibrate</h1>
+          <p>Post-call command center</p>
+        </div>
       </div>
 
-      <div class="row">
-        <span id="who" class="pill hidden"></span>
-        <button id="btnHome" class="btn secondary hidden">Home</button>
-        <button id="btnNew" class="btn secondary hidden">New</button>
-        <button id="btnSignIn" class="btn secondary">Sign in</button>
-        <button id="btnSignOut" class="btn secondary hidden">Sign out</button>
+      <div class="navlinks">
+        <button class="navbtn active" data-route="home"><span>Home</span></button>
+        <button class="navbtn" data-route="upload"><span>Upload Call</span></button>
+        <button class="navbtn" data-route="runs"><span>Runs</span></button>
+        <button class="navbtn" data-route="entities"><span>Entities</span></button>
+        <button class="navbtn" data-route="playbook"><span>Playbook</span></button>
       </div>
-    </div>
 
-    <div class="appLayout" id="appLayout">
-      <!-- Sidebar (only visible when authed) -->
-      <aside id="sidebar" class="card sidebar hidden">
-        <div class="sideHead">
-          <p class="sideTitle">Dashboard</p>
+      <div style="margin-top:14px" class="tiny">
+        <div class="pill"><span class="mono" id="healthDot">●</span> <span id="healthText">Checking…</span></div>
+        <div style="margin-top:10px" class="muted">
+          Goal: less reading, more action.<br/>
+          Transcript is proof — not the centerpiece.
         </div>
+      </div>
+    </aside>
 
-        <div class="navList">
-          <button id="navDashboard" class="navItem">
-            <span>Home</span>
-          </button>
+    <main class="main">
+      <div class="topbar">
+        <div class="title">
+          <h2 id="pageTitle">Home</h2>
+          <div class="sub" id="pageSub">Welcome to Calibrate.</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div class="pill" id="activeHint">Ready</div>
+          <button class="btn secondary" id="openTranscriptBtn" style="display:none">View Transcript</button>
+        </div>
+      </div>
 
-          <!-- current report indicator (sub-item) -->
-          <div id="navRunWrap" class="navSubWrap hidden">
-            <button id="navCurrentRun" class="navSubItem" title="">
-              <span class="navSubDot" aria-hidden="true"></span>
-              <span id="navRunText" class="navSubText"></span>
-            </button>
+      <!-- HOME -->
+      <section id="view_home" class="grid">
+        <div class="card">
+          <div class="hd">
+            <h3>Calibrate MVP</h3>
+            <span class="tag">Decision engine, not a report</span>
           </div>
-
-          <button id="navUpload" class="navItem">
-            <span>Upload Call</span>
-          </button>
-
-          <button id="navPlaybook" class="navItem">
-            <span>Playbook</span>
-          </button>
-
-          <button id="navRecord" class="navItem">
-            <span>Record Call</span>
-            <span class="tag">Soon</span>
-          </button>
-
-          <button id="navPractice" class="navItem">
-            <span>AI Call Practice</span>
-            <span class="tag">Soon</span>
-          </button>
-
-          <button id="navSupport" class="navItem">
-            <span>Contact Support</span>
-          </button>
-        </div>
-
-        <div class="footerNote" style="margin-top:12px;">
-          Tip: record + practice are placeholders for user testing.
-        </div>
-      </aside>
-
-      <!-- Main content -->
-      <main>
-        <!-- Landing -->
-        <div id="viewLanding" class="hidden landingWrap">
-          <div class="card landingCard">
-            <h3 class="sectionTitle" style="margin:0;">Calibrate MVP</h3>
-            <p style="margin:6px 0 10px; color:var(--muted);">
-              Upload a cold call. Get a readable transcript + coaching report + a best next script.
-            </p>
-            <ul class="bullets">
-              <li>Transcript line-by-line with speakers</li>
-              <li>Call result + why it was labeled that way</li>
-              <li>Coaching report + next script</li>
-            </ul>
-            <div class="row" style="margin-top:12px;">
-              <button id="btnGetStarted" class="btn">Get started</button>
-              <span id="landingStatus" class="status"></span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Login -->
-        <div id="viewLogin" class="card hidden">
-          <h3 class="sectionTitle">Sign in</h3>
-          <div id="loginBanners"></div>
-
-          <div style="display:grid; gap:12px;">
-            <div>
-              <label for="email">Email</label>
-              <input id="email" type="email" placeholder="you@email.com" class="field" />
-              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
-                Magic link (no password). Check your inbox.
+          <div class="bd">
+            <div class="split">
+              <div>
+                <div class="big">Finish a call → open Calibrate → know exactly what to do in 30 seconds.</div>
+                <p class="muted" style="line-height:1.55;margin-top:10px">
+                  This build keeps all your report content, but repackages it into a single command center:
+                  outcome + why, follow-up generator, and the top 3 fixes — with the transcript tucked away as proof.
+                </p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+                  <button class="btn" onclick="go('upload')">Upload a call</button>
+                  <button class="btn secondary" onclick="go('runs')">View runs</button>
+                  <button class="btn secondary" onclick="go('entities')">Entities</button>
+                </div>
+              </div>
+              <div>
+                <div class="issue">
+                  <div class="t">What’s new in this update</div>
+                  <div class="x">
+                    MP4/MOV uploads supported. Entities group runs under one offer. Playbooks synthesize multiple calls.
+                    The report is now a single command center (no more “five tabs to get value”).
+                  </div>
+                </div>
+                <div class="divider"></div>
+                <div class="issue">
+                  <div class="t">How to use it (MVP)</div>
+                  <div class="x">
+                    Create/select an Entity on upload. After a few runs, generate a Playbook to get the “ultimate script”
+                    plus objection responses and patterns across calls.
+                  </div>
+                </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- UPLOAD -->
+      <section id="view_upload" class="grid hidden">
+        <div class="card">
+          <div class="hd">
+            <h3>Upload Call</h3>
+            <span class="tag">Audio or Video</span>
+          </div>
+          <div class="bd">
             <div class="row">
-              <button id="btnMagicLink" class="btn">Send magic link</button>
-              <button id="btnGoogle" class="btn secondary">Continue with Google</button>
-              <span id="loginStatus" class="status"></span>
+              <div>
+                <label class="tiny">File (MP3/WAV/M4A/MP4/MOV)</label>
+                <input class="input" id="file" type="file" accept="audio/*,video/*" />
+                <div class="tiny muted" style="margin-top:8px">
+                  Video uploads are converted to 16k mono WAV before transcription.
+                </div>
+
+                <div style="margin-top:12px">
+                  <label class="tiny">Scenario (optional)</label>
+                  <input class="input" id="scenario" placeholder="e.g., B2B service / software" />
+                </div>
+
+                <div style="margin-top:12px">
+                  <label class="tiny">Context (required)</label>
+                  <textarea id="context" class="input" placeholder="What are you selling? Who are you calling? Keep it short."></textarea>
+                </div>
+              </div>
+
+              <div>
+                <div class="issue">
+                  <div class="t">Entity (Organization/Offer)</div>
+                  <div class="x">
+                    Assign this call to an Entity so Calibrate can synthesize multiple calls into one Playbook.
+                  </div>
+                </div>
+
+                <div style="margin-top:12px">
+                  <label class="tiny">Select existing Entity</label>
+                  <select id="entitySelect" class="input"></select>
+                  <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+                    <button class="btn secondary small" onclick="refreshEntities()">Refresh</button>
+                    <button class="btn secondary small" onclick="toggleNewEntity(true)">Create new</button>
+                  </div>
+                </div>
+
+                <div id="newEntityBox" class="hidden" style="margin-top:12px">
+                  <div class="issue">
+                    <div class="t">Create new Entity (MVP)</div>
+                    <div class="x">Name it by business/offer. You can refine later.</div>
+                  </div>
+                  <div style="margin-top:10px">
+                    <label class="tiny">Entity name</label>
+                    <input id="entityName" class="input" placeholder="e.g., Bright Smile Dental – AI Receptionist" />
+                  </div>
+                  <div style="margin-top:10px">
+                    <label class="tiny">Offer (optional)</label>
+                    <input id="entityOffer" class="input" placeholder="e.g., AI receptionist that never misses calls" />
+                  </div>
+                  <div style="margin-top:10px">
+                    <label class="tiny">Industry (optional)</label>
+                    <input id="entityIndustry" class="input" placeholder="e.g., Dental" />
+                  </div>
+                  <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+                    <button class="btn secondary small" onclick="toggleNewEntity(false)">Cancel</button>
+                  </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                  <button class="btn" id="runBtn" onclick="submitRun()">Run</button>
+                  <button class="btn secondary" onclick="go('runs')">Go to Runs</button>
+                </div>
+
+                <div id="uploadStatus" class="tiny muted" style="margin-top:10px"></div>
+              </div>
             </div>
           </div>
         </div>
+      </section>
 
-        <!-- Session expired -->
-        <div id="viewSessionExpired" class="card hidden">
-          <h3 class="sectionTitle">Session expired</h3>
-          <p style="margin:0 0 10px; color:var(--muted);">
-            Your session expired while you were using Calibrate. Please sign in again to continue.
-          </p>
-          <div id="expiredBanners"></div>
-          <div class="row" style="margin-top:12px;">
-            <button id="btnGoSignIn" class="btn">Sign in</button>
-            <button id="btnGoLanding" class="btn secondary">Go to landing</button>
+      <!-- RUNS -->
+      <section id="view_runs" class="grid hidden">
+        <div class="card">
+          <div class="hd">
+            <h3>Runs</h3>
+            <div style="display:flex;gap:10px;align-items:center">
+              <select id="runsEntityFilter" class="input" style="width:240px"></select>
+              <button class="btn secondary small" onclick="loadRuns()">Refresh</button>
+            </div>
+          </div>
+          <div class="bd">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Result</th>
+                  <th>Grade</th>
+                  <th>Entity</th>
+                  <th>Open</th>
+                </tr>
+              </thead>
+              <tbody id="runsTbody"></tbody>
+            </table>
           </div>
         </div>
+      </section>
 
-        <!-- Home / History -->
-        <div id="viewHome" class="hidden">
+      <!-- CALL REPORT (Command Center) -->
+      <section id="view_report" class="grid hidden">
+        <div class="card">
+          <div class="hd">
+            <h3>Call Analysis — Command Center</h3>
+            <div style="display:flex;gap:10px;align-items:center">
+              <span class="tag" id="reportEntityTag">Entity: —</span>
+              <button class="btn secondary small" onclick="go('runs')">Back</button>
+              <button class="btn secondary small" onclick="toggleTranscript(true)">Transcript</button>
+            </div>
+          </div>
+          <div class="bd">
+
+            <!-- TOP: Call Result row -->
+            <div class="card" style="box-shadow:none">
+              <div class="hd">
+                <h3>Call Result</h3>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <span class="tag" id="reportGradeTag">Grade: —</span>
+                  <span class="tag" id="reportScoreTag">Score: —</span>
+                </div>
+              </div>
+              <div class="bd">
+                <div class="kpi">
+                  <div>
+                    <div class="big" id="reportResult">—</div>
+                    <div class="muted" style="margin-top:6px;line-height:1.5" id="reportReason">—</div>
+                    <div class="badges" id="reportBadges"></div>
+                  </div>
+                  <div style="min-width: 240px">
+                    <div class="issue">
+                      <div class="t">Money Action</div>
+                      <div class="x" id="moneyAction">
+                        Copy the follow-up, send it now, then fix the top 3 issues before your next dial.
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+                      <button class="btn good small" onclick="copyFollowup()">Copy follow-up</button>
+                      <button class="btn secondary small" onclick="toggleTranscript(true)">View proof</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="height:14px"></div>
+
+            <!-- MIDDLE: Follow-up -->
+            <div class="card" style="box-shadow:none">
+              <div class="hd">
+                <h3>Follow-Up Generator (2 lines)</h3>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <button class="btn small" onclick="copyFollowup()">Copy</button>
+                  <button class="btn secondary small" onclick="regenFollowup()">Regenerate</button>
+                </div>
+              </div>
+              <div class="bd">
+                <textarea id="followupBox" class="input" style="min-height: 84px"></textarea>
+                <div class="tiny muted" style="margin-top:8px">
+                  This is the fastest “do this right now” action on the page.
+                </div>
+              </div>
+            </div>
+
+            <div style="height:14px"></div>
+
+            <!-- BOTTOM: Fix top 3 -->
+            <div class="card" style="box-shadow:none">
+              <div class="hd">
+                <h3>Fix These First (Top 3)</h3>
+                <span class="tag">Specific replacements, not vibes</span>
+              </div>
+              <div class="bd">
+                <div class="list" id="fixList"></div>
+              </div>
+            </div>
+
+            <div style="height:14px"></div>
+
+            <!-- Repackaged "everything else" (NOT REMOVED) -->
+            <details>
+              <summary>
+                <span>More insights (repackaged — nothing removed)</span>
+                <span class="muted">Expand</span>
+              </summary>
+
+              <div class="divider"></div>
+
+              <div class="issue">
+                <div class="t">Section 1 — Call Summary</div>
+                <div class="x" id="secSummary">—</div>
+              </div>
+
+              <div style="height:10px"></div>
+
+              <div class="issue">
+                <div class="t">Section 2 — Objections</div>
+                <div class="x" id="secObjections">—</div>
+              </div>
+
+              <div style="height:10px"></div>
+
+              <div class="issue">
+                <div class="t">Section 3 — Offer Clarity</div>
+                <div class="x" id="secOffer">—</div>
+              </div>
+
+              <div style="height:10px"></div>
+
+              <div class="issue">
+                <div class="t">Section 4 — Script Upgrade</div>
+                <div class="x" id="secScript">—</div>
+              </div>
+
+              <div style="height:10px"></div>
+
+              <div class="issue">
+                <div class="t">Section 5 — Moments To Review</div>
+                <div class="x" id="secMoments">—</div>
+              </div>
+
+              <div style="height:10px"></div>
+
+              <div class="issue">
+                <div class="t">Section 6 — Next Call Micro-Plan</div>
+                <div class="x" id="secPlan">—</div>
+              </div>
+            </details>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ENTITIES -->
+      <section id="view_entities" class="grid hidden">
+        <div class="row">
           <div class="card">
-            <h3 class="sectionTitle" style="margin:0;">Quick Actions</h3>
-            <p style="margin:6px 0 0; color:var(--muted); font-size:13.5px;">
-              Choose a workflow. Record + practice are teasers (coming soon).
+            <div class="hd">
+              <h3>Entities</h3>
+              <button class="btn secondary small" onclick="loadEntities()">Refresh</button>
+            </div>
+            <div class="bd">
+              <div class="tiny muted" style="margin-bottom:10px">
+                Entities group calls under one business/offer. This is the backbone of Playbooks.
+              </div>
+
+              <div class="row">
+                <div>
+                  <label class="tiny">Name</label>
+                  <input class="input" id="entName" placeholder="e.g., SEO Agency – Ecommerce brands" />
+                </div>
+                <div>
+                  <label class="tiny">Industry (optional)</label>
+                  <input class="input" id="entIndustry" placeholder="e.g., Ecommerce" />
+                </div>
+              </div>
+
+              <div style="margin-top:10px">
+                <label class="tiny">Offer (optional)</label>
+                <input class="input" id="entOffer" placeholder="e.g., SEO that lifts conversion and revenue" />
+              </div>
+
+              <div style="margin-top:10px">
+                <label class="tiny">Notes (optional)</label>
+                <textarea class="input" id="entNotes" placeholder="Anything useful about this entity..."></textarea>
+              </div>
+
+              <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+                <button class="btn" onclick="createEntity()">Create Entity</button>
+              </div>
+
+              <div class="divider"></div>
+
+              <div class="issue">
+                <div class="t">Existing</div>
+                <div class="x" id="entitiesList">Loading…</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="hd">
+              <h3>Entity Detail</h3>
+              <span class="tag" id="entityDetailTag">—</span>
+            </div>
+            <div class="bd">
+              <div class="issue">
+                <div class="t">Runs under this Entity</div>
+                <div class="x" id="entityRuns">Select an entity to view runs.</div>
+              </div>
+
+              <div class="divider"></div>
+
+              <div class="card" style="box-shadow:none">
+                <div class="hd">
+                  <h3>Playbook (MVP)</h3>
+                  <button class="btn secondary small" onclick="generatePlaybook()">Generate / Refresh</button>
+                </div>
+                <div class="bd">
+                  <div class="tiny muted" style="margin-bottom:8px">
+                    This synthesizes multiple calls into an “ultimate script” + objection map + patterns.
+                  </div>
+                  <textarea id="playbookBox" class="input" style="min-height: 240px" placeholder="Playbook appears here…"></textarea>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PLAYBOOK TAB -->
+      <section id="view_playbook" class="grid hidden">
+        <div class="card">
+          <div class="hd">
+            <h3>Playbook</h3>
+            <span class="tag">Entity-driven</span>
+          </div>
+          <div class="bd">
+            <p class="muted" style="line-height:1.55;margin-top:0">
+              Playbook isn’t a random checklist — it’s synthesized from your real calls under a single Entity.
+              Pick an Entity, generate a Playbook, then iterate with more uploads.
             </p>
 
-            <div class="actionGrid">
-              <div id="qaUpload" class="actionCard">
-                <p class="aTitle">Upload a Call</p>
-                <p class="aDesc">Upload an audio file, add context, get transcript + coaching report.</p>
-              </div>
-
-              <div id="qaRecord" class="actionCard soon">
-                <div class="aBadge">Coming soon</div>
-                <p class="aTitle">Record Call</p>
-                <p class="aDesc">Record directly in-app and auto-analyze instantly.</p>
-              </div>
-
-              <div id="qaPractice" class="actionCard soon">
-                <div class="aBadge">Coming soon</div>
-                <p class="aTitle">AI Call Practice</p>
-                <p class="aDesc">Roleplay prospects and get instant coaching + scripts.</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="card" style="margin-top:16px;">
-            <div id="homeBanners"></div>
-            <div class="row" style="justify-content:space-between; margin-bottom:10px;">
-              <h3 class="sectionTitle" style="margin:0;">History</h3>
-              <span id="homeStatus" class="status"></span>
-            </div>
-
-            <div class="tableWrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th class="colReport">Call Analysis</th>
-                    <th class="colScenario">Scenario</th>
-                    <th class="colOutcome">Call Result</th>
-                  </tr>
-                </thead>
-                <tbody id="runsTbody"></tbody>
-              </table>
-            </div>
-
-            <div class="footerNote">Click a row to open that analysis.</div>
-          </div>
-        </div>
-
-        <!-- Calibrate (new run) -->
-        <div id="viewCalibrate" class="card hidden">
-          <div style="display:grid; gap:12px;">
-            <div>
-              <label for="audio">Audio file</label>
-              <input id="audio" type="file" accept="audio/*" class="field" />
-              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
-                Limits: audio only • max 25MB • formats: mp3/m4a/wav/ogg.
-              </div>
-            </div>
-
-            <div>
-              <label for="category">Scenario template (optional)</label>
-              <select id="category" class="field"></select>
-              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
-                This nudges examples and wording. Context + transcript stay the source of truth.
-              </div>
-            </div>
-
-            <div>
-              <label for="context">Context (required)</label>
-              <textarea id="context" minlength="10" placeholder="e.g., Selling an SEO service to an online beauty e-commerce brand (Shopify)."
-                        style="width:100%;min-height:92px;resize:vertical" class="field"></textarea>
-              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
-                Keep it short — we infer details from the transcript when possible.
-              </div>
-            </div>
-
-            <div id="assistCard" class="banner warn hidden" style="margin-bottom:0;">
-              <div class="dot"></div>
-              <div class="txt"><strong id="assistTitle"></strong> <span id="assistMsg"></span></div>
-            </div>
-          </div>
-
-          <div class="row" style="margin-top: 10px;">
-            <button id="run" class="btn">Calibrate</button>
-            <span id="status" class="status"></span>
-          </div>
-        </div>
-
-        <!-- Run viewer -->
-        <div id="viewRun" class="card hidden">
-          <div class="row" style="justify-content:space-between;">
-            <div>
-              <h3 class="sectionTitle" style="margin:0;">Call Analysis</h3>
-              <div id="runTitle" style="margin-top:6px;font-weight:950;font-size:16px;"></div>
-              <div id="runMeta" style="margin-top:4px;color:var(--muted);font-size:12.5px;"></div>
-            </div>
             <div class="row">
-              <button id="btnSavePlaybook" class="btn secondary hidden">Save to Playbook</button>
-              <button id="btnBackHome" class="btn secondary">Back</button>
-            </div>
-          </div>
-
-          <div id="runBanners" style="margin-top:12px;"></div>
-
-          <h3 class="sectionTitle" style="margin-top:14px;">Summary</h3>
-          <div class="kv" id="summaryKV2"></div>
-
-          <div style="height: 12px;"></div>
-
-          <h3 class="sectionTitle">Transcript</h3>
-          <div class="transcriptBox" id="transcriptBox2"></div>
-
-          <div style="height: 12px;"></div>
-
-          <h3 class="sectionTitle">Report</h3>
-          <div class="reportGrid" id="reportGrid2"></div>
-        </div>
-
-        <!-- Playbook -->
-        <div id="viewPlaybook" class="card hidden">
-          <div class="row" style="justify-content:space-between;">
-            <div>
-              <h3 class="sectionTitle" style="margin:0;">Playbook</h3>
-              <div class="pbSmall" style="margin-top:6px;">
-                Save scripts you actually use. Update them as you learn. Your latest version becomes your default.
-              </div>
-            </div>
-            <button id="btnPlaybookBack" class="btn secondary">Back</button>
-          </div>
-
-          <div id="playbookBanners" style="margin-top:12px;"></div>
-
-          <div class="pbLayout">
-            <div class="pbLeft">
-              <div class="pbLeftHead">
-                <div style="font-weight:950;">Scripts</div>
-                <div class="row" style="gap:8px;">
-                  <button id="btnPbRefresh" class="btn secondary" style="padding:8px 10px;">Refresh</button>
-                  <button id="btnPbNew" class="btn" style="padding:8px 10px;">New</button>
+              <div>
+                <label class="tiny">Entity</label>
+                <select id="playbookEntitySelect" class="input"></select>
+                <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+                  <button class="btn secondary small" onclick="loadEntities()">Refresh entities</button>
+                  <button class="btn secondary small" onclick="go('entities')">Manage entities</button>
                 </div>
               </div>
-              <div id="pbList" class="pbList"></div>
-            </div>
-
-            <div class="pbRight">
-              <div class="pbRightHead">
-                <div style="font-weight:950;" id="pbRightTitle">New Script</div>
-                <span id="pbRightStatus" class="status"></span>
-              </div>
-
-              <div class="pbBody">
-                <div>
-                  <label for="pbTitle">Title (max 5 words)</label>
-                  <input id="pbTitle" class="field" placeholder="e.g., Dental Receptionist Opener" />
-                  <div class="pbSmall" style="margin-top:6px;">
-                    Keep it short. This shows in your library.
+              <div>
+                <div class="issue">
+                  <div class="t">Recommended workflow</div>
+                  <div class="x">
+                    1) Upload 5+ calls under the same Entity.<br/>
+                    2) Generate a Playbook.<br/>
+                    3) Use it as your baseline script and objection handling map.
                   </div>
                 </div>
-
-                <div>
-                  <label for="pbText">Script</label>
-                  <textarea id="pbText" class="field" style="width:100%;min-height:180px;resize:vertical"
-                    placeholder="Paste the exact script you want to reuse."></textarea>
-                </div>
-
-                <div>
-                  <label for="pbNotes">Notes (optional)</label>
-                  <input id="pbNotes" class="field" placeholder="What changed? Why is this better?" />
-                </div>
-
-                <div class="row">
-                  <button id="btnPbSave" class="btn">Save</button>
-                  <button id="btnPbAddVersion" class="btn secondary hidden">Add as New Version</button>
-                  <span class="pbSmall" id="pbLinkHint"></span>
-                </div>
-
-                <div class="pbVersions">
-                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-                    <div style="font-weight:950;">Version History</div>
-                    <div class="pbSmall">Newest first</div>
-                  </div>
-                  <div id="pbVersions"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Support -->
-        <div id="viewSupport" class="card hidden">
-          <div class="row" style="justify-content:space-between;">
-            <h3 class="sectionTitle" style="margin:0;">Contact Support</h3>
-            <button id="btnSupportBack" class="btn secondary">Back</button>
-          </div>
-
-          <div id="supportBanners" style="margin-top:12px;"></div>
-
-          <div style="display:grid; gap:12px; margin-top:10px;">
-            <div>
-              <label for="supportMessage">Message</label>
-              <textarea id="supportMessage" class="field" style="width:100%;min-height:120px;resize:vertical"
-                        placeholder="Describe what happened. Include what you expected vs what you saw."></textarea>
-            </div>
-
-            <div>
-              <label for="supportContact">Your contact (optional)</label>
-              <input id="supportContact" class="field" placeholder="Email, Instagram, etc." />
-              <div style="color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.35;">
-                If you want a reply, leave a contact method.
               </div>
             </div>
 
-            <div class="row">
-              <button id="btnSupportSend" class="btn">Send</button>
-              <span id="supportStatus" class="status"></span>
+            <div class="divider"></div>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn" onclick="generatePlaybookFromTab()">Generate Playbook</button>
+              <button class="btn secondary" onclick="copyPlaybook()">Copy</button>
+            </div>
+
+            <div style="margin-top:12px">
+              <textarea id="playbookTabBox" class="input" style="min-height: 360px" placeholder="Playbook output…"></textarea>
             </div>
           </div>
         </div>
+      </section>
 
-      </main>
+    </main>
+  </div>
+
+  <!-- Transcript drawer -->
+  <div class="drawer" id="drawer">
+    <div class="dh">
+      <div>
+        <div class="big" style="font-size:14px">Transcript (Proof)</div>
+        <div class="tiny muted" id="transcriptMeta">—</div>
+      </div>
+      <button class="btn secondary small" onclick="toggleTranscript(false)">Close</button>
+    </div>
+    <div class="db">
+      <input id="transcriptSearch" class="input" placeholder="Search transcript…" oninput="renderTranscript()" />
+      <div class="divider"></div>
+      <div id="transcriptTurns"></div>
     </div>
   </div>
 
-  <div id="toastHost" class="toastHost"></div>
+  <div class="toast" id="toast">Copied</div>
 
-  <!-- Supabase JS (CDN) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Simple SPA routing
+  const routes = ["home","upload","runs","report","entities","playbook"];
+  let state = {
+    entities: [],
+    entityById: {},
+    selectedEntityId: null,
+    runs: [],
+    currentRun: null,
+    transcript: { turns: [] },
+    playbookJson: null
+  };
 
-  <script>
-    // ---- Router helpers ----
-    function goto(path) {
-      history.pushState({}, "", path);
-      renderRoute();
+  const $ = (id) => document.getElementById(id);
+
+  function toast(msg="Done"){
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("on");
+    setTimeout(()=>t.classList.remove("on"), 1300);
+  }
+
+  function setNavActive(route){
+    document.querySelectorAll(".navbtn").forEach(b=>{
+      b.classList.toggle("active", b.dataset.route === route);
+    });
+  }
+
+  function showView(route){
+    routes.forEach(r=>{
+      $("view_"+r).classList.toggle("hidden", r !== route);
+    });
+    setNavActive(route);
+
+    $("openTranscriptBtn").style.display = (route === "report" && state.currentRun) ? "inline-flex" : "none";
+    $("pageTitle").textContent = ({
+      home:"Home",
+      upload:"Upload Call",
+      runs:"Runs",
+      report:"Call Analysis",
+      entities:"Entities",
+      playbook:"Playbook"
+    })[route] || "Calibrate";
+
+    $("pageSub").textContent = ({
+      home:"Welcome to Calibrate.",
+      upload:"Upload audio or video, generate transcript + command-center report.",
+      runs:"Browse recent runs and open reports.",
+      report:"Outcome, follow-up, top fixes — transcript is proof.",
+      entities:"Group calls under an offer and synthesize playbooks.",
+      playbook:"Generate the ultimate script from multiple calls."
+    })[route] || "";
+  }
+
+  function go(route){
+    window.location.hash = route;
+  }
+
+  window.addEventListener("hashchange", ()=>{
+    const r = (window.location.hash || "#home").replace("#","");
+    showView(routes.includes(r) ? r : "home");
+    if (r === "runs") loadRuns();
+    if (r === "entities") loadEntities();
+    if (r === "upload") refreshEntities();
+    if (r === "playbook") loadEntities();
+  });
+
+  document.querySelectorAll(".navbtn").forEach(b=>{
+    b.addEventListener("click", ()=> go(b.dataset.route));
+  });
+
+  $("openTranscriptBtn").addEventListener("click", ()=> toggleTranscript(true));
+
+  async function api(path, opts={}){
+    const res = await fetch(path, opts);
+    const data = await res.json().catch(()=> ({}));
+    if (!res.ok) throw new Error(data.error || ("Request failed: " + res.status));
+    return data;
+  }
+
+  async function checkHealth(){
+    try{
+      const d = await api("/health");
+      $("healthDot").style.color = "var(--good)";
+      $("healthText").textContent = "Online";
+      $("activeHint").textContent = d.enforcer ? d.enforcer : "Ready";
+    }catch(e){
+      $("healthDot").style.color = "var(--bad)";
+      $("healthText").textContent = "Offline";
+      $("activeHint").textContent = "Error";
     }
-    window.addEventListener("popstate", renderRoute);
-
-    // ---- Toast ----
-    const toastHost = document.getElementById("toastHost");
-    function toast(type, title, msg, ms = 2600) {
-      const t = document.createElement("div");
-      t.className = "toast " + (type || "warn");
-      t.innerHTML = `
-        <div class="dot"></div>
-        <div class="txt"><strong>${escapeHtml(title || "Note:")}</strong> ${escapeHtml(msg || "")}</div>
-      `;
-      toastHost.appendChild(t);
-      setTimeout(() => { try { t.remove(); } catch {} }, ms);
-    }
-
-    function escapeHtml(s) {
-      return String(s)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    function banner(type, title, msg) {
-      const wrap = document.createElement("div");
-      wrap.className = "banner " + type;
-      wrap.innerHTML = `
-        <div class="dot"></div>
-        <div class="txt"><strong>${escapeHtml(title)}</strong> ${escapeHtml(msg)}</div>
-      `;
-      return wrap;
-    }
-
-    // ---- Scenario data ----
-    const scenarioTemplates = [
-      ["", "None"],
-      ["b2b_service_software", "B2B service / software"],
-      ["local_service", "Local service (contractors, clinics, home services)"],
-      ["ecommerce", "E-commerce / Shopify / DTC"],
-      ["agency_services", "Agency service (SEO, ads, creative, etc.)"],
-      ["recruiting_staffing", "Recruiting / staffing"],
-      ["real_estate", "Real estate"],
-      ["coaching_consulting", "Coaching / consulting"],
-    ];
-
-    const scenarioKeywords = {
-      b2b_service_software: ["pipeline","crm","demo","saas","software","workflow","time saved","roi","automation"],
-      local_service: ["estimate","quote","jobs","service area","booked jobs","roof","plumbing","clinic","dentist","hvac"],
-      ecommerce: ["shopify","ecommerce","d2c","cart","conversion","roas","ads","product page","checkout","aov"],
-      agency_services: ["seo","ads","creative","agency","retainer","audit","rank","keywords","google ads","meta ads"],
-      recruiting_staffing: ["hire","hiring","staffing","recruiting","candidates","roles","openings","time to hire"],
-      real_estate: ["listing","realtor","buyer","seller","open house","zillow","mls","showing","offer"],
-      coaching_consulting: ["coaching","consulting","clients","program","course","mentorship","1:1","funnel"],
-    };
-
-    function fillSelect(el, options) {
-      el.innerHTML = "";
-      for (const [value, label] of options) {
-        const opt = document.createElement("option");
-        opt.value = value;
-        opt.textContent = label;
-        el.appendChild(opt);
-      }
-    }
-
-    // ---- Outcome labels + tips ----
-    function normalizeOutcomeKey(raw) {
-      const s = String(raw || "").trim();
-      if (!s) return "";
-      return s.toUpperCase().replace(/\s+/g, "_").replace(/-+/g, "_");
-    }
-
-    function outcomeLabel(key) {
-      const k = normalizeOutcomeKey(key);
-      const map = {
-        BOOKED_MEETING: "Booked Meeting",
-        CONNECTED: "Connected",
-        REJECTED: "Rejected",
-        HOSTILE: "Hostile",
-        VOICEMAIL: "Voicemail",
-        NO_ANSWER: "No Answer",
-      };
-      return map[k] || (k ? k.replace(/_/g, " ") : "—");
-    }
-
-    function outcomePillClass(key) {
-      const k = normalizeOutcomeKey(key);
-      if (k === "BOOKED_MEETING") return "good";
-      if (k === "REJECTED" || k === "VOICEMAIL" || k === "NO_ANSWER") return "warn";
-      if (k === "HOSTILE") return "bad";
-      return "";
-    }
-
-    const outcomeGlossary = {
-      BOOKED_MEETING: "A meeting/call was scheduled or explicitly agreed to (calendar/Zoom/link/time agreement).",
-      CONNECTED: "You reached a real person and had a conversation, but no meeting was clearly booked.",
-      REJECTED: "They declined the offer or ended the call without engaging further.",
-      HOSTILE: "They rejected aggressively (anger/insults/stop calling).",
-      VOICEMAIL: "This appears to be voicemail or a message prompt.",
-      NO_ANSWER: "No real conversation happened (no pickup / dead air).",
-    };
-
-    // ---- Mini markdown ----
-    function renderMiniMarkdown(md) {
-      const lines = String(md || "").split("\n");
-      let html = "";
-      let inUL = false;
-      let inOL = false;
-
-      const flushLists = () => {
-        if (inUL) { html += "</ul>"; inUL = false; }
-        if (inOL) { html += "</ol>"; inOL = false; }
-      };
-
-      for (let raw of lines) {
-        const line = raw.trimEnd();
-        if (!line.trim()) { flushLists(); continue; }
-
-        const ulMatch = line.match(/^\s*[-*]\s+(.*)$/);
-        if (ulMatch) {
-          if (inOL) { html += "</ol>"; inOL = false; }
-          if (!inUL) { html += "<ul>"; inUL = true; }
-          html += `<li>${escapeHtml(ulMatch[1]).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`;
-          continue;
-        }
-
-        const olMatch = line.match(/^\s*\d+\.\s+(.*)$/);
-        if (olMatch) {
-          if (inUL) { html += "</ul>"; inUL = false; }
-          if (!inOL) { html += "<ol>"; inOL = true; }
-          html += `<li>${escapeHtml(olMatch[1]).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`;
-          continue;
-        }
-
-        flushLists();
-        const p = escapeHtml(line).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-        html += `<p>${p}</p>`;
-      }
-
-      flushLists();
-      return html;
-    }
-
-    function splitReportIntoSections(reportMd) {
-      const text = String(reportMd || "").trim();
-      if (!text) return [];
-
-      const cleaned = text.replace(/^\uFEFF/, "").trim();
-
-      if (cleaned.startsWith("##")) {
-        const normalized = cleaned.replace(/^##\s+/, "");
-        return normalized.split(/\n##\s+/g).map((chunk) => chunk.trim()).filter(Boolean).map((chunk) => {
-          const [titleLine, ...rest] = chunk.split("\n");
-          return { title: titleLine.trim(), body: rest.join("\n").trim() };
-        });
-      }
-
-      const parts = cleaned.split(/\n##\s+/g);
-      if (parts.length === 1) return [{ title: "Report", body: cleaned }];
-
-      const sections = [];
-      if (parts[0].trim()) sections.push({ title: "Report", body: parts[0].trim() });
-      for (let i = 1; i < parts.length; i++) {
-        const chunk = parts[i].trim();
-        if (!chunk) continue;
-        const [titleLine, ...rest] = chunk.split("\n");
-        sections.push({ title: titleLine.trim(), body: rest.join("\n").trim() });
-      }
-      return sections;
-    }
-
-    // Keep remap conservative (only when truly 2 diarized speakers)
-    function computeSpeakerDisplayMap(parsedLines) {
-      const labels = [...new Set(parsedLines.map(x => x.speaker).filter(Boolean))];
-
-      if (labels.some(l => /^you$/i.test(l) || /^prospect$/i.test(l))) return null;
-
-      const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
-      const normLabels = labels.map(norm);
-
-      const speakerish = normLabels.filter(l => /^speaker\s+([a-z]|\d+)$/i.test(l));
-      const uniqueSpeakerish = [...new Set(speakerish.map(s => s.toLowerCase()))];
-
-      if (uniqueSpeakerish.length !== 2 || normLabels.length !== 2) return null;
-
-      const aLabel = labels[0];
-      const bLabel = labels[1];
-
-      const textFor = (label) => parsedLines
-        .filter(x => x.speaker === label)
-        .map(x => x.text || "")
-        .join(" ")
-        .slice(0, 4000);
-
-      const repSignals = [
-        /\bhey\b/i, /\bhi\b/i, /\bthis\s+is\b/i, /\bmy\s+name\s+is\b/i, /\bi['’]?m\b/i,
-        /\bcalling\b/i, /\breaching\s+out\b/i, /\bquick\b/i, /\bseconds?\b/i, /\bcan\s+i\b/i, /\bdo\s+you\s+have\b/i
-      ];
-      const prospectSignals = [
-        /\bnot\s+interested\b/i, /\bprobably\s+not\b/i, /\bjust\s+email\b/i, /\bhow\s+much\b/i,
-        /\bwe\s+already\b/i, /\bwe['’]?re\s+good\b/i, /\bstop\s+calling\b/i, /\bwho\s+is\s+this\b/i
-      ];
-
-      const score = (txt) => {
-        let rep = 0, pro = 0;
-        for (const r of repSignals) if (r.test(txt)) rep++;
-        for (const p of prospectSignals) if (p.test(txt)) pro++;
-        return { rep, pro, net: rep - pro };
-      };
-
-      const a = score(textFor(aLabel));
-      const b = score(textFor(bLabel));
-
-      const diff = Math.abs(a.net - b.net);
-      if (diff < 2) return null;
-
-      const aIsYou = a.net > b.net;
-      return {
-        [aLabel]: aIsYou ? "You" : "Prospect",
-        [bLabel]: aIsYou ? "Prospect" : "You",
-      };
-    }
-
-    function renderTranscriptInto(transcriptOrLines, transcriptBoxEl) {
-      transcriptBoxEl.innerHTML = "";
-
-      let parsed = [];
-
-      if (Array.isArray(transcriptOrLines)) {
-        parsed = transcriptOrLines
-          .map(x => ({
-            speaker: String(x?.speaker || "Other").trim() || "Other",
-            text: String(x?.text || "").trim(),
-          }))
-          .filter(x => x.text);
-      } else {
-        const rawLines = String(transcriptOrLines || "")
-          .split("\n")
-          .map(s => s.trim())
-          .filter(Boolean);
-
-        parsed = rawLines.map((line) => {
-          let speaker = "Other";
-          let text = line;
-
-          const m = line.match(/^([^:]{1,40}):\s*(.*)$/);
-          if (m) {
-            speaker = (m[1] || "Other").replace(/\s+/g, " ").trim();
-            text = (m[2] || "").trim();
-          }
-
-          speaker = speaker.replace(/^speaker\s*([a-z]|\d+)$/i, "Speaker $1");
-          return { speaker, text };
-        }).filter(x => x.text);
-      }
-
-      if (!parsed.length) {
-        const empty = document.createElement("div");
-        empty.className = "tLine";
-        empty.innerHTML = `<div class="ln">–</div><span class="chip other">Transcript</span><div class="tText">(empty)</div>`;
-        transcriptBoxEl.appendChild(empty);
-        return;
-      }
-
-      const remap = computeSpeakerDisplayMap(parsed);
-
-      parsed.forEach((p, idx) => {
-        const displaySpeaker = remap?.[p.speaker] || p.speaker;
-
-        const chipClass =
-          /^you$/i.test(displaySpeaker) ? "you" :
-          /^prospect$/i.test(displaySpeaker) ? "pro" :
-          "other";
-
-        const row = document.createElement("div");
-        row.className = "tLine";
-        row.innerHTML = `
-          <div class="ln">${idx + 1}</div>
-          <span class="chip ${chipClass}">${escapeHtml(displaySpeaker)}</span>
-          <div class="tText">${escapeHtml(p.text || "")}</div>
-        `;
-        transcriptBoxEl.appendChild(row);
-      });
-    }
-
-    function renderReportInto(reportMd, reportGridEl) {
-      reportGridEl.innerHTML = "";
-      const sections = splitReportIntoSections(reportMd);
-
-      if (!sections.length) {
-        const card = document.createElement("div");
-        card.className = "reportCard";
-        card.innerHTML = `<div class="reportHead">Report</div><div class="reportBody"><p>(empty)</p></div>`;
-        reportGridEl.appendChild(card);
-        return;
-      }
-
-      sections.forEach((s, i) => {
-        const card = document.createElement("div");
-        card.className = "reportCard";
-
-        const head = document.createElement("div");
-        head.className = "reportHead";
-        head.textContent = s.title || `Section ${i + 1}`;
-
-        const body = document.createElement("div");
-        body.className = "reportBody";
-        body.innerHTML = renderMiniMarkdown(s.body || "");
-
-        let open = (i < 2);
-        body.style.display = open ? "block" : "none";
-        head.addEventListener("click", () => {
-          open = !open;
-          body.style.display = open ? "block" : "none";
-        });
-
-        card.appendChild(head);
-        card.appendChild(body);
-        reportGridEl.appendChild(card);
-      });
-    }
-
-    function renderSummaryInto(run, opts) {
-      const summaryKVEl = opts.summaryKVEl;
-      summaryKVEl.innerHTML = "";
-
-      const addKV = (k, vNodeOrText) => {
-        const item = document.createElement("div");
-        item.className = "item";
-        const kEl = document.createElement("div");
-        kEl.className = "k";
-        kEl.textContent = k;
-
-        const vEl = document.createElement("div");
-        vEl.className = "v";
-
-        if (vNodeOrText instanceof Node) vEl.appendChild(vNodeOrText);
-        else vEl.textContent = String(vNodeOrText || "");
-
-        item.appendChild(kEl);
-        item.appendChild(vEl);
-        summaryKVEl.appendChild(item);
-      };
-
-      const scenario = run.scenario_template || "";
-      const scenarioLabel = scenarioTemplates.find(([v]) => v === scenario)?.[1] || "None";
-
-      const outcomeKey = normalizeOutcomeKey(run.call_outcome || "");
-      const outcomeTxt = outcomeLabel(outcomeKey);
-      const outcomeTip = run.call_outcome_reason || outcomeGlossary[outcomeKey] || "—";
-
-      const outcomeNode = document.createElement("span");
-      outcomeNode.className = `outcomePill hasTip ${outcomePillClass(outcomeKey)}`;
-      outcomeNode.setAttribute("data-tip", outcomeTip);
-      outcomeNode.textContent = outcomeTxt;
-
-      addKV("Scenario (selected)", scenarioLabel);
-      addKV("User Context", run.user_context || "(none)");
-      addKV("Call Result", outcomeNode);
-    }
-
-    // ---- DOM ----
-    const appLayoutEl = document.getElementById("appLayout");
-
-    const viewLanding = document.getElementById("viewLanding");
-    const viewLogin = document.getElementById("viewLogin");
-    const viewSessionExpired = document.getElementById("viewSessionExpired");
-    const viewHome = document.getElementById("viewHome");
-    const viewCalibrate = document.getElementById("viewCalibrate");
-    const viewRun = document.getElementById("viewRun");
-    const viewPlaybook = document.getElementById("viewPlaybook");
-    const viewSupport = document.getElementById("viewSupport");
-
-    const sidebar = document.getElementById("sidebar");
-    const navDashboard = document.getElementById("navDashboard");
-    const navUpload = document.getElementById("navUpload");
-    const navPlaybook = document.getElementById("navPlaybook");
-    const navRecord = document.getElementById("navRecord");
-    const navPractice = document.getElementById("navPractice");
-    const navSupport = document.getElementById("navSupport");
-
-    const navRunWrap = document.getElementById("navRunWrap");
-    const navCurrentRun = document.getElementById("navCurrentRun");
-    const navRunText = document.getElementById("navRunText");
-
-    const qaUpload = document.getElementById("qaUpload");
-    const qaRecord = document.getElementById("qaRecord");
-    const qaPractice = document.getElementById("qaPractice");
-
-    const btnHome = document.getElementById("btnHome");
-    const btnNew = document.getElementById("btnNew");
-    const btnSignIn = document.getElementById("btnSignIn");
-    const btnSignOut = document.getElementById("btnSignOut");
-    const who = document.getElementById("who");
-
-    const btnGetStarted = document.getElementById("btnGetStarted");
-    const landingStatus = document.getElementById("landingStatus");
-
-    const loginBanners = document.getElementById("loginBanners");
-    const loginStatus = document.getElementById("loginStatus");
-    const emailEl = document.getElementById("email");
-    const btnMagicLink = document.getElementById("btnMagicLink");
-    const btnGoogle = document.getElementById("btnGoogle");
-
-    const expiredBanners = document.getElementById("expiredBanners");
-    const btnGoSignIn = document.getElementById("btnGoSignIn");
-    const btnGoLanding = document.getElementById("btnGoLanding");
-
-    const homeBanners = document.getElementById("homeBanners");
-    const homeStatus = document.getElementById("homeStatus");
-    const runsTbody = document.getElementById("runsTbody");
-
-    const btnSavePlaybook = document.getElementById("btnSavePlaybook");
-    const btnBackHome = document.getElementById("btnBackHome");
-    const runBanners = document.getElementById("runBanners");
-    const runTitleEl = document.getElementById("runTitle");
-    const runMetaEl = document.getElementById("runMeta");
-
-    // calibrate DOM
-    const categoryEl = document.getElementById("category");
-    const audioEl = document.getElementById("audio");
-    const contextEl = document.getElementById("context");
-    const runBtn = document.getElementById("run");
-    const statusEl = document.getElementById("status");
-
-    const assistCard = document.getElementById("assistCard");
-    const assistTitle = document.getElementById("assistTitle");
-    const assistMsg = document.getElementById("assistMsg");
-
-    // run viewer DOM
-    const summaryKVEl2 = document.getElementById("summaryKV2");
-    const transcriptBoxEl2 = document.getElementById("transcriptBox2");
-    const reportGridEl2 = document.getElementById("reportGrid2");
-
-    // Playbook DOM
-    const btnPlaybookBack = document.getElementById("btnPlaybookBack");
-    const playbookBanners = document.getElementById("playbookBanners");
-    const btnPbRefresh = document.getElementById("btnPbRefresh");
-    const btnPbNew = document.getElementById("btnPbNew");
-    const pbList = document.getElementById("pbList");
-
-    const pbRightTitle = document.getElementById("pbRightTitle");
-    const pbRightStatus = document.getElementById("pbRightStatus");
-    const pbTitle = document.getElementById("pbTitle");
-    const pbText = document.getElementById("pbText");
-    const pbNotes = document.getElementById("pbNotes");
-    const btnPbSave = document.getElementById("btnPbSave");
-    const btnPbAddVersion = document.getElementById("btnPbAddVersion");
-    const pbVersions = document.getElementById("pbVersions");
-    const pbLinkHint = document.getElementById("pbLinkHint");
-
-    // support DOM
-    const btnSupportBack = document.getElementById("btnSupportBack");
-    const supportBanners = document.getElementById("supportBanners");
-    const supportMessage = document.getElementById("supportMessage");
-    const supportContact = document.getElementById("supportContact");
-    const btnSupportSend = document.getElementById("btnSupportSend");
-    const supportStatus = document.getElementById("supportStatus");
-
-    fillSelect(categoryEl, scenarioTemplates);
-
-    // ---- Supabase init ----
-    let sb = null;
-    let session = null;
-    let config = null;
-
-    let sessionExpiredMessage = "";
-    let sessionExpiredHandled = false;
-
-    async function initSupabase() {
-      const r = await fetch("/api/config");
-      config = await r.json();
-      if (!config?.supabaseUrl || !config?.supabaseAnonKey) throw new Error("Missing Supabase config from /api/config");
-
-      const createClient = window.supabase?.createClient;
-      if (!createClient) throw new Error("Supabase JS not loaded");
-
-      sb = createClient(config.supabaseUrl, config.supabaseAnonKey);
-
-      const { data } = await sb.auth.getSession();
-      session = data.session;
-
-      sb.auth.onAuthStateChange((_event, newSession) => {
-        session = newSession;
-        renderRoute();
-      });
-    }
-
-    function hideAllViews() {
-      viewLanding.classList.add("hidden");
-      viewLogin.classList.add("hidden");
-      viewSessionExpired.classList.add("hidden");
-      viewHome.classList.add("hidden");
-      viewCalibrate.classList.add("hidden");
-      viewRun.classList.add("hidden");
-      viewPlaybook.classList.add("hidden");
-      viewSupport.classList.add("hidden");
-    }
-
-    function setActiveNav(path) {
-      const btns = [navDashboard, navUpload, navPlaybook, navRecord, navPractice, navSupport];
-      btns.forEach(b => b.classList.remove("active"));
-
-      if (path === "/home") navDashboard.classList.add("active");
-      else if (path === "/calibrate") navUpload.classList.add("active");
-      else if (path === "/playbook") navPlaybook.classList.add("active");
-      else if (path === "/support") navSupport.classList.add("active");
-      else if (path.startsWith("/runs/")) navDashboard.classList.add("active");
-    }
-
-    function updateTopNav() {
-      const loggedIn = !!session;
-      btnSignIn.classList.toggle("hidden", loggedIn);
-      btnSignOut.classList.toggle("hidden", !loggedIn);
-      btnHome.classList.toggle("hidden", !loggedIn);
-      btnNew.classList.toggle("hidden", !loggedIn);
-      who.classList.toggle("hidden", !loggedIn);
-
-      sidebar.classList.toggle("hidden", !loggedIn);
-      appLayoutEl.classList.toggle("noSidebar", !loggedIn);
-
-      if (loggedIn) who.textContent = session.user?.email || "Signed in";
-      else who.textContent = "";
-    }
-
-    function authHeader() {
-      if (!session?.access_token) return {};
-      return { Authorization: "Bearer " + session.access_token };
-    }
-
-    async function safeJson(r) {
-      try { return await r.json(); }
-      catch { return {}; }
-    }
-
-    async function trySilentRefresh() {
-      if (!sb) return null;
-      try {
-        const { data, error } = await sb.auth.refreshSession();
-        if (error) return null;
-        session = data?.session || null;
-        return session;
-      } catch {
-        return null;
-      }
-    }
-
-    function handleSessionExpired(msg) {
-      if (sessionExpiredHandled) return;
-      sessionExpiredHandled = true;
-      sessionExpiredMessage = msg || "Your session expired. Please sign in again.";
-      session = null;
-      goto("/session-expired");
-    }
-
-    async function fetchJsonAuthed(url, options = {}) {
-      if (!session?.access_token) {
-        handleSessionExpired("Session missing. Please sign in again.");
-        return { ok: false, status: 401, json: { error: "Unauthorized" } };
-      }
-
-      try {
-        const opts1 = { ...options, headers: { ...(options.headers || {}), ...authHeader() } };
-        const r1 = await fetch(url, opts1);
-
-        if (r1.status !== 401) {
-          const j1 = await safeJson(r1);
-          return { ok: r1.ok, status: r1.status, json: j1 };
-        }
-
-        const refreshed = await trySilentRefresh();
-        if (!refreshed?.access_token) {
-          const j1 = await safeJson(r1);
-          handleSessionExpired(j1?.error || "Session expired. Please sign in again.");
-          return { ok: false, status: 401, json: j1 };
-        }
-
-        const opts2 = { ...options, headers: { ...(options.headers || {}), Authorization: "Bearer " + refreshed.access_token } };
-        const r2 = await fetch(url, opts2);
-        const j2 = await safeJson(r2);
-
-        if (r2.status === 401) handleSessionExpired(j2?.error || "Session expired. Please sign in again.");
-
-        return { ok: r2.ok, status: r2.status, json: j2 };
-      } catch (e) {
-        return { ok: false, status: 0, json: { error: e?.message || "Failed to fetch" } };
-      }
-    }
-
-    // ---- Tooltip manager (viewport-clamped; not clipped by scroll containers) ----
-    (function initTooltips(){
-      let tipEl = null;
-      let arrowEl = null;
-      let active = null;
-
-      function cleanup(){
-        if (tipEl) tipEl.remove();
-        if (arrowEl) arrowEl.remove();
-        tipEl = null;
-        arrowEl = null;
-        active = null;
-      }
-
-      function position(el){
-        if (!tipEl || !arrowEl) return;
-
-        const pad = 10;
-        const r = el.getBoundingClientRect();
-
-        tipEl.style.left = "0px";
-        tipEl.style.top = "0px";
-
-        const tw = tipEl.offsetWidth || 320;
-        const th = tipEl.offsetHeight || 60;
-
-        let left = r.left;
-        let top = r.bottom + 10;
-
-        if (left + tw > window.innerWidth - pad) left = window.innerWidth - pad - tw;
-        if (left < pad) left = pad;
-
-        if (top + th > window.innerHeight - pad) top = r.top - th - 10;
-        if (top < pad) top = pad;
-
-        tipEl.style.left = Math.round(left) + "px";
-        tipEl.style.top = Math.round(top) + "px";
-
-        const ax = Math.round(Math.min(Math.max(r.left + 14, left + 14), left + tw - 14));
-        const isBelow = top > r.top;
-        const ay = isBelow ? Math.round(top - 6) : Math.round(top + th - 8);
-
-        arrowEl.style.left = ax + "px";
-        arrowEl.style.top = ay + "px";
-        arrowEl.style.transform = isBelow ? "rotate(180deg)" : "rotate(0deg)";
-      }
-
-      function show(el){
-        const msg = el.getAttribute("data-tip");
-        if (!msg) return;
-
-        cleanup();
-        active = el;
-
-        tipEl = document.createElement("div");
-        tipEl.className = "tipBox";
-        tipEl.textContent = msg;
-
-        arrowEl = document.createElement("div");
-        arrowEl.className = "tipArrow";
-
-        document.body.appendChild(tipEl);
-        document.body.appendChild(arrowEl);
-
-        position(el);
-      }
-
-      document.addEventListener("pointerenter", (e) => {
-        const el = e.target?.closest?.(".hasTip");
-        if (!el) return;
-        if (!el.getAttribute("data-tip")) return;
-        show(el);
-      }, true);
-
-      document.addEventListener("pointerleave", (e) => {
-        const el = e.target?.closest?.(".hasTip");
-        if (!el) return;
-        cleanup();
-      }, true);
-
-      window.addEventListener("scroll", () => { if (active) position(active); }, true);
-      window.addEventListener("resize", () => { if (active) position(active); });
-    })();
-
-    // ---- Nav buttons ----
-    btnHome.addEventListener("click", () => goto("/home"));
-    btnNew.addEventListener("click", () => goto("/calibrate"));
-    btnSignIn.addEventListener("click", () => goto("/login"));
-    btnSignOut.addEventListener("click", async () => {
-      if (!sb) return;
-      await sb.auth.signOut();
-      goto("/");
+  }
+
+  function toggleNewEntity(on){
+    $("newEntityBox").classList.toggle("hidden", !on);
+  }
+
+  function entityNameById(id){
+    return (state.entityById[id]?.name) || "—";
+  }
+
+  async function refreshEntities(){
+    const d = await api("/api/entities");
+    state.entities = d.entities || [];
+    state.entityById = {};
+    state.entities.forEach(e=> state.entityById[e.id] = e);
+
+    // upload select
+    const sel = $("entitySelect");
+    sel.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "No entity (not recommended)";
+    sel.appendChild(opt0);
+
+    state.entities.forEach(e=>{
+      const o = document.createElement("option");
+      o.value = e.id;
+      o.textContent = e.name;
+      sel.appendChild(o);
     });
 
-    btnGetStarted.addEventListener("click", () => {
-      if (session) goto("/home");
-      else goto("/login");
+    // runs filter
+    const f = $("runsEntityFilter");
+    f.innerHTML = "";
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "All entities";
+    f.appendChild(all);
+    state.entities.forEach(e=>{
+      const o = document.createElement("option");
+      o.value = e.id;
+      o.textContent = e.name;
+      f.appendChild(o);
     });
 
-    btnBackHome.addEventListener("click", () => goto("/home"));
-    btnGoSignIn.addEventListener("click", () => goto("/login"));
-    btnGoLanding.addEventListener("click", () => goto("/"));
-
-    // Sidebar + quick actions
-    navDashboard.addEventListener("click", () => goto("/home"));
-    navUpload.addEventListener("click", () => goto("/calibrate"));
-    navPlaybook.addEventListener("click", () => goto("/playbook"));
-    navRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
-    navPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
-    navSupport.addEventListener("click", () => goto("/support"));
-    navCurrentRun.addEventListener("click", () => {
-      const rid = navCurrentRun.getAttribute("data-run-id") || "";
-      if (rid) goto("/runs/" + rid);
+    // playbook select
+    const ps = $("playbookEntitySelect");
+    ps.innerHTML = "";
+    const p0 = document.createElement("option");
+    p0.value = "";
+    p0.textContent = "Select an entity…";
+    ps.appendChild(p0);
+    state.entities.forEach(e=>{
+      const o = document.createElement("option");
+      o.value = e.id;
+      o.textContent = e.name;
+      ps.appendChild(o);
     });
+  }
 
-    qaUpload.addEventListener("click", () => goto("/calibrate"));
-    qaRecord.addEventListener("click", () => toast("warn", "Coming soon:", "Record Call is not enabled yet."));
-    qaPractice.addEventListener("click", () => toast("warn", "Coming soon:", "AI Call Practice is not enabled yet."));
+  async function submitRun(){
+    const file = $("file").files[0];
+    const context = $("context").value.trim();
+    const scenario = $("scenario").value.trim();
 
-    btnSupportBack.addEventListener("click", () => goto("/home"));
-    btnPlaybookBack.addEventListener("click", () => goto("/home"));
+    const entityId = $("entitySelect").value || "";
+    const creating = !$("newEntityBox").classList.contains("hidden");
+    const entityName = creating ? $("entityName").value.trim() : "";
+    const entityOffer = creating ? $("entityOffer").value.trim() : "";
+    const entityIndustry = creating ? $("entityIndustry").value.trim() : "";
 
-    // ---- Login actions ----
-    btnMagicLink.addEventListener("click", async () => {
-      loginBanners.innerHTML = "";
-      loginStatus.textContent = "";
+    if (!file) return toast("Pick a file");
+    if (!context) return toast("Context is required");
 
-      const email = (emailEl.value || "").trim();
-      if (!email) { loginBanners.appendChild(banner("bad", "Error:", "Enter an email.")); return; }
+    $("runBtn").disabled = true;
+    $("uploadStatus").textContent = "Uploading + transcribing + analyzing…";
 
-      try {
-        btnMagicLink.disabled = true;
-        loginStatus.textContent = "Sending magic link…";
-
-        await sb.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: window.location.origin + "/home" },
-        });
-
-        loginBanners.appendChild(banner("good", "Sent:", "Check your email for the magic link."));
-        loginStatus.textContent = "";
-      } catch (e) {
-        loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
-        loginStatus.textContent = "";
-      } finally {
-        btnMagicLink.disabled = false;
-      }
-    });
-
-    btnGoogle.addEventListener("click", async () => {
-      loginBanners.innerHTML = "";
-      loginStatus.textContent = "";
-      try {
-        await sb.auth.signInWithOAuth({
-          provider: "google",
-          options: { redirectTo: window.location.origin + "/home" },
-        });
-      } catch (e) {
-        loginBanners.appendChild(banner("bad", "Error:", e?.message || String(e)));
-      }
-    });
-
-    // ---- AI assist (simple + conservative) ----
-    function renderAssist() {
-      const scenario = categoryEl.value || "";
-      const ctx = (contextEl.value || "").toLowerCase();
-
-      if (!scenario) {
-        assistCard.classList.add("hidden");
-        return;
-      }
-
-      const keys = scenarioKeywords[scenario] || [];
-      let hits = 0;
-      for (const k of keys) {
-        if (ctx.includes(k)) hits++;
-      }
-
-      assistCard.classList.remove("hidden");
-      if (hits >= 2) {
-        assistCard.className = "banner good";
-        assistTitle.textContent = "Looks aligned:";
-        assistMsg.textContent = " Context matches this scenario template.";
-      } else if (hits === 1) {
-        assistCard.className = "banner warn";
-        assistTitle.textContent = "Probably fine:";
-        assistMsg.textContent = " If this feels mismatched, switch the scenario or reword the context.";
-      } else {
-        assistCard.className = "banner warn";
-        assistTitle.textContent = "Possible mismatch:";
-        assistMsg.textContent = " Your context doesn’t mention typical keywords for this scenario. Consider switching scenario or rewriting context.";
-      }
-    }
-
-    categoryEl.addEventListener("change", renderAssist);
-    contextEl.addEventListener("input", () => {
-      if (window.__assistTimer) clearTimeout(window.__assistTimer);
-      window.__assistTimer = setTimeout(renderAssist, 120);
-    });
-
-    // ---- History ----
-    let runsLoadSeq = 0;
-
-    async function loadRuns() {
-      const seq = ++runsLoadSeq;
-      homeBanners.innerHTML = "";
-      homeStatus.textContent = "Loading…";
-
-      const { ok, json } = await fetchJsonAuthed("/api/runs");
-      if (seq !== runsLoadSeq) return;
-
-      if (!ok) {
-        homeStatus.textContent = "";
-        homeBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load runs."));
-        return;
-      }
-
-      const runs = json.runs || [];
-      runsTbody.innerHTML = "";
-
-      if (!runs.length) {
-        homeStatus.textContent = "No runs yet.";
-        return;
-      }
-
-      homeStatus.textContent = "";
-
-      for (const run of runs) {
-        const tr = document.createElement("tr");
-
-        const title = (run.title || run.run_title || "").trim() || "(untitled)";
-        const scenario = scenarioTemplates.find(([v]) => v === (run.scenario_template || ""))?.[1] || "None";
-
-        const outcomeKey = normalizeOutcomeKey(run.call_outcome || "");
-        const outcomeTxt = outcomeLabel(outcomeKey);
-        const tip = run.call_outcome_reason || outcomeGlossary[outcomeKey] || "—";
-
-        tr.innerHTML = `
-          <td class="reportCell">${escapeHtml(title)}</td>
-          <td class="mutedCell">${escapeHtml(scenario)}</td>
-          <td>
-            <span class="outcomePill hasTip ${outcomePillClass(outcomeKey)}" data-tip="${escapeHtml(tip)}">
-              ${escapeHtml(outcomeTxt)}
-            </span>
-          </td>
-        `;
-
-        tr.addEventListener("click", () => goto("/runs/" + run.id));
-        runsTbody.appendChild(tr);
-      }
-    }
-
-    // ---- Run viewer ----
-    let runLoadSeq = 0;
-    let currentRunId = "";
-    let currentRun = null;
-
-    async function loadRun(runId) {
-      const seq = ++runLoadSeq;
-
-      runBanners.innerHTML = "";
-      summaryKVEl2.innerHTML = "";
-      transcriptBoxEl2.innerHTML = "";
-      reportGridEl2.innerHTML = "";
-
-      runTitleEl.textContent = "";
-      runMetaEl.textContent = "";
-      btnSavePlaybook.classList.add("hidden");
-
-      const { ok, json } = await fetchJsonAuthed("/api/runs/" + encodeURIComponent(runId));
-      if (seq !== runLoadSeq) return;
-
-      if (!ok) {
-        runBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load run."));
-        return;
-      }
-
-      const run = json.run || {};
-      currentRunId = runId;
-      currentRun = run;
-
-      const title = (run.title || run.run_title || "").trim() || "Call Analysis";
-      runTitleEl.textContent = title;
-
-      const submittedAt = run.created_at ? new Date(run.created_at).toLocaleString() : "";
-      runMetaEl.textContent = submittedAt ? `Submitted at: ${submittedAt}` : "";
-
-      navRunText.textContent = title;
-      navCurrentRun.setAttribute("data-run-id", runId);
-      navCurrentRun.setAttribute("title", title);
-      navRunWrap.classList.remove("hidden");
-
-      if (run.mismatch || run.scenario_mismatch) {
-        runBanners.appendChild(banner("warn", "Scenario mismatch:", run.mismatch_reason || "Possible mismatch detected."));
-      }
-
-      renderSummaryInto(run, { summaryKVEl: summaryKVEl2 });
-
-      const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : [];
-      renderTranscriptInto(transcriptLines, transcriptBoxEl2);
-
-      const reportMd = run.report_text || "";
-      renderReportInto(reportMd, reportGridEl2);
-
-      btnSavePlaybook.classList.remove("hidden");
-    }
-
-    // ---- Calibrate (new run) ----
-    async function onRun() {
-      const file = audioEl.files?.[0];
-      const ctx = contextEl.value.trim();
-
-      statusEl.textContent = "";
-
-      if (!file) { statusEl.textContent = "Choose an audio file first."; return; }
-      if (ctx.length < 10) { statusEl.textContent = "Context is required (10+ characters)."; return; }
-
-      runBtn.disabled = true;
-      runBtn.textContent = "Calibrating…";
-      statusEl.textContent = "Uploading + transcribing…";
-
+    try{
       const fd = new FormData();
-      fd.append("audio", file);
-      fd.append("context", ctx);
-      fd.append("category", categoryEl.value || "");
+      fd.append("file", file);
+      fd.append("context", context);
+      fd.append("scenario", scenario);
 
-      const { ok, json } = await fetchJsonAuthed("/api/run", { method: "POST", body: fd });
+      if (entityId) fd.append("entityId", entityId);
+      if (entityName) fd.append("entityName", entityName);
+      if (entityOffer) fd.append("entityOffer", entityOffer);
+      if (entityIndustry) fd.append("entityIndustry", entityIndustry);
 
-      try {
-        if (!ok) {
-          statusEl.textContent = "";
-          toast("bad", "Error:", json?.error || "Request failed.");
-          return;
-        }
-
-        if (json.run_id) {
-          goto("/runs/" + json.run_id);
-          return;
-        }
-
-        toast("warn", "Note:", "Unexpected server response.");
-      } finally {
-        runBtn.disabled = false;
-        runBtn.textContent = "Calibrate";
-        statusEl.textContent = "";
-      }
+      const d = await api("/api/run", { method:"POST", body: fd });
+      toast("Done ✅");
+      $("uploadStatus").textContent = "Done ✅ Opening report…";
+      await openRun(d.run.id);
+      go("report");
+    }catch(e){
+      $("uploadStatus").textContent = "Error: " + e.message;
+      toast("Error");
+    }finally{
+      $("runBtn").disabled = false;
     }
+  }
 
-    runBtn.addEventListener("click", onRun);
+  async function loadRuns(){
+    await refreshEntities();
 
-    // ---- Support ----
-    btnSupportSend.addEventListener("click", async () => {
-      supportBanners.innerHTML = "";
-      supportStatus.textContent = "";
+    const filter = $("runsEntityFilter").value || "";
+    let url = "/api/runs";
+    if (filter) url += "?entity_id=" + encodeURIComponent(filter);
 
-      const msg = (supportMessage.value || "").trim();
-      const contact = (supportContact.value || "").trim();
+    const d = await api(url);
+    state.runs = d.runs || [];
 
-      if (msg.length < 5) {
-        supportBanners.appendChild(banner("bad", "Error:", "Message is required (5+ characters)."));
-        return;
-      }
+    const tb = $("runsTbody");
+    tb.innerHTML = "";
+    state.runs.forEach(r=>{
+      const tr = document.createElement("tr");
+      const dt = new Date(r.created_at);
+      tr.innerHTML = `
+        <td>${dt.toLocaleString()}</td>
+        <td>${escapeHtml(r.call_result || "—")}</td>
+        <td>${escapeHtml((r.overall_grade || "—") + " (" + (r.overall_score ?? "—") + ")")}</td>
+        <td>${escapeHtml(entityNameById(r.entity_id))}</td>
+        <td><button class="btn secondary small" onclick="openRun('${r.id}')">Open</button></td>
+      `;
+      tb.appendChild(tr);
+    });
+  }
 
-      btnSupportSend.disabled = true;
-      supportStatus.textContent = "Sending…";
+  async function openRun(id){
+    const d = await api("/api/runs/" + id);
+    state.currentRun = d.run;
+    hydrateReport(d.run);
+    go("report");
+  }
 
-      const { ok, json } = await fetchJsonAuthed("/api/support", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: msg, contact, page_url: window.location.pathname }),
-      });
+  function tagToneFromResult(result){
+    const s = (result || "").toLowerCase();
+    if (s.includes("booked")) return "good";
+    if (s.includes("rejected") || s.includes("hostile")) return "bad";
+    if (s.includes("voicemail")) return "warn";
+    return "";
+  }
 
-      btnSupportSend.disabled = false;
-      supportStatus.textContent = "";
+  function hydrateReport(run){
+    const a = run.analysis_json || {};
+    const badges = a.signal_badges || [];
+    const fixes = a.fix_these_first_top3 || [];
+    const followup = a.followup?.two_line || "";
 
-      if (!ok) {
-        supportBanners.appendChild(banner("bad", "Error:", json?.error || "Support failed."));
-        if (json?.detail) supportBanners.appendChild(banner("warn", "Details:", json.detail));
-        return;
-      }
+    $("reportEntityTag").textContent = "Entity: " + (run.entity_id ? entityNameById(run.entity_id) : "—");
+    $("reportResult").textContent = a.call_result || run.call_result || "—";
+    $("reportReason").textContent = a.call_result_reason || run.call_result_reason || "—";
 
-      supportBanners.appendChild(banner("good", "Sent:", "Thanks — your message was submitted."));
-      supportMessage.value = "";
-      supportContact.value = "";
+    $("reportGradeTag").textContent = "Grade: " + (a.overall_grade || run.overall_grade || "—");
+    $("reportScoreTag").textContent = "Score: " + (a.overall_score_0_100 ?? run.overall_score ?? "—");
+
+    const tone = tagToneFromResult(a.call_result || run.call_result);
+    $("reportScoreTag").className = "tag " + (tone || "");
+    $("reportGradeTag").className = "tag " + (tone || "");
+
+    $("followupBox").value = followup;
+
+    const bd = $("reportBadges");
+    bd.innerHTML = "";
+    (badges || []).slice(0, 8).forEach(b=>{
+      const el = document.createElement("span");
+      el.className = "tag";
+      el.textContent = b;
+      bd.appendChild(el);
     });
 
-    // ---- Playbook (client) ----
-    let pbSelectedId = "";
-    let pbDraft = null;
+    const fixList = $("fixList");
+    fixList.innerHTML = "";
+    (fixes || []).slice(0, 3).forEach((f, idx)=>{
+      const wrap = document.createElement("div");
+      wrap.className = "issue";
+      wrap.innerHTML = `
+        <div class="t">${idx+1}) ${escapeHtml(f.issue || "Issue")}</div>
+        <div class="x"><span class="muted">Why it hurt:</span> ${escapeHtml(f.why_it_hurt || "—")}</div>
+        <div class="x" style="margin-top:6px"><span class="muted">Do this instead:</span> ${escapeHtml(f.do_this_instead || "—")}</div>
+        <div class="x" style="margin-top:6px"><span class="muted">Example line:</span> <span class="mono">${escapeHtml(f.example_line || "—")}</span></div>
+        ${f.evidence_quote ? `<div class="x" style="margin-top:6px"><span class="muted">Evidence:</span> “${escapeHtml(f.evidence_quote)}”</div>` : ``}
+      `;
+      fixList.appendChild(wrap);
+    });
 
-    function maxWords(s, n) {
-      const cleaned = String(s || "")
-        .replace(/[“”"’']/g, "")
-        .replace(/[^\w\s-]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (!cleaned) return "";
-      return cleaned.split(" ").filter(Boolean).slice(0, n).join(" ").trim();
+    // repackaged sections (not removed)
+    const s = a.repackaged_sections || {};
+    $("secSummary").textContent = s.section_1_call_summary || "—";
+
+    $("secObjections").innerHTML = formatObjections(s.section_2_objections);
+    $("secOffer").innerHTML = formatOffer(s.section_3_offer_clarity);
+    $("secScript").innerHTML = formatScript(s.section_4_script_upgrade);
+    $("secMoments").innerHTML = formatMoments(s.section_5_moments_to_review);
+    $("secPlan").innerHTML = formatPlan(s.section_6_next_call_micro_plan);
+
+    // transcript drawer source
+    state.transcript = run.transcript_json || { turns: [] };
+    $("transcriptMeta").textContent = run.filename ? ("File: " + run.filename) : "—";
+    $("transcriptSearch").value = "";
+    renderTranscript();
+  }
+
+  function formatObjections(arr){
+    if (!Array.isArray(arr) || arr.length === 0) return "—";
+    return arr.slice(0,8).map(o=>{
+      return `
+        <div class="kv">
+          <div class="k">Objection</div><div class="v">${escapeHtml(o.objection || "—")}</div>
+          <div class="k">Best response</div><div class="v">${escapeHtml(o.best_response || "—")}</div>
+          <div class="k">Avoid</div><div class="v">${escapeHtml(o.avoid || "—")}</div>
+        </div>
+      `;
+    }).join("<div class='divider'></div>");
+  }
+
+  function formatOffer(o){
+    if (!o) return "—";
+    return `
+      <div class="kv">
+        <div class="k">What was clear</div><div class="v">${escapeHtml(o.what_was_clear || "—")}</div>
+        <div class="k">What was missing</div><div class="v">${escapeHtml(o.what_was_missing || "—")}</div>
+      </div>
+    `;
+  }
+
+  function formatScript(s){
+    if (!s) return "—";
+    const qs = Array.isArray(s.discovery_questions) ? s.discovery_questions : [];
+    return `
+      <div class="kv">
+        <div class="k">Opener</div><div class="v">${escapeHtml(s.opener || "—")}</div>
+        <div class="k">Discovery</div><div class="v">${qs.length ? qs.map(q=>"• "+escapeHtml(q)).join("<br/>") : "—"}</div>
+        <div class="k">Close</div><div class="v">${escapeHtml(s.close || "—")}</div>
+      </div>
+    `;
+  }
+
+  function formatMoments(m){
+    if (!Array.isArray(m) || m.length === 0) return "—";
+    return m.slice(0,10).map(x=>{
+      return `<div class="kv">
+        <div class="k">Moment</div><div class="v">${escapeHtml(x.moment || "—")}</div>
+        <div class="k">Why</div><div class="v">${escapeHtml(x.why || "—")}</div>
+      </div>`;
+    }).join("<div class='divider'></div>");
+  }
+
+  function formatPlan(p){
+    if (!Array.isArray(p) || p.length === 0) return "—";
+    return p.slice(0,10).map((x,i)=> `${i+1}. ${escapeHtml(x)}`).join("<br/>");
+  }
+
+  function toggleTranscript(open){
+    $("drawer").classList.toggle("open", !!open);
+  }
+  function renderTranscript(){
+    const q = ($("transcriptSearch").value || "").trim().toLowerCase();
+    const turns = (state.transcript?.turns) || [];
+    const box = $("transcriptTurns");
+    box.innerHTML = "";
+
+    (turns || []).forEach(t=>{
+      const txt = t.text || "";
+      if (q && !txt.toLowerCase().includes(q)) return;
+
+      const b = document.createElement("div");
+      b.className = "bubble " + ((t.speaker === "You") ? "you" : "prospect");
+      b.innerHTML = `
+        <div class="who">${escapeHtml(t.speaker || "Speaker")}</div>
+        <div class="txt">${highlight(escapeHtml(txt), q)}</div>
+      `;
+      box.appendChild(b);
+    });
+
+    if (box.innerHTML.trim() === "") {
+      box.innerHTML = `<div class="tiny muted">No transcript turns found.</div>`;
     }
+  }
 
-    function guessScriptFromReport(md) {
-      const text = String(md || "").trim();
-      if (!text) return "";
-
-      const sections = splitReportIntoSections(text);
-      const preferred = sections.find(s => /follow[- ]?up|next step|two[- ]line|script|message/i.test(s.title || ""));
-      const body = (preferred?.body || text).trim();
-
-      const lines = body.split("\n").map(l => l.trim()).filter(Boolean);
-
-      for (const l of lines) {
-        if (/^(send|text|follow[- ]?up|message)\s*:/i.test(l)) {
-          const after = l.replace(/^(send|text|follow[- ]?up|message)\s*:\s*/i, "").trim();
-          if (after.length >= 10) return after;
-        }
-      }
-
-      const paras = body.split(/\n\s*\n/g).map(p => p.trim()).filter(Boolean);
-      for (const p of paras) {
-        const plain = p.replace(/^[-*]\s+/g, "").trim();
-        if (plain.length >= 20 && plain.length <= 420 && plain.split(/\n/).length <= 3) return plain;
-      }
-
-      return lines.slice(0, 6).join("\n").trim();
+  function highlight(text, q){
+    if (!q) return text;
+    try{
+      const re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
+      return text.replace(re, "<span style='background:rgba(251,191,36,.18);border:1px solid rgba(251,191,36,.22);padding:1px 3px;border-radius:8px'>$1</span>");
+    }catch{
+      return text;
     }
+  }
 
-    function resetPlaybookEditorForNew(draft) {
-      pbSelectedId = "";
-      pbRightTitle.textContent = "New Script";
-      pbRightStatus.textContent = "";
-      pbTitle.value = (draft?.title || "").trim();
-      pbText.value = (draft?.text || "").trim();
-      pbNotes.value = (draft?.notes || "").trim();
-      pbVersions.innerHTML = `<div class="pbSmall">Save to create version history.</div>`;
-      btnPbAddVersion.classList.add("hidden");
-      btnPbSave.textContent = "Save";
-      pbLinkHint.textContent = currentRunId ? `Linked to current run: ${currentRunId}` : "";
+  async function loadEntities(){
+    const d = await api("/api/entities");
+    state.entities = d.entities || [];
+    state.entityById = {};
+    state.entities.forEach(e=> state.entityById[e.id] = e);
+
+    // Render list
+    $("entitiesList").innerHTML = state.entities.length
+      ? state.entities.map(e=> `<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div>
+            <div style="font-weight:700">${escapeHtml(e.name)}</div>
+            <div class="tiny muted">${escapeHtml(e.offer || "")}${e.offer && e.industry ? " • " : ""}${escapeHtml(e.industry || "")}</div>
+          </div>
+          <button class="btn secondary small" onclick="selectEntity('${e.id}')">Select</button>
+        </div>`).join("")
+      : "No entities yet.";
+
+    // Also refresh dropdowns used elsewhere
+    await refreshEntities();
+  }
+
+  async function createEntity(){
+    const name = $("entName").value.trim();
+    const offer = $("entOffer").value.trim();
+    const industry = $("entIndustry").value.trim();
+    const notes = $("entNotes").value.trim();
+    if (!name) return toast("Name required");
+
+    try{
+      const d = await api("/api/entities", {
+        method:"POST",
+        headers: {"content-type":"application/json"},
+        body: JSON.stringify({ name, offer, industry, notes })
+      });
+      toast("Created ✅");
+      $("entName").value = "";
+      $("entOffer").value = "";
+      $("entIndustry").value = "";
+      $("entNotes").value = "";
+      await loadEntities();
+      await selectEntity(d.entity.id);
+    }catch(e){
+      toast("Error");
+      alert(e.message);
     }
+  }
 
-    function renderPlaybookList(items) {
-      pbList.innerHTML = "";
-      if (!items.length) {
-        pbList.innerHTML = `<div class="pbSmall">No scripts yet. Click <strong>New</strong>.</div>`;
-        return;
-      }
+  async function selectEntity(id){
+    state.selectedEntityId = id;
+    $("entityDetailTag").textContent = state.entityById[id]?.name || "—";
+    $("playbookBox").value = "";
+    state.playbookJson = null;
 
-      for (const s of items) {
-        const btn = document.createElement("button");
-        btn.className = "pbItem" + (s.id === pbSelectedId ? " active" : "");
-        const dt = s.updated_at || s.created_at || "";
-        const when = dt ? new Date(dt).toLocaleDateString() : "";
-        btn.innerHTML = `
-          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.title || "Untitled")}</span>
-          <span class="pbMeta">${escapeHtml(when)}</span>
-        `;
-        btn.addEventListener("click", () => {
-          goto("/playbook");
-          loadPlaybookScript(s.id);
-        });
-        pbList.appendChild(btn);
-      }
-    }
-
-    async function loadPlaybookList() {
-      playbookBanners.innerHTML = "";
-      pbRightStatus.textContent = "Loading…";
-      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts");
-      pbRightStatus.textContent = "";
-
-      if (!ok) {
-        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load playbook."));
-        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
-        renderPlaybookList([]);
-        return;
-      }
-
-      renderPlaybookList(json.scripts || []);
-    }
-
-    async function loadPlaybookScript(id) {
-      playbookBanners.innerHTML = "";
-      pbRightStatus.textContent = "Loading…";
-
-      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts/" + encodeURIComponent(id));
-      pbRightStatus.textContent = "";
-
-      if (!ok) {
-        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to load script."));
-        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
-        return;
-      }
-
-      const script = json.script || {};
-      const versions = json.versions || [];
-      pbSelectedId = script.id || "";
-
-      pbRightTitle.textContent = script.title || "Script";
-      pbTitle.value = script.title || "";
-      pbText.value = script.current_text || "";
-      pbNotes.value = "";
-      btnPbAddVersion.classList.remove("hidden");
-      btnPbSave.textContent = "Save as New Script";
-      pbLinkHint.textContent = currentRunId ? `Linked to current run: ${currentRunId}` : "";
-
-      pbVersions.innerHTML = "";
-      if (!versions.length) {
-        pbVersions.innerHTML = `<div class="pbSmall">No versions found.</div>`;
-      } else {
-        for (const v of versions) {
-          const box = document.createElement("div");
-          box.className = "pbVer";
-          const when = v.created_at ? new Date(v.created_at).toLocaleString() : "";
-          box.innerHTML = `
-            <div class="pbVerTop">
-              <div class="vnum">v${escapeHtml(String(v.version || ""))}</div>
-              <div class="vdate">${escapeHtml(when)}</div>
+    const d = await api("/api/entities/" + id);
+    const runs = d.runs || [];
+    $("entityRuns").innerHTML = runs.length
+      ? runs.slice(0,25).map(r=>{
+          const dt = new Date(r.created_at);
+          return `<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:8px">
+            <div>
+              <div style="font-weight:700">${escapeHtml(r.call_result || "—")} • ${escapeHtml(r.overall_grade || "—")} (${r.overall_score ?? "—"})</div>
+              <div class="tiny muted">${dt.toLocaleString()}</div>
             </div>
-            <div style="white-space:pre-wrap;">${escapeHtml(v.text || "")}</div>
-            ${v.notes ? `<div class="pbNotes">${escapeHtml(v.notes)}</div>` : ""}
-          `;
-          pbVersions.appendChild(box);
-        }
-      }
+            <button class="btn secondary small" onclick="openRun('${r.id}')">Open</button>
+          </div>`;
+        }).join("")
+      : "No runs yet under this entity. Upload calls and assign them here.";
 
-      await loadPlaybookList();
+    if (d.latest_playbook?.playbook_json) {
+      state.playbookJson = d.latest_playbook.playbook_json;
+      $("playbookBox").value = prettyPlaybook(state.playbookJson);
+    } else {
+      $("playbookBox").value = "";
     }
+  }
 
-    async function createPlaybookScript() {
-      playbookBanners.innerHTML = "";
-      pbRightStatus.textContent = "";
-
-      const title = maxWords(pbTitle.value || "", 5);
-      const text = String(pbText.value || "").trim();
-
-      if (!title || title.split(/\s+/g).filter(Boolean).length < 1) {
-        playbookBanners.appendChild(banner("bad", "Error:", "Title is required (max 5 words)."));
-        return;
-      }
-      if (title.split(/\s+/g).filter(Boolean).length > 5) {
-        playbookBanners.appendChild(banner("bad", "Error:", "Title must be 5 words or fewer."));
-        return;
-      }
-      if (text.length < 5) {
-        playbookBanners.appendChild(banner("bad", "Error:", "Script text is required (5+ characters)."));
-        return;
-      }
-
-      btnPbSave.disabled = true;
-      pbRightStatus.textContent = "Saving…";
-
-      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title,
-          text,
-          source_run_id: currentRunId || null,
-        }),
-      });
-
-      btnPbSave.disabled = false;
-      pbRightStatus.textContent = "";
-
-      if (!ok) {
-        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to save."));
-        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
-        return;
-      }
-
-      const newId = json.id || "";
-      playbookBanners.appendChild(banner("good", "Saved:", "Script added to your Playbook."));
-      pbDraft = null;
-      if (newId) await loadPlaybookScript(newId);
-      else await loadPlaybookList();
+  async function generatePlaybook(){
+    if (!state.selectedEntityId) return toast("Select an entity");
+    $("playbookBox").value = "Generating playbook…";
+    try{
+      const d = await api(`/api/entities/${state.selectedEntityId}/playbook`, { method:"POST" });
+      state.playbookJson = d.playbook.playbook_json;
+      $("playbookBox").value = prettyPlaybook(state.playbookJson);
+      toast("Playbook ready ✅");
+    }catch(e){
+      $("playbookBox").value = "Error: " + e.message;
+      toast("Error");
     }
+  }
 
-    async function addPlaybookVersion() {
-      playbookBanners.innerHTML = "";
-      pbRightStatus.textContent = "";
-
-      if (!pbSelectedId) {
-        playbookBanners.appendChild(banner("bad", "Error:", "No script selected."));
-        return;
-      }
-
-      const text = String(pbText.value || "").trim();
-      const notes = String(pbNotes.value || "").trim() || null;
-
-      if (text.length < 5) {
-        playbookBanners.appendChild(banner("bad", "Error:", "Script text is required (5+ characters)."));
-        return;
-      }
-
-      btnPbAddVersion.disabled = true;
-      pbRightStatus.textContent = "Saving version…";
-
-      const { ok, json } = await fetchJsonAuthed("/api/playbook/scripts/" + encodeURIComponent(pbSelectedId) + "/version", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          text,
-          notes,
-          source_run_id: currentRunId || null,
-        }),
-      });
-
-      btnPbAddVersion.disabled = false;
-      pbRightStatus.textContent = "";
-
-      if (!ok) {
-        playbookBanners.appendChild(banner("bad", "Error:", json?.error || "Failed to save version."));
-        if (json?.detail) playbookBanners.appendChild(banner("warn", "Details:", json.detail));
-        return;
-      }
-
-      playbookBanners.appendChild(banner("good", "Updated:", "New version saved."));
-      pbNotes.value = "";
-      await loadPlaybookScript(pbSelectedId);
+  async function generatePlaybookFromTab(){
+    const id = $("playbookEntitySelect").value || "";
+    if (!id) return toast("Pick an entity");
+    $("playbookTabBox").value = "Generating playbook…";
+    try{
+      const d = await api(`/api/entities/${id}/playbook`, { method:"POST" });
+      $("playbookTabBox").value = prettyPlaybook(d.playbook.playbook_json);
+      toast("Ready ✅");
+    }catch(e){
+      $("playbookTabBox").value = "Error: " + e.message;
+      toast("Error");
     }
+  }
 
-    btnPbRefresh.addEventListener("click", () => loadPlaybookList());
-    btnPbNew.addEventListener("click", () => {
-      resetPlaybookEditorForNew(null);
-      pbSelectedId = "";
-      [...pbList.querySelectorAll(".pbItem")].forEach(x => x.classList.remove("active"));
-    });
-    btnPbSave.addEventListener("click", () => createPlaybookScript());
-    btnPbAddVersion.addEventListener("click", () => addPlaybookVersion());
-
-    btnSavePlaybook.addEventListener("click", () => {
-      if (!currentRun) {
-        toast("warn", "Note:", "No run loaded.");
-        return;
-      }
-      const runTitle = (currentRun.title || currentRun.run_title || "Script").trim();
-      const suggestedTitle = maxWords(runTitle, 5) || "Call Script";
-      const suggestedText = guessScriptFromReport(currentRun.report_text || "");
-      pbDraft = { title: suggestedTitle, text: suggestedText || "", notes: "" };
-      goto("/playbook");
-    });
-
-    // ---- Routing ----
-    async function renderRoute() {
-      if (!sb) return;
-
-      updateTopNav();
-      hideAllViews();
-
-      const path = window.location.pathname || "/";
-      const loggedIn = !!session;
-
-      setActiveNav(path);
-
-      const needsAuth =
-        path === "/home" ||
-        path === "/calibrate" ||
-        path === "/playbook" ||
-        path === "/support" ||
-        path.startsWith("/runs/");
-
-      if (needsAuth && !loggedIn) {
-        goto("/login");
-        return;
-      }
-
-      if (!path.startsWith("/runs/")) {
-        navRunWrap.classList.add("hidden");
-        navRunText.textContent = "";
-        navCurrentRun.removeAttribute("data-run-id");
-      }
-
-      if (path === "/") {
-        if (loggedIn) { goto("/home"); return; }
-        viewLanding.classList.remove("hidden");
-        landingStatus.textContent = "";
-        return;
-      }
-
-      if (path === "/login") {
-        if (loggedIn) { goto("/home"); return; }
-        viewLogin.classList.remove("hidden");
-        return;
-      }
-
-      if (path === "/session-expired") {
-        viewSessionExpired.classList.remove("hidden");
-        expiredBanners.innerHTML = "";
-        expiredBanners.appendChild(banner("warn", "Session expired:", sessionExpiredMessage || "Please sign in again."));
-        return;
-      }
-
-      if (path === "/home") {
-        viewHome.classList.remove("hidden");
-        await loadRuns();
-        return;
-      }
-
-      if (path === "/calibrate") {
-        viewCalibrate.classList.remove("hidden");
-        statusEl.textContent = "";
-        assistCard.classList.add("hidden");
-        renderAssist();
-        return;
-      }
-
-      if (path === "/playbook") {
-        viewPlaybook.classList.remove("hidden");
-        playbookBanners.innerHTML = "";
-        pbRightStatus.textContent = "";
-        if (pbDraft) {
-          resetPlaybookEditorForNew(pbDraft);
-        } else if (!pbSelectedId) {
-          resetPlaybookEditorForNew(null);
-        }
-        await loadPlaybookList();
-        return;
-      }
-
-      if (path === "/support") {
-        viewSupport.classList.remove("hidden");
-        supportBanners.innerHTML = "";
-        supportStatus.textContent = "";
-        return;
-      }
-
-      if (path.startsWith("/runs/")) {
-        viewRun.classList.remove("hidden");
-        const runId = path.split("/runs/")[1] || "";
-        if (!runId) {
-          runBanners.appendChild(banner("bad", "Error:", "Missing run id."));
-          return;
-        }
-        await loadRun(runId);
-        return;
-      }
-
-      goto("/");
+  function prettyPlaybook(pb){
+    if (!pb) return "";
+    try{
+      return JSON.stringify(pb, null, 2);
+    }catch{
+      return String(pb);
     }
+  }
 
-    (async () => {
-      try {
-        await initSupabase();
-        renderRoute();
-      } catch (e) {
-        hideAllViews();
-        viewLanding.classList.remove("hidden");
-        landingStatus.textContent = "Init error: " + (e?.message || String(e));
-      }
-    })();
-  </script>
+  async function copyFollowup(){
+    const t = $("followupBox").value || "";
+    if (!t.trim()) return toast("Nothing to copy");
+    await navigator.clipboard.writeText(t);
+    toast("Copied ✅");
+  }
+
+  async function regenFollowup(){
+    // MVP: regenerate locally by prompting user to re-run for now.
+    // (If you want server regen endpoint, we can add it next.)
+    toast("Re-run upload for now");
+  }
+
+  async function copyPlaybook(){
+    const t = $("playbookTabBox").value || "";
+    if (!t.trim()) return toast("Nothing to copy");
+    await navigator.clipboard.writeText(t);
+    toast("Copied ✅");
+  }
+
+  function escapeHtml(str){
+    return String(str ?? "").replace(/[&<>"']/g, s=>({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[s]));
+  }
+
+  // init
+  (async function init(){
+    await checkHealth();
+    await refreshEntities();
+
+    const start = (window.location.hash || "#home").replace("#","");
+    showView(routes.includes(start) ? start : "home");
+    if (start === "runs") loadRuns();
+    if (start === "entities") loadEntities();
+    if (start === "upload") refreshEntities();
+    if (start === "playbook") loadEntities();
+  })();
+</script>
 </body>
 </html>
