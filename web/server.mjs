@@ -204,6 +204,7 @@ You are Calibrate — a post-call decision engine for cold calls.
 Output MUST be valid JSON.
 
 Return keys:
+- report_title: string (2-5 words, Title Case, no punctuation)
 - call_result: { label: string, why: string }
 - score: number (0-100)
 - signals: string[] (short badges)
@@ -214,6 +215,7 @@ Return keys:
 Rules:
 - Be concise and actionable.
 - Use transcript as source of truth.
+- report_title must use both user context and transcript.
 - Follow-up should be 2 lines max.
 - Top fixes must be exactly 3 items.
 - Quotes: include 2-4 short quotes, max 18 words each.
@@ -548,6 +550,9 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
 
     const analysisJson = await deepseekJSON(prompt.system, prompt.user, 0.25);
     const outcomeLabel = await inferOutcomeLabel(analysisJson);
+    if (!analysisJson.report_title) {
+      analysisJson.report_title = analysisJson?.call_result?.label || outcomeLabel || "Call";
+    }
 
     // Store run
     const runRow = {
