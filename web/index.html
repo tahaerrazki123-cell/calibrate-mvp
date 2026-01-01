@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Calibrate</title>
 
-  <!-- Supabase UMD (creates global `supabase`) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
   <style>
     :root{
       --bg:#ffffff;
@@ -275,7 +272,7 @@
         </div>
 
         <div class="spacer"></div>
-        <div class="hint" id="authMsg">Loading…</div>
+        <div class="hint" id="authMsg"></div>
 
         <div class="spacer"></div>
         <details>
@@ -523,7 +520,9 @@
 
   <div class="toast" id="toast"></div>
 
-  <script>
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
     // ----- Helpers -----
     const $ = (id) => document.getElementById(id);
     const toastEl = $("toast");
@@ -543,7 +542,6 @@
     }
 
     function setUserUI(user){
-      const pill = $("pillUser");
       const dot = $("dotAuth");
       const label = $("userLabel");
       if(user && user.email){
@@ -567,9 +565,11 @@
     }
 
     // ----- State -----
-    let sb = null;          // ✅ renamed from `supabase` (avoid global redeclare)
+    let sb = null;
     let cfg = null;
     let currentUser = null;
+    let accessToken = null;
+
     let entities = [];
     let currentEntityId = null;
     let currentRun = null;
@@ -577,13 +577,14 @@
 
     // ----- API -----
     async function api(path, opts={}){
-      const res = await fetch(path, {
-        headers: { ...(opts.headers||{}), "Accept":"application/json" },
-        ...opts
-      });
+      const headers = { ...(opts.headers||{}), "Accept":"application/json" };
+      if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+
+      const res = await fetch(path, { headers, ...opts });
       const text = await res.text();
       let data = null;
       try{ data = text ? JSON.parse(text) : null; }catch(e){}
+
       if(!res.ok){
         const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || res.statusText);
         throw new Error(msg);
@@ -593,22 +594,26 @@
 
     // ----- Init Supabase -----
     async function initSupabase(){
-      $("authMsg").textContent = "Loading…";
+      $("authMsg").textContent = "Loading config…";
       cfg = await api("/api/config");
       const { supabaseUrl, supabaseAnonKey } = cfg;
+
       if(!supabaseUrl || !supabaseAnonKey){
         throw new Error("Missing Supabase config from /api/config");
       }
 
-      sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
+      sb = createClient(supabaseUrl, supabaseAnonKey, {
         auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
       });
 
+      $("authMsg").textContent = "Checking session…";
       const { data: sessionData } = await sb.auth.getSession();
+      accessToken = sessionData?.session?.access_token || null;
       currentUser = sessionData?.session?.user || null;
       setUserUI(currentUser);
 
       sb.auth.onAuthStateChange((_event, session)=>{
+        accessToken = session?.access_token || null;
         currentUser = session?.user || null;
         setUserUI(currentUser);
         if(currentUser){
@@ -639,17 +644,25 @@
     $("btnSendLink").addEventListener("click", async ()=>{
       const email = $("authEmail").value.trim();
       if(!email){ toast("Enter an email"); return; }
+
+      $("btnSendLink").disabled = true;
       $("authMsg").textContent = "Sending…";
+
       try{
         const { error } = await sb.auth.signInWithOtp({
           email,
-          options: { emailRedirectTo: window.location.origin }
+          options: {
+            // Always redirect back to /home so it loads the full app shell
+            emailRedirectTo: `${window.location.origin}/home`
+          }
         });
         if(error) throw error;
         toast("Magic link sent. Check your inbox.");
         $("authMsg").textContent = "Sent. Open the email link, then come back.";
       }catch(e){
         $("authMsg").textContent = "Error: " + (e.message || String(e));
+      }finally{
+        $("btnSendLink").disabled = false;
       }
     });
 
@@ -869,7 +882,6 @@
         $("topFixes").innerHTML = `<div class="muted">—</div>`;
       }
 
-      // transcript
       const transcript = run.transcript_text || "";
       $("transcriptBox").textContent = transcript || "—";
     }
