@@ -614,38 +614,49 @@
         auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
       });
 
-      // Initial session
-      const { data: sessionData } = await sb.auth.getSession();
-      currentSession = sessionData?.session || null;
-      currentUser = currentSession?.user || null;
+      // Initial session (wait for INITIAL_SESSION to avoid flicker)
+      const initialSession = await new Promise((resolve)=>{
+        const { data: { subscription } } = sb.auth.onAuthStateChange((event, session)=>{
+          if(event === "INITIAL_SESSION"){
+            subscription?.unsubscribe();
+            resolve(session || null);
+          }
+        });
+      });
+
+      currentSession = initialSession;
+      currentUser = initialSession?.user || null;
+      accessToken = initialSession?.access_token || null;
 
       setUserUI(currentUser);
-      if(currentUser) showApp(); else showAuth();
+      if(currentUser){
+        showApp();
+        bootstrapApp().catch(err => {
+          console.error(err);
+          toast("Signed in, but data failed: " + (err.message || String(err)));
+        });
+      }else{
+        showAuth();
+      }
 
       // Listen for changes
-      sb.auth.onAuthStateChange((_event, session)=>{
+      sb.auth.onAuthStateChange((event, session)=>{
+        if(!["SIGNED_IN","SIGNED_OUT","TOKEN_REFRESHED"].includes(event)) return;
         currentSession = session || null;
         currentUser = session?.user || null;
+        accessToken = session?.access_token || null;
         setUserUI(currentUser);
 
-        if(currentUser){
+        if(event === "SIGNED_IN"){
           showApp();
           bootstrapApp().catch(err => {
             console.error(err);
             toast("Loaded, but data failed: " + (err.message || String(err)));
           });
-        }else{
+        }else if(event === "SIGNED_OUT"){
           showAuth();
         }
       });
-
-      // Bootstrap (do NOT throw auth away if bootstrap fails)
-      if(currentUser){
-        bootstrapApp().catch(err => {
-          console.error(err);
-          toast("Signed in, but data failed: " + (err.message || String(err)));
-        });
-      }
 
       $("authMsg").textContent = "";
     }
