@@ -872,12 +872,90 @@
       try{
         const data = await api(`/api/entities/${entityId}/playbook`, { method:"POST" });
         currentPlaybook = data.playbook || null;
-        $("playbookBox").textContent = JSON.stringify(currentPlaybook, null, 2);
+        renderPlaybook(currentPlaybook);
         $("playbookStatus").textContent = "Done ✅";
       }catch(e){
         $("playbookStatus").textContent = "Error: " + (e.message || String(e));
       }
     });
+
+    function renderPlaybook(playbook){
+      const box = $("playbookBox");
+      let obj = playbook;
+      if(typeof obj === "string"){
+        try{ obj = JSON.parse(obj); }catch{ obj = null; }
+      }
+      const hasFields = obj
+        && typeof obj === "object"
+        && obj.ultimate_script
+        && Array.isArray(obj.common_objections)
+        && Array.isArray(obj.dont_say)
+        && Array.isArray(obj.say_instead)
+        && Array.isArray(obj.patterns);
+      if(!hasFields){
+        const pretty = JSON.stringify(obj ?? playbook, null, 2);
+        box.innerHTML = `<pre class="mono">${escapeHtml(pretty)}</pre>`;
+        return;
+      }
+
+      const entityName = obj.entity?.name || "Entity";
+      const title = `${entityName} Playbook`;
+      const script = obj.ultimate_script || {};
+      const objections = obj.common_objections || [];
+      const dontSay = obj.dont_say || [];
+      const sayInstead = obj.say_instead || [];
+      const patterns = obj.patterns || [];
+
+      box.innerHTML = `
+        <div class="kpi" style="margin-bottom:10px;">
+          <div><b>${escapeHtml(title)}</b></div>
+        </div>
+
+        <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
+          <h3>Ultimate Script</h3>
+          <div class="hint"><b>Opener:</b> ${escapeHtml(script.opener || "")}</div>
+          <div class="hint"><b>Pitch:</b> ${escapeHtml(script.pitch || "")}</div>
+          <div class="hint"><b>Qualify:</b> ${escapeHtml(script.qualify || "")}</div>
+          <div class="hint"><b>Close:</b> ${escapeHtml(script.close || "")}</div>
+        </div>
+
+        <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
+          <h3>Common Objections</h3>
+          ${objections.map(o=>`
+            <details>
+              <summary>${escapeHtml(o.objection || "")}</summary>
+              <div class="hint">${escapeHtml(o.best_response || "")}</div>
+            </details>
+          `).join("")}
+        </div>
+
+        <div class="twoCol" style="margin-bottom:10px;">
+          <div class="card" style="box-shadow:none; border-color:var(--border);">
+            <h3>Don't Say</h3>
+            <ul>
+              ${dontSay.map(s=>`<li>${escapeHtml(s)}</li>`).join("")}
+            </ul>
+          </div>
+          <div class="card" style="box-shadow:none; border-color:var(--border);">
+            <h3>Say Instead</h3>
+            <ul>
+              ${sayInstead.map(s=>`<li>${escapeHtml(s)}</li>`).join("")}
+            </ul>
+          </div>
+        </div>
+
+        <div class="card" style="box-shadow:none; border-color:var(--border);">
+          <h3>Patterns</h3>
+          ${patterns.map(p=>`
+            <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
+              <b>${escapeHtml(p.pattern || "")}</b>
+              <div class="hint"><b>Impact:</b> ${escapeHtml(p.impact || "")}</div>
+              <div class="hint"><b>Fix:</b> ${escapeHtml(p.fix || "")}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
 
     // ---- Runs ----
     async function loadRuns(){
