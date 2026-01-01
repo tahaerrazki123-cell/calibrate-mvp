@@ -347,8 +347,8 @@
 
       <!-- UPLOAD -->
       <div class="card hide" id="tab_upload">
-        <h2>Upload Call</h2>
-        <p class="muted">Accepts audio + video (MP4). Video audio is extracted server-side.</p>
+        <h2 id="uploadTitle">Upload Call</h2>
+        <p class="muted" id="uploadSubtitle">Accepts audio + video (MP4). Video audio is extracted server-side.</p>
 
         <div id="uploadForm">
         <div class="spacer"></div>
@@ -576,6 +576,10 @@
 
     function setUploadView(){
       $("uploadForm").classList.toggle("hide", viewingPastRun);
+      $("uploadTitle").textContent = viewingPastRun ? "Run Report" : "Upload Call";
+      $("uploadSubtitle").textContent = viewingPastRun
+        ? "Reviewing a past run."
+        : "Accepts audio + video (MP4). Video audio is extracted server-side.";
     }
 
     // ---- State ----
