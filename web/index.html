@@ -15,9 +15,6 @@
       --sub:#5b6475;
       --blue:#2563eb;
       --blue2:#1d4ed8;
-      --good:#16a34a;
-      --warn:#f59e0b;
-      --bad:#dc2626;
       --shadow: 0 8px 22px rgba(10,20,40,.08);
       --r:14px;
     }
@@ -60,10 +57,7 @@
     }
     .btn.primary:hover{background:var(--blue2)}
     .btn:disabled{opacity:.6;cursor:not-allowed}
-    .grid{
-      display:grid;grid-template-columns: 1fr;
-      gap:14px;margin-top:14px;
-    }
+    .grid{display:grid;grid-template-columns: 1fr;gap:14px;margin-top:14px}
     .card{
       background:var(--panel);
       border:1px solid var(--border);
@@ -85,44 +79,9 @@
     }
     textarea{min-height:90px;resize:vertical}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
     .muted{color:var(--sub);font-size:12px;line-height:1.35}
     .hr{height:1px;background:var(--border);margin:14px 0}
-    .kpi{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
-    .badge{
-      border:1px solid var(--border);
-      padding:8px 10px;border-radius:999px;
-      font-size:12px;font-weight:800;background:var(--muted);
-    }
-    .big{
-      display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;
-    }
-    .result{
-      display:flex;flex-direction:column;gap:6px;
-    }
-    .result .label{font-weight:900;font-size:18px}
-    .scorebox{
-      display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:160px;
-    }
-    .grade{
-      font-weight:1000;font-size:18px;
-      padding:10px 12px;border-radius:14px;border:1px solid var(--border);
-      background:var(--muted);
-    }
-    .grade.A{border-color:#bbf7d0;background:#f0fdf4}
-    .grade.B{border-color:#d9f99d;background:#f7fee7}
-    .grade.C{border-color:#fde68a;background:#fffbeb}
-    .grade.D,.grade.F{border-color:#fecaca;background:#fef2f2}
-    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
-    .listItem{
-      border:1px solid var(--border);
-      background:#fff;border-radius:14px;padding:12px;margin-top:10px;
-    }
-    .listItem .t{font-weight:900}
-    .listItem .s{color:var(--sub);font-size:12px;margin-top:6px;line-height:1.35}
-    details{
-      border:1px solid var(--border);border-radius:14px;padding:10px;background:#fff;
-    }
+    details{border:1px solid var(--border);border-radius:14px;padding:10px;background:#fff}
     summary{cursor:pointer;font-weight:900}
     pre{
       white-space:pre-wrap;word-wrap:break-word;
@@ -156,19 +115,28 @@
       </div>
     </div>
 
-    <div id="authView" class="authWrap" style="display:none">
+    <!-- IMPORTANT: auth view is visible by default so you never get a blank page -->
+    <div id="authView" class="authWrap">
       <div class="card">
         <h2>Sign in</h2>
         <div class="muted">
-          Enter your email. We’ll send a magic link. This is the landing experience new users should see.
+          Enter your email. We’ll send a magic link.
         </div>
         <label>Email</label>
         <input id="authEmail" type="email" placeholder="you@domain.com" />
-        <div style="display:flex;gap:10px;margin-top:10px">
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
           <button class="btn primary" id="btnSendLink">Send magic link</button>
           <button class="btn" id="btnRefreshSession">I already clicked the link</button>
         </div>
-        <div class="muted" style="margin-top:10px" id="authMsg"></div>
+        <div class="muted" style="margin-top:10px" id="authMsg">Loading…</div>
+
+        <details style="margin-top:12px">
+          <summary>Troubleshooting</summary>
+          <div class="muted" style="margin-top:10px">
+            If you see only the header, it means the JS boot failed.
+            Check <span class="mono">/api/config</span> and your browser console.
+          </div>
+        </details>
       </div>
     </div>
 
@@ -183,7 +151,7 @@
       <div class="grid">
         <div id="tab-upload" class="card">
           <h2>Upload Call</h2>
-          <div class="muted">Accepts audio (mp3/wav/m4a) and video (mp4/mov). Video is auto-extracted to audio on the server.</div>
+          <div class="muted">Accepts audio (mp3/wav/m4a) and video (mp4/mov). Video is auto-extracted on the server.</div>
 
           <label>File</label>
           <input id="file" type="file" accept=".mp3,.wav,.m4a,.mp4,.mov,video/*,audio/*" />
@@ -218,9 +186,9 @@
           </details>
 
           <label>Context (required)</label>
-          <textarea id="context" placeholder="What you’re selling + who you’re calling + goal of the call. Keep it short."></textarea>
+          <textarea id="context" placeholder="What you’re selling + who you’re calling + goal of the call."></textarea>
 
-          <div style="display:flex;gap:10px;margin-top:10px">
+          <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
             <button class="btn primary" id="btnRun">Run analysis</button>
             <button class="btn" id="btnClear">Clear</button>
           </div>
@@ -232,7 +200,7 @@
 
         <div id="tab-runs" class="card" style="display:none">
           <h2>Runs</h2>
-          <div class="muted">Click a run to open the command center report.</div>
+          <div class="muted">Click a run to open the report.</div>
           <div id="runsList"></div>
         </div>
 
@@ -275,7 +243,7 @@
             <option value="">Choose an entity</option>
           </select>
 
-          <div style="display:flex;gap:10px;margin-top:10px">
+          <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
             <button class="btn primary" id="btnGenPlaybook">Generate / Refresh Playbook</button>
           </div>
 
@@ -309,7 +277,7 @@
       const txt = await res.text();
       let data = null;
       try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
-      if (!res.ok) throw new Error(data?.error || txt || "Request failed");
+      if (!res.ok) throw new Error(data?.error || txt || `Request failed: ${res.status}`);
       return data;
     }
 
@@ -328,14 +296,129 @@
       $("appView").style.display = "block";
     }
 
+    function escapeHtml(s){
+      return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+    }
+
+    function setTab(name){
+      document.querySelectorAll(".tab").forEach(b=>{
+        b.classList.toggle("active", b.dataset.tab === name);
+      });
+      ["upload","runs","entities","playbook"].forEach(t=>{
+        const el = $("tab-" + t);
+        if (el) el.style.display = (t === name ? "block" : "none");
+      });
+      if (name !== "upload") $("reportView").style.display = "none";
+    }
+
+    async function loadEntities(){
+      const data = await api("/api/entities");
+      entities = data.entities || [];
+      renderEntities();
+    }
+
+    async function loadRuns(){
+      const data = await api("/api/runs");
+      runs = data.runs || [];
+      renderRuns();
+    }
+
+    function fillEntitySelects(){
+      const sel = $("entitySelect");
+      const sel2 = $("playbookEntitySelect");
+      sel.innerHTML = `<option value="">None</option>` + entities.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
+      sel2.innerHTML = `<option value="">Choose an entity</option>` + entities.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
+    }
+
+    function renderRuns(){
+      const wrap = $("runsList");
+      if (!runs.length){
+        wrap.innerHTML = `<div class="muted" style="margin-top:10px">No runs yet.</div>`;
+        return;
+      }
+      wrap.innerHTML = runs.map(r=>`
+        <div class="card" style="box-shadow:none;margin-top:10px;cursor:pointer" data-run="${r.id}">
+          <div style="font-weight:900">${escapeHtml(r.filename || "Run")}</div>
+          <div class="muted" style="margin-top:6px">${escapeHtml(new Date(r.created_at).toLocaleString())} • ${escapeHtml(r.call_result || "Other")} • Grade ${escapeHtml(r.overall_grade || "")} • Score ${escapeHtml(r.overall_score ?? "")}</div>
+        </div>
+      `).join("");
+
+      wrap.querySelectorAll("[data-run]").forEach(el=>{
+        el.addEventListener("click", async ()=>{
+          const id = el.getAttribute("data-run");
+          const data = await api(`/api/runs/${id}`);
+          currentRun = data.run;
+          setTab("upload");
+          renderReport(currentRun);
+        });
+      });
+    }
+
+    function renderEntities(){
+      const wrap = $("entitiesList");
+      if (!entities.length){
+        wrap.innerHTML = `<div class="muted">No entities yet.</div>`;
+        return;
+      }
+      wrap.innerHTML = entities.map(e=>`
+        <div class="card" style="box-shadow:none;margin-top:10px">
+          <div style="font-weight:900">${escapeHtml(e.name)}</div>
+          <div class="muted" style="margin-top:6px">${escapeHtml(e.industry || "")}${e.offer ? " • " + escapeHtml(e.offer) : ""}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderReport(run){
+      const a = run.analysis_json || {};
+      const transcript = run.transcript_text || "";
+
+      $("reportView").style.display = "block";
+      $("reportView").innerHTML = `
+        <h2>Call Report</h2>
+        <div class="muted" style="margin-top:6px">
+          If this is empty, the run may have failed before saving analysis_json.
+        </div>
+
+        <div class="card" style="box-shadow:none;margin-top:10px;background:var(--muted)">
+          <div style="font-weight:1000;font-size:18px">${escapeHtml(a.call_result || run.call_result || "Other")}</div>
+          <div class="muted" style="margin-top:6px">${escapeHtml(a.call_result_reason || run.call_result_reason || "")}</div>
+        </div>
+
+        <details style="margin-top:10px">
+          <summary>View Transcript</summary>
+          <pre>${escapeHtml(transcript || "No transcript saved.")}</pre>
+        </details>
+
+        <details style="margin-top:10px">
+          <summary>Raw Analysis JSON</summary>
+          <pre>${escapeHtml(JSON.stringify(a || {}, null, 2))}</pre>
+        </details>
+      `;
+    }
+
     async function initSupabase(){
+      // show auth by default so you never get a blank screen
+      showAuth();
+      $("authMsg").textContent = "Loading…";
+
+      // confirm supabase-js actually loaded
+      if (!window.supabase || !window.supabase.createClient) {
+        throw new Error("Supabase SDK failed to load. Check CDN/network in DevTools.");
+      }
+
+      // confirm backend config endpoint exists
       config = await api("/api/config");
+      if (!config.supabaseUrl || !config.supabaseAnonKey) {
+        throw new Error("API config missing supabaseUrl or supabaseAnonKey.");
+      }
+
       supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
         setUserUI(null);
         showAuth();
+        $("authMsg").textContent = "";
       } else {
         setUserUI(session.user.email);
         showApp();
@@ -358,210 +441,7 @@
       await loadEntities();
       await loadRuns();
       fillEntitySelects();
-    }
-
-    function fillEntitySelects(){
-      const sel = $("entitySelect");
-      const sel2 = $("playbookEntitySelect");
-      sel.innerHTML = `<option value="">None</option>` + entities.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
-      sel2.innerHTML = `<option value="">Choose an entity</option>` + entities.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("");
-    }
-
-    function escapeHtml(s){
-      return String(s || "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
-    }
-
-    function setTab(name){
-      document.querySelectorAll(".tab").forEach(b=>{
-        b.classList.toggle("active", b.dataset.tab === name);
-      });
-      ["upload","runs","entities","playbook"].forEach(t=>{
-        const el = $("tab-" + t);
-        if (el) el.style.display = (t === name ? "block" : "none");
-      });
-      // report stays under upload, so hide it when not in upload
-      if (name !== "upload") $("reportView").style.display = "none";
-    }
-
-    async function loadEntities(){
-      const data = await api("/api/entities");
-      entities = data.entities || [];
-      renderEntities();
-    }
-
-    async function loadRuns(){
-      const data = await api("/api/runs");
-      runs = data.runs || [];
-      renderRuns();
-    }
-
-    function renderRuns(){
-      const wrap = $("runsList");
-      if (!runs.length){
-        wrap.innerHTML = `<div class="muted" style="margin-top:10px">No runs yet.</div>`;
-        return;
-      }
-      wrap.innerHTML = runs.map(r=>`
-        <div class="listItem" style="cursor:pointer" data-run="${r.id}">
-          <div class="t">${escapeHtml(r.filename || "Run")}</div>
-          <div class="s">${escapeHtml(new Date(r.created_at).toLocaleString())} • ${escapeHtml(r.call_result || "Other")} • Grade ${escapeHtml(r.overall_grade || "")} • Score ${escapeHtml(r.overall_score ?? "")}</div>
-        </div>
-      `).join("");
-
-      wrap.querySelectorAll("[data-run]").forEach(el=>{
-        el.addEventListener("click", async ()=>{
-          const id = el.getAttribute("data-run");
-          const data = await api(`/api/runs/${id}`);
-          currentRun = data.run;
-          setTab("upload");
-          renderReport(currentRun);
-        });
-      });
-    }
-
-    function renderEntities(){
-      const wrap = $("entitiesList");
-      if (!entities.length){
-        wrap.innerHTML = `<div class="muted">No entities yet.</div>`;
-        return;
-      }
-      wrap.innerHTML = entities.map(e=>`
-        <div class="listItem">
-          <div class="t">${escapeHtml(e.name)}</div>
-          <div class="s">${escapeHtml(e.industry || "")}${e.offer ? " • " + escapeHtml(e.offer) : ""}</div>
-        </div>
-      `).join("");
-    }
-
-    function gradeClass(g){
-      return ["A","B","C","D","F"].includes(g) ? g : "C";
-    }
-
-    function renderReport(run){
-      const a = run.analysis_json || {};
-      const badges = Array.isArray(a.signal_badges) ? a.signal_badges : [];
-
-      const top3 = Array.isArray(a.fix_these_first_top3) ? a.fix_these_first_top3 : [];
-      const follow = a.followup || {};
-      const rep = a.repackaged_sections || {};
-
-      const transcript = run.transcript_text || "";
-
-      $("reportView").style.display = "block";
-      $("reportView").innerHTML = `
-        <h2>Call Report</h2>
-
-        <div class="card" style="box-shadow:none;margin-top:10px;padding:14px;background:var(--muted)">
-          <div class="big">
-            <div class="result">
-              <div class="muted">Call Result</div>
-              <div class="label">${escapeHtml(a.call_result || run.call_result || "Other")}</div>
-              <div class="muted">${escapeHtml(a.call_result_reason || run.call_result_reason || "")}</div>
-              <div class="kpi">
-                ${badges.slice(0,6).map(b=>`<div class="badge">${escapeHtml(b)}</div>`).join("")}
-              </div>
-            </div>
-
-            <div class="scorebox">
-              <div class="muted">Overall</div>
-              <div class="grade ${gradeClass(a.overall_grade || run.overall_grade || "C")}">
-                Grade ${escapeHtml(a.overall_grade || run.overall_grade || "C")}
-              </div>
-              <div class="pill mono">Score ${escapeHtml(a.overall_score_0_100 ?? run.overall_score ?? "")}/100</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:12px">
-          <div class="card" style="box-shadow:none">
-            <h2>Follow-Up (2 lines)</h2>
-            <div class="muted">Fastest “do this now” action.</div>
-            <div class="listItem" style="margin-top:10px">
-              <div class="mono" id="followText">${escapeHtml(follow.two_line || "")}</div>
-            </div>
-            <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-              <button class="btn primary" id="btnCopyFollow">Copy</button>
-              <button class="btn" id="btnCopyAlt1" ${follow.alt_versions?.[0] ? "" : "disabled"}>Copy Alt #1</button>
-              <button class="btn" id="btnCopyAlt2" ${follow.alt_versions?.[1] ? "" : "disabled"}>Copy Alt #2</button>
-            </div>
-          </div>
-
-          <div class="card" style="box-shadow:none">
-            <h2>Fix These First (Top 3)</h2>
-            <div class="muted">These are the highest-leverage corrections for the next call.</div>
-            ${top3.length ? top3.slice(0,3).map(x=>`
-              <div class="listItem">
-                <div class="t">${escapeHtml(x.issue || "Issue")}</div>
-                <div class="s"><b>Why:</b> ${escapeHtml(x.why_it_hurt || "")}</div>
-                <div class="s"><b>Do instead:</b> ${escapeHtml(x.do_this_instead || "")}</div>
-                ${x.example_line ? `<div class="s"><b>Example:</b> ${escapeHtml(x.example_line)}</div>` : ""}
-                ${x.evidence_quote ? `<div class="s"><b>Evidence:</b> “${escapeHtml(x.evidence_quote)}”</div>` : ""}
-              </div>
-            `).join("") : `<div class="muted" style="margin-top:10px">No top issues returned.</div>`}
-          </div>
-        </div>
-
-        <div class="hr"></div>
-
-        <details>
-          <summary>View Transcript</summary>
-          <pre>${escapeHtml(transcript || "No transcript saved.")}</pre>
-        </details>
-
-        <details style="margin-top:10px">
-          <summary>More report details (keeps everything, repackaged)</summary>
-
-          <div class="listItem">
-            <div class="t">Call summary</div>
-            <div class="s">${escapeHtml(rep.section_1_call_summary || "")}</div>
-          </div>
-
-          <div class="listItem">
-            <div class="t">Objections</div>
-            <div class="s">
-              ${(rep.section_2_objections || []).map(o=>`• ${escapeHtml(o.objection)} → ${escapeHtml(o.best_response)} (avoid: ${escapeHtml(o.avoid)})`).join("<br>") || "None"}
-            </div>
-          </div>
-
-          <div class="listItem">
-            <div class="t">Offer clarity</div>
-            <div class="s"><b>Clear:</b> ${escapeHtml(rep.section_3_offer_clarity?.what_was_clear || "")}</div>
-            <div class="s"><b>Missing:</b> ${escapeHtml(rep.section_3_offer_clarity?.what_was_missing || "")}</div>
-          </div>
-
-          <div class="listItem">
-            <div class="t">Script upgrade</div>
-            <div class="s"><b>Opener:</b> ${escapeHtml(rep.section_4_script_upgrade?.opener || "")}</div>
-            <div class="s"><b>Discovery:</b><br>${(rep.section_4_script_upgrade?.discovery_questions || []).map(q=>"• "+escapeHtml(q)).join("<br>")}</div>
-            <div class="s"><b>Close:</b> ${escapeHtml(rep.section_4_script_upgrade?.close || "")}</div>
-          </div>
-
-          <div class="listItem">
-            <div class="t">Moments to review</div>
-            <div class="s">
-              ${(rep.section_5_moments_to_review || []).map(m=>`• ${escapeHtml(m.moment)} — ${escapeHtml(m.why)}`).join("<br>") || "None"}
-            </div>
-          </div>
-
-          <div class="listItem">
-            <div class="t">Next call micro-plan</div>
-            <div class="s">${(rep.section_6_next_call_micro_plan || []).map(s=>"• "+escapeHtml(s)).join("<br>") || "None"}</div>
-          </div>
-        </details>
-      `;
-
-      $("btnCopyFollow").onclick = async ()=> {
-        await navigator.clipboard.writeText(follow.two_line || "");
-        toast("Copied follow-up");
-      };
-      $("btnCopyAlt1").onclick = async ()=> {
-        await navigator.clipboard.writeText(follow.alt_versions?.[0] || "");
-        toast("Copied alt #1");
-      };
-      $("btnCopyAlt2").onclick = async ()=> {
-        await navigator.clipboard.writeText(follow.alt_versions?.[1] || "");
-        toast("Copied alt #2");
-      };
+      setTab("upload");
     }
 
     $("btnSendLink").addEventListener("click", async ()=>{
@@ -642,9 +522,8 @@
       try{
         $("playbookMsg").textContent = "Generating...";
         const data = await api(`/api/entities/${id}/playbook`, { method:"POST" });
-        const pb = data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook_json || data.playbook;
         $("playbookMsg").textContent = "Done.";
-        $("playbookOut").innerHTML = `<pre>${escapeHtml(JSON.stringify(data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || (data.playbook?.playbook_json ?? data.playbook?.playbook_json) || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || data.playbook?.playbook_json || (data.playbook?.playbook_json ?? {}), null, 2))}</pre>`;
+        $("playbookOut").innerHTML = `<pre>${escapeHtml(JSON.stringify(data.playbook?.playbook_json || {}, null, 2))}</pre>`;
       }catch(e){
         $("playbookMsg").textContent = e.message || String(e);
       }
@@ -695,9 +574,12 @@
     (async function(){
       try{
         await initSupabase();
-        setTab("upload");
       }catch(e){
-        alert("Boot error: " + (e.message || String(e)));
+        showAuth();
+        setUserUI(null);
+        $("authMsg").textContent =
+          "Boot error: " + (e.message || String(e)) +
+          " | Check /api/config and DevTools Console for details.";
       }
     })();
   </script>
