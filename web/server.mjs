@@ -322,6 +322,36 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
 
   const entityId = req.params.id;
 
+  const { data: latestRun, error: lrErr } = await supabaseAdmin
+    .from("runs")
+    .select("created_at")
+    .eq("user_id", user.id)
+    .eq("entity_id", entityId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lrErr) return res.status(400).json({ error: lrErr.message });
+  if (!latestRun) return res.status(400).json({ error: "No runs found for this entity yet." });
+
+  const latestRunCreatedAt = latestRun.created_at;
+
+  const { data: cached, error: cErr } = await supabaseAdmin
+    .from("entity_playbooks")
+    .select("playbook_json, last_run_created_at")
+    .eq("entity_id", entityId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (cErr) return res.status(400).json({ error: cErr.message });
+  if (
+    cached?.playbook_json
+    && cached.last_run_created_at
+    && cached.last_run_created_at >= latestRunCreatedAt
+  ) {
+    return res.json({ playbook: cached.playbook_json });
+  }
+
   const { data: entity, error: eErr } = await supabaseAdmin
     .from("entities")
     .select("*")
@@ -375,20 +405,26 @@ ${transcripts.slice(0, 10).map((t, i) => `--- TRANSCRIPT ${i + 1} ---\n${t}`).jo
   const playbook = await deepseekJSON(system, userPrompt, 0.25);
 
   // store (optional)
-  await supabaseAdmin
+  const { data: savedPlaybook, error: pErr } = await supabaseAdmin
     .from("entity_playbooks")
-    .insert([
-      {
-        user_id: user.id,
-        entity_id: entityId,
-        title: `Playbook ${new Date().toISOString().slice(0, 10)}`,
-        playbook_json: playbook,
-      },
-    ])
-    .select()
+    .upsert(
+      [
+        {
+          user_id: user.id,
+          entity_id: entityId,
+          title: `Playbook ${new Date().toISOString().slice(0, 10)}`,
+          playbook_json: playbook,
+          updated_at: nowIso(),
+          last_run_created_at: latestRunCreatedAt,
+        },
+      ],
+      { onConflict: "entity_id" }
+    )
+    .select("playbook_json")
     .maybeSingle();
 
-  res.json({ playbook });
+  if (pErr) return res.status(400).json({ error: pErr.message });
+  res.json({ playbook: savedPlaybook?.playbook_json || playbook });
 });
 
 // -------- Runs API --------
