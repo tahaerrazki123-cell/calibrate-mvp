@@ -403,6 +403,37 @@ ${transcripts.slice(0, 10).map((t, i) => `--- TRANSCRIPT ${i + 1} ---\n${t}`).jo
 `.trim();
 
   const playbook = await deepseekJSON(system, userPrompt, 0.25);
+  const normalizeObjectionKey = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "");
+  const oldObjections = Array.isArray(cached?.playbook_json?.common_objections)
+    ? cached.playbook_json.common_objections
+    : [];
+  const newObjections = Array.isArray(playbook?.common_objections)
+    ? playbook.common_objections
+    : [];
+  if (oldObjections.length || newObjections.length) {
+    const merged = oldObjections.map((o) => ({ ...o }));
+    const indexByKey = new Map(
+      merged.map((o, i) => [normalizeObjectionKey(o?.objection), i])
+    );
+    newObjections.forEach((o) => {
+      const key = normalizeObjectionKey(o?.objection);
+      if (!key) return;
+      const idx = indexByKey.get(key);
+      if (idx == null) {
+        merged.push(o);
+        indexByKey.set(key, merged.length - 1);
+        return;
+      }
+      if (!merged[idx]?.best_response && o?.best_response) {
+        merged[idx] = { ...merged[idx], best_response: o.best_response };
+      }
+    });
+    playbook.common_objections = merged;
+  }
 
   // store (optional)
   const { data: savedPlaybook, error: pErr } = await supabaseAdmin
