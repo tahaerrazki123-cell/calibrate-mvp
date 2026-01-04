@@ -441,7 +441,10 @@
         </div>
         <!-- REPORT (hidden until we have real output) -->
         <div class="card hide" id="reportShell" style="box-shadow:none; border-color:var(--border); background:#fff;">
-          <h2 id="reportTitle">Report</h2>
+          <div class="row">
+            <h2 id="reportTitle" class="grow">Report</h2>
+            <button class="btn small hide" id="btnViewEntity">View entity</button>
+          </div>
           <p class="muted">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
 
           <div class="spacer"></div>
@@ -1116,10 +1119,11 @@
                   const q = String(e.evidence_quote || "");
                   const shortQ = q.length > 180 ? `${q.slice(0,177)}...` : q;
                   const runId = e.run_id || "";
+                  const encQuote = encodeURIComponent(q);
                   return `
                   <div class="hint">
                     "${escapeHtml(shortQ)}" ${runId ? `(run_id: ${escapeHtml(runId)})` : ""}
-                    ${runId ? `<button class="btn small" data-open-run="${escapeHtml(runId)}">Open run</button>` : ""}
+                    ${runId ? `<button class="btn small" data-open-run="${escapeHtml(runId)}" data-quote="${escapeHtml(encQuote)}">Open run</button>` : ""}
                   </div>
                   `;
                 }).join("")}
@@ -1194,7 +1198,13 @@
       `;
       box.querySelectorAll("[data-open-run]").forEach(btn=>{
         btn.addEventListener("click", ()=>{
-          openRunById(btn.getAttribute("data-open-run"));
+          const runId = btn.getAttribute("data-open-run");
+          const encQuote = btn.getAttribute("data-quote");
+          let highlightQuote = "";
+          if(encQuote){
+            try{ highlightQuote = decodeURIComponent(encQuote); }catch{}
+          }
+          openRunById(runId, { highlightQuote });
         });
       });
     }
@@ -1215,13 +1225,13 @@
       }
     }
 
-    async function openRunById(id){
+    async function openRunById(id, opts = {}){
       const data = await api(`/api/runs/${id}`);
       currentRun = data.run;
       viewingPastRun = true;
       setTab("upload");
       setUploadView();
-      renderReport(currentRun);
+      renderReport(currentRun, opts);
     }
 
     function renderRuns(runs){
@@ -1250,10 +1260,9 @@
     }
 
     // ---- Report render ----
-    function renderReport(run){
+    function renderReport(run, opts = {}){
       if(!run) return;
       $("reportShell").classList.remove("hide");
-
 
       const a = run.analysis_json || run.analysis || null;
       const reportTitle = a?.report_title || a?.call_result?.label || run.outcome_label || "Call";
@@ -1261,6 +1270,22 @@
       $("reportTitle").textContent = entityName
         ? `${reportTitle} Report — ${entityName}`
         : `${reportTitle} Report`;
+      const viewEntityBtn = $("btnViewEntity");
+      if(run.entity_id){
+        viewEntityBtn.classList.remove("hide");
+        viewEntityBtn.onclick = async ()=>{
+          const targetId = run.entity_id;
+          if(!targetId) return;
+          setTab("entities");
+          if(!entities.find((e)=>e.id===targetId)){
+            await loadEntities();
+          }
+          openEntityDetail(targetId);
+        };
+      }else{
+        viewEntityBtn.classList.add("hide");
+        viewEntityBtn.onclick = null;
+      }
 
       $("callResult").textContent = a?.call_result?.label || run.outcome_label || "—";
       $("callResultWhy").textContent = a?.call_result?.why || run.call_result_reason || "—";
@@ -1292,7 +1317,56 @@
         $("topFixes").innerHTML = `<div class="muted">—</div>`;
       }
 
-      $("transcriptBox").textContent = run.transcript_text || "—";
+      const transcriptText = run.transcript_text || "—";
+      const transcriptBox = $("transcriptBox");
+      const transcriptDetails = $("transcriptDetails");
+      const quote = String(opts?.highlightQuote || "");
+      let html = escapeHtml(transcriptText);
+      let match = null;
+      if(quote){
+        transcriptDetails.open = true;
+        const exactIdx = transcriptText.indexOf(quote);
+        if(exactIdx !== -1){
+          match = { idx: exactIdx, len: quote.length };
+        }else{
+          const lowerText = transcriptText.toLowerCase();
+          const lowerQuote = quote.toLowerCase();
+          const ciIdx = lowerText.indexOf(lowerQuote);
+          if(ciIdx !== -1){
+            match = { idx: ciIdx, len: lowerQuote.length };
+          }else{
+            const normalize = (s)=>String(s || "")
+              .toLowerCase()
+              .replace(/[^a-z0-9\s]+/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+            const words = normalize(quote).split(" ").filter(Boolean).slice(0, 610);
+            if(words.length){
+              const pattern = words
+                .map((w)=>w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+                .join("\\W+");
+              const re = new RegExp(pattern, "i");
+              const m = re.exec(transcriptText);
+              if(m){
+                match = { idx: m.index, len: m[0].length };
+              }
+            }
+          }
+        }
+      }
+      if(match){
+        const before = transcriptText.slice(0, match.idx);
+        const mid = transcriptText.slice(match.idx, match.idx + match.len);
+        const after = transcriptText.slice(match.idx + match.len);
+        html = `${escapeHtml(before)}<mark id="hl">${escapeHtml(mid)}</mark>${escapeHtml(after)}`;
+      }
+      transcriptBox.innerHTML = html;
+      if(match){
+        requestAnimationFrame(()=>{
+          const hl = transcriptBox.querySelector("#hl");
+          if(hl) hl.scrollIntoView({ block:"center" });
+        });
+      }
     }
 
     $("btnCopyFollowup").addEventListener("click", async ()=>{
