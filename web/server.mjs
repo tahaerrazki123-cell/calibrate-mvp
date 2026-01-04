@@ -236,6 +236,7 @@ async function assemblyTranscribe(filePath) {
       const curr = segments[i];
       if (prev.speakerKey === curr.speakerKey) {
         prev.text = `${prev.text} ${curr.text}`.trim();
+        prev.start = prev.start ?? curr.start;
         prev.end = curr.end ?? prev.end;
       } else {
         merged.push(curr);
@@ -245,59 +246,101 @@ async function assemblyTranscribe(filePath) {
   };
 
   const isShortBlip = (text) => {
-    const words = text.match(/\S+/g)?.length || 0;
-    return words < 6 || text.length < 25;
+    const cleaned = String(text || "").replace(/[^\w\s]+/g, " ").trim();
+    const words = cleaned ? cleaned.split(/\s+/).filter(Boolean) : [];
+    return words.length <= 2;
   };
 
   const smoothSegments = (segments) => {
-    let segs = mergeAdjacent(segments);
-    for (let pass = 0; pass < 3; pass++) {
-      let changed = false;
-      for (let i = 1; i < segs.length - 1; i++) {
-        const prev = segs[i - 1];
-        const curr = segs[i];
-        const next = segs[i + 1];
-        if (prev.speakerKey === next.speakerKey && curr.speakerKey !== prev.speakerKey) {
-          if (isShortBlip(curr.text)) {
-            curr.speakerKey = prev.speakerKey;
-            changed = true;
-          }
-        }
-      }
-      if (!changed) break;
-      segs = mergeAdjacent(segs);
-    }
-    return segs;
+    return (segments || [])
+      .map((s) => ({
+        ...s,
+        text: String(s.text || "").replace(/\s+/g, " ").trim(),
+      }))
+      .filter((s) => s.text.length > 0);
   };
 
   const computeMetrics = (segments) => {
     const speakerWordCounts = new Map();
-    let totalWords = 0;
     let switches = 0;
     let prevSpeaker = null;
     segments.forEach((s) => {
       const words = s.text.match(/\S+/g)?.length || 0;
-      totalWords += words;
       speakerWordCounts.set(s.speakerKey, (speakerWordCounts.get(s.speakerKey) || 0) + words);
       if (prevSpeaker !== null && s.speakerKey !== prevSpeaker) switches += 1;
       prevSpeaker = s.speakerKey;
     });
     const speakerCount = speakerWordCounts.size;
+    const totalWords = Array.from(speakerWordCounts.values()).reduce((a, b) => a + b, 0);
     const topShare = totalWords
       ? Math.max(...Array.from(speakerWordCounts.values())) / totalWords
       : 1;
-    return { speakerCount, totalWords, topShare, switches };
+    return { speakerCount, topShare, switches };
   };
 
-  let transcriptText = rawText;
-  const segments = smoothSegments(
-    (chosen.utterances || []).map((u) => ({
+  const endsWithTerminal = (text) => /[.!?]["')\]]*\s*$/.test(text);
+  const startsWithLower = (text) => /^[a-z]/.test(text);
+  const isContinuationStart = (text) => /^(and|but|or|so|because|that|which)\b/i.test(text);
+
+  const stitchSegments = (segments) => {
+    let stitched = mergeAdjacent(segments);
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      const next = [];
+      for (let i = 0; i < stitched.length; i++) {
+        const curr = stitched[i];
+        const prev = next[next.length - 1];
+        const upcoming = stitched[i + 1];
+        if (
+          prev
+          && prev.speakerKey !== curr.speakerKey
+          && !endsWithTerminal(prev.text)
+          && (startsWithLower(curr.text) || isContinuationStart(curr.text))
+        ) {
+          prev.text = `${prev.text} ${curr.text}`.trim();
+          prev.end = curr.end ?? prev.end;
+          changed = true;
+          continue;
+        }
+        if (
+          prev
+          && upcoming
+          && prev.speakerKey === upcoming.speakerKey
+          && curr.speakerKey !== prev.speakerKey
+          && isShortBlip(curr.text)
+        ) {
+          const gapPrev = typeof curr.start === "number" && typeof prev.end === "number"
+            ? curr.start - prev.end
+            : null;
+          const gapNext = typeof upcoming.start === "number" && typeof curr.end === "number"
+            ? upcoming.start - curr.end
+            : null;
+          if (gapPrev == null || gapNext == null || (gapPrev <= 1500 && gapNext <= 1500)) {
+            prev.text = `${prev.text} ${curr.text}`.trim();
+            prev.end = curr.end ?? prev.end;
+            changed = true;
+            continue;
+          }
+        }
+        next.push(curr);
+      }
+      stitched = mergeAdjacent(next);
+      if (!changed) break;
+    }
+    return stitched;
+  };
+
+  const rawSegments = (chosen.utterances || [])
+    .map((u) => ({
       speakerKey: u?.speaker == null ? "unknown" : String(u.speaker),
       text: String(u?.text || "").trim(),
       start: u?.start,
       end: u?.end,
     }))
-  ).filter((s) => s.text.length > 0);
+    .filter((s) => s.text.length > 0);
+
+  let transcriptText = rawText;
+  const segments = smoothSegments(stitchSegments(rawSegments)).filter((s) => s.text.length > 0);
 
   if (segments.length > 0) {
     const smoothedMetrics = computeMetrics(segments);
@@ -305,15 +348,6 @@ async function assemblyTranscribe(filePath) {
       smoothedMetrics.speakerCount < 2
       || smoothedMetrics.topShare > 0.92
       || smoothedMetrics.switches < 2;
-
-    transcriptJson.diarization_meta = {
-      ...(transcriptJson.diarization_meta || {}),
-      speakerCount: smoothedMetrics.speakerCount,
-      topShare: smoothedMetrics.topShare,
-      switches: smoothedMetrics.switches,
-      smoothed: true,
-      lowConfidence,
-    };
 
     const speakerOrder = [];
     const speakerText = new Map();
@@ -325,10 +359,48 @@ async function assemblyTranscribe(filePath) {
       );
     });
 
+    const agentPattern =
+      /\b(this is|calling|quick one|can i|what's better|i'll send|calendar|email)\b/gi;
+    const prospectPattern =
+      /\b(who'?s this|stop you|already have|not interested|busy|don'?t want|we filed|insurance denied)\b/gi;
+    const scoreMatches = (text, pattern) => (text.match(pattern) || []).length;
+
+    let lowConfidenceSemantic = false;
+    if (smoothedMetrics.speakerCount >= 2) {
+      const scores = speakerOrder.slice(0, 2).map((key) => {
+        const text = speakerText.get(key) || "";
+        return {
+          agent: scoreMatches(text, agentPattern),
+          prospect: scoreMatches(text, prospectPattern),
+        };
+      });
+      if (
+        scores.length === 2
+        && scores[0].agent >= 2
+        && scores[0].prospect >= 2
+        && scores[1].agent >= 2
+        && scores[1].prospect >= 2
+      ) {
+        lowConfidenceSemantic = true;
+      }
+    }
+
+    transcriptJson.diarization_meta = {
+      ...(transcriptJson.diarization_meta || {}),
+      speakerCount: smoothedMetrics.speakerCount,
+      topShare: smoothedMetrics.topShare,
+      switches: smoothedMetrics.switches,
+      smoothed: true,
+      lowConfidence,
+      lowConfidenceSemantic,
+      chunks_before: rawSegments.length,
+      chunks_after: segments.length,
+    };
+
     let labels = new Map();
     let useRoles = false;
 
-    if (smoothedMetrics.speakerCount >= 2 && !lowConfidence) {
+    if (smoothedMetrics.speakerCount >= 2 && !lowConfidence && !lowConfidenceSemantic) {
       const callerPattern =
         /\b(this is|with\s+\w+|calling|quick one|do you have|can i|i'm not calling to sell|i appreciate|best email|calendar invite)\b/gi;
       const calleePattern =
@@ -357,10 +429,15 @@ async function assemblyTranscribe(filePath) {
       }
     }
 
+    let methodUsed = "speaker_stitched";
     if (!useRoles && smoothedMetrics.speakerCount >= 2) {
       labels.set(speakerOrder[0], "Speaker A");
       labels.set(speakerOrder[1], "Speaker B");
+      methodUsed = "speaker_ab_stitched";
     }
+    if (useRoles) methodUsed = "you_prospect_stitched";
+
+    transcriptJson.diarization_meta.method_used = methodUsed;
 
     const lines = segments.map((s) => {
       const label =
