@@ -1098,17 +1098,35 @@
         ? `
         <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
           <h3>Observed Objections</h3>
-          ${observedObjections.map(o=>`
+          ${observedObjections.map(o=>{
+            const ev = Array.isArray(o.evidence)
+              ? o.evidence
+              : (o.evidence_quote && o.run_id ? [{ evidence_quote:o.evidence_quote, run_id:o.run_id }] : []);
+            const variants = Array.isArray(o.variants) ? o.variants : [];
+            const variantList = variants.slice(0,3).map(v=>escapeHtml(v)).join(", ");
+            return `
             <details>
               <summary>${escapeHtml(o.objection || "")}</summary>
               <div class="hint">${escapeHtml(o.best_response || "")}</div>
-              ${
-                o.evidence_quote
-                  ? `<div class="hint muted">Evidence: "${escapeHtml(o.evidence_quote)}"${o.run_id ? ` (run_id: ${escapeHtml(o.run_id)})` : ""}</div>`
-                  : ``
-              }
+              ${o.count > 1 ? `<div class="hint muted">Seen: ${o.count} calls</div>` : ``}
+              ${variants.length > 1 ? `<div class="hint muted">Variants: ${variantList}${variants.length>3 ? ", ..." : ""}</div>` : ``}
+              ${ev.length ? `
+                <div class="hint muted">Evidence:</div>
+                ${ev.map(e=>{
+                  const q = String(e.evidence_quote || "");
+                  const shortQ = q.length > 180 ? `${q.slice(0,177)}...` : q;
+                  const runId = e.run_id || "";
+                  return `
+                  <div class="hint">
+                    "${escapeHtml(shortQ)}" ${runId ? `(run_id: ${escapeHtml(runId)})` : ""}
+                    ${runId ? `<button class="btn small" data-open-run="${escapeHtml(runId)}">Open run</button>` : ""}
+                  </div>
+                  `;
+                }).join("")}
+              ` : ``}
             </details>
-          `).join("")}
+            `;
+          }).join("")}
         </div>
 
         <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
@@ -1174,6 +1192,11 @@
           `).join("")}
         </div>
       `;
+      box.querySelectorAll("[data-open-run]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          openRunById(btn.getAttribute("data-open-run"));
+        });
+      });
     }
 
     // ---- Runs ----
