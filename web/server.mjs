@@ -144,25 +144,26 @@ async function assemblyTranscribe(filePath) {
       cleanedUtterances,
       rawText,
       metrics: { speakerCount, totalWords, topShare, switches },
+      speechModel: stJson?.speech_model || stJson?.speech_models?.[0] || null,
     };
   };
 
   const isUnreliable = ({ speakerCount, totalWords, topShare, switches }) => {
-    if (speakerCount <= 1 && totalWords >= 60) return true;
-    if (totalWords >= 100 && topShare > 0.95) return true;
-    if (totalWords >= 100 && switches < 2) return true;
-    return false;
+    if (totalWords < 80) return false;
+    return speakerCount < 2 || topShare > 0.9 || switches < 4;
   };
 
   const chooseBetter = (a, b) => {
-    if (a.metrics.speakerCount !== b.metrics.speakerCount) {
-      return a.metrics.speakerCount > b.metrics.speakerCount ? a : b;
-    }
-    if (a.metrics.topShare !== b.metrics.topShare) {
-      return a.metrics.topShare < b.metrics.topShare ? a : b;
+    const aTwo = a.metrics.speakerCount === 2;
+    const bTwo = b.metrics.speakerCount === 2;
+    if (aTwo !== bTwo) {
+      return aTwo ? a : b;
     }
     if (a.metrics.switches !== b.metrics.switches) {
       return a.metrics.switches > b.metrics.switches ? a : b;
+    }
+    if (a.metrics.topShare !== b.metrics.topShare) {
+      return a.metrics.topShare < b.metrics.topShare ? a : b;
     }
     return a;
   };
@@ -183,55 +184,108 @@ async function assemblyTranscribe(filePath) {
   const initialId = await startTranscript({
     audio_url: upJson.upload_url,
     speaker_labels: true,
-    speaker_options: { min_speakers_expected: 1, max_speakers_expected: 2 },
+    speaker_options: { min_speakers: 1, max_speakers: 2 },
+    speech_models: ["slam-1", "universal"],
     punctuate: true,
     format_text: true,
   });
   const initialJson = await waitTranscript(initialId);
   const initialCandidate = buildCandidate(initialJson);
-  const unreliable = isUnreliable(initialCandidate.metrics);
+  const baseBad = isUnreliable(initialCandidate.metrics);
 
   let usedRetry = false;
   let chosen = initialCandidate;
+  let chosenConfig = "base";
+  let retryCandidate = null;
+  let retryBad = false;
 
-  if (unreliable) {
+  if (baseBad) {
     usedRetry = true;
     const retryId = await startTranscript({
       audio_url: upJson.upload_url,
       speaker_labels: true,
-      speaker_options: { min_speakers_expected: 2, max_speakers_expected: 2 },
+      speakers_expected: 2,
+      speaker_options: { min_speakers: 2, max_speakers: 2 },
+      speech_models: ["slam-1", "universal"],
       punctuate: true,
       format_text: true,
     });
     const retryJson = await waitTranscript(retryId);
-    const retryCandidate = buildCandidate(retryJson);
+    retryCandidate = buildCandidate(retryJson);
+    retryBad = isUnreliable(retryCandidate.metrics);
     chosen = chooseBetter(initialCandidate, retryCandidate);
+    chosenConfig = chosen === retryCandidate ? "expected_2" : "base";
   }
 
   const { cleanedUtterances, rawText, metrics } = chosen;
   const transcriptJson = {
     utterances: chosen.utterances,
-    meta: {
-      diarization_unreliable: unreliable,
-      speakerCount: metrics.speakerCount,
-      topShare: metrics.topShare,
-      switches: metrics.switches,
+    diarization_meta: {
       used_retry: usedRetry,
+      chosen_config: chosenConfig,
+      metrics_base: initialCandidate.metrics,
+      metrics_retry: retryCandidate ? retryCandidate.metrics : null,
+      speech_model_used: chosen.speechModel,
+      low_confidence: baseBad && retryBad,
     },
   };
 
   let transcriptText = rawText;
-  if (cleanedUtterances.length > 0) {
+  const lowConfidence = baseBad && retryBad;
+  if (cleanedUtterances.length > 0 && !lowConfidence) {
     if (metrics.speakerCount >= 2) {
-      const speakerLabels = new Map();
-      const labelOrder = ["You", "Prospect"];
+      const speakerOrder = [];
+      const speakerText = new Map();
       cleanedUtterances.forEach((u) => {
-        if (!speakerLabels.has(u.speakerKey)) {
-          const label = labelOrder[speakerLabels.size] || "Speaker";
-          speakerLabels.set(u.speakerKey, label);
+        if (!speakerText.has(u.speakerKey)) speakerOrder.push(u.speakerKey);
+        speakerText.set(
+          u.speakerKey,
+          `${speakerText.get(u.speakerKey) || ""} ${u.text}`.trim()
+        );
+      });
+
+      const callerCues = ["this is", "my name is", "i'm with", "calling about", "quick one"];
+      const prospectCues = ["who's this", "not interested", "stop calling", "send it"];
+      const callerCueKeys = callerCues.map((c) => normalizeKey(c));
+      const prospectCueKeys = prospectCues.map((c) => normalizeKey(c));
+
+      const scoreCues = (text, cues) => {
+        const norm = normalizeKey(text);
+        return cues.reduce((acc, cue) => (cue && norm.includes(cue) ? acc + 1 : acc), 0);
+      };
+
+      let youSpeaker = null;
+      let prospectSpeaker = null;
+      let bestCallerScore = 0;
+      let bestProspectScore = 0;
+
+      speakerOrder.forEach((key) => {
+        const text = speakerText.get(key) || "";
+        const callerScore = scoreCues(text, callerCueKeys);
+        const prospectScore = scoreCues(text, prospectCueKeys);
+        if (callerScore > bestCallerScore) {
+          bestCallerScore = callerScore;
+          youSpeaker = key;
+        }
+        if (prospectScore > bestProspectScore) {
+          bestProspectScore = prospectScore;
+          prospectSpeaker = key;
         }
       });
-      const lines = cleanedUtterances.map((u) => `${speakerLabels.get(u.speakerKey)}: ${u.text}`);
+
+      if (!youSpeaker) youSpeaker = speakerOrder[0];
+      if (!prospectSpeaker || prospectSpeaker === youSpeaker) {
+        prospectSpeaker = speakerOrder.find((s) => s !== youSpeaker) || speakerOrder[0];
+      }
+
+      const speakerLabels = new Map();
+      speakerLabels.set(youSpeaker, "You");
+      speakerLabels.set(prospectSpeaker, "Prospect");
+
+      const lines = cleanedUtterances.map((u) => {
+        const label = speakerLabels.get(u.speakerKey) || "Speaker";
+        return `${label}: ${u.text}`;
+      });
       transcriptText = lines.join("\n");
     } else {
       const lines = cleanedUtterances.map((u) => `Speaker: ${u.text}`);
