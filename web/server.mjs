@@ -257,6 +257,57 @@ async function inferOutcomeLabel(analysisJson) {
   return analysisJson?.call_result?.label || "Unknown";
 }
 
+function normalizeKey(str) {
+  return String(str || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function quoteAppearsInTranscript(quote, transcript) {
+  const nq = normalizeKey(quote);
+  const nt = normalizeKey(transcript);
+  if (nq.length < 12) return false;
+  if (!nq || !nt) return false;
+  return nt.includes(nq);
+}
+
+function jaccardSimilarity(a, b) {
+  const na = normalizeKey(a);
+  const nb = normalizeKey(b);
+  if (!na || !nb) return 0;
+  const setA = new Set(na.split(" "));
+  const setB = new Set(nb.split(" "));
+  let intersect = 0;
+  setA.forEach((t) => {
+    if (setB.has(t)) intersect += 1;
+  });
+  const union = new Set([...setA, ...setB]).size || 1;
+  return intersect / union;
+}
+
+function mergeObservedObjections(existing, incoming) {
+  const merged = Array.isArray(existing) ? existing.map((o) => ({ ...o })) : [];
+  (Array.isArray(incoming) ? incoming : []).forEach((obs) => {
+    const obsText = obs?.objection || "";
+    if (!obsText) return;
+    const idx = merged.findIndex((m) => {
+      const keyA = normalizeKey(m?.objection);
+      const keyB = normalizeKey(obsText);
+      if (!keyA || !keyB) return false;
+      if (keyA === keyB) return true;
+      return jaccardSimilarity(keyA, keyB) >= 0.6;
+    });
+    if (idx === -1) {
+      merged.push(obs);
+      return;
+    }
+    merged[idx] = { ...merged[idx], ...obs };
+  });
+  return merged;
+}
+
 // -------- Entities API --------
 
 app.get("/api/entities", async (req, res) => {
@@ -376,7 +427,7 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
 
   const { data: runs, error: rErr } = await supabaseAdmin
     .from("runs")
-    .select("transcript_text, analysis_json, created_at")
+    .select("id, transcript_text, analysis_json, created_at")
     .eq("user_id", user.id)
     .eq("entity_id", entityId)
     .order("created_at", { ascending: false })
@@ -385,7 +436,10 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
   if (rErr) return res.status(400).json({ error: rErr.message });
   if (!runs?.length) return res.status(400).json({ error: "No runs found for this entity yet." });
 
-  const transcripts = runs.map((r) => r.transcript_text).filter(Boolean);
+  const runTextById = new Map(runs.map((r) => [r.id, r.transcript_text || ""]));
+  const transcripts = runs
+    .map((r) => (r.transcript_text ? `run_id=${r.id}\n${r.transcript_text}` : ""))
+    .filter(Boolean);
   const system = `
 You are Calibrate. Generate an MVP playbook for a cold-calling entity.
 
@@ -393,13 +447,24 @@ Return valid JSON:
 {
   "entity": { "name": string, "offer": string, "industry": string },
   "ultimate_script": { "opener": string, "pitch": string, "qualify": string, "close": string },
-  "common_objections": [{ "objection": string, "best_response": string }],
+  "observed_objections": [
+    { "objection": string, "best_response": string, "evidence_quote": string, "run_id": string }
+  ],
+  "potential_objections": [
+    { "objection": string, "best_response": string }
+  ],
   "dont_say": string[],
   "say_instead": string[],
   "patterns": [{ "pattern": string, "impact": string, "fix": string }]
 }
 
 Rules:
+- Observed objections MUST come only from the transcripts provided.
+- Each observed objection MUST include a short direct evidence_quote and the run_id it came from.
+- run_id MUST exactly match the UUID shown after run_id= in the transcript header.
+- evidence_quote MUST be an exact substring from that transcript.
+- If no objections appear in transcripts, observed_objections must be [].
+- Potential objections are predicted and may not appear in transcripts.
 - Keep each script section under ~90 words.
 - Objection responses should be 2-4 sentences.
 - Focus on what repeatedly worked/failed across calls.
@@ -412,41 +477,28 @@ offer=${entity.offer || ""}
 industry=${entity.industry || ""}
 
 Recent transcripts (most recent first):
-${transcripts.slice(0, 10).map((t, i) => `--- TRANSCRIPT ${i + 1} ---\n${t}`).join("\n\n")}
+${transcripts.slice(0, 15).map((t, i) => `--- TRANSCRIPT ${i + 1} ---\n${t}`).join("\n\n")}
 `.trim();
 
   const playbook = await deepseekJSON(system, userPrompt, 0.25);
-  const normalizeObjectionKey = (s) =>
-    String(s || "")
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "");
-  const oldObjections = Array.isArray(cached?.playbook_json?.common_objections)
-    ? cached.playbook_json.common_objections
+  const oldObserved = Array.isArray(cached?.playbook_json?.observed_objections)
+    ? cached.playbook_json.observed_objections
     : [];
-  const newObjections = Array.isArray(playbook?.common_objections)
-    ? playbook.common_objections
+  const newObserved = Array.isArray(playbook?.observed_objections)
+    ? playbook.observed_objections.filter((o) => {
+        const runText = runTextById.get(o?.run_id);
+        if (!runText) return false;
+        if (!o?.objection || !o?.best_response) return false;
+        return quoteAppearsInTranscript(o?.evidence_quote, runText);
+      })
     : [];
-  if (oldObjections.length || newObjections.length) {
-    const merged = oldObjections.map((o) => ({ ...o }));
-    const indexByKey = new Map(
-      merged.map((o, i) => [normalizeObjectionKey(o?.objection), i])
-    );
-    newObjections.forEach((o) => {
-      const key = normalizeObjectionKey(o?.objection);
-      if (!key) return;
-      const idx = indexByKey.get(key);
-      if (idx == null) {
-        merged.push(o);
-        indexByKey.set(key, merged.length - 1);
-        return;
-      }
-      if (!merged[idx]?.best_response && o?.best_response) {
-        merged[idx] = { ...merged[idx], best_response: o.best_response };
-      }
-    });
-    playbook.common_objections = merged;
-  }
+  playbook.observed_objections = mergeObservedObjections(
+    oldObserved,
+    mergeObservedObjections([], newObserved)
+  );
+  playbook.potential_objections = Array.isArray(playbook?.potential_objections)
+    ? playbook.potential_objections
+    : [];
 
   // store (optional)
   const { data: savedPlaybook, error: pErr } = await supabaseAdmin

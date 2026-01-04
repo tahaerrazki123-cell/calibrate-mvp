@@ -1070,10 +1070,13 @@
       const hasFields = obj
         && typeof obj === "object"
         && obj.ultimate_script
-        && Array.isArray(obj.common_objections)
         && Array.isArray(obj.dont_say)
         && Array.isArray(obj.say_instead)
-        && Array.isArray(obj.patterns);
+        && Array.isArray(obj.patterns)
+        && (
+          (Array.isArray(obj.observed_objections) && Array.isArray(obj.potential_objections))
+          || Array.isArray(obj.common_objections)
+        );
       if(!hasFields){
         const pretty = JSON.stringify(obj ?? playbook, null, 2);
         box.innerHTML = `<pre class="mono">${escapeHtml(pretty)}</pre>`;
@@ -1084,9 +1087,51 @@
       const title = `${entityName} Playbook`;
       const script = obj.ultimate_script || {};
       const objections = obj.common_objections || [];
+      const observedObjections = obj.observed_objections || [];
+      const potentialObjections = obj.potential_objections || [];
       const dontSay = obj.dont_say || [];
       const sayInstead = obj.say_instead || [];
       const patterns = obj.patterns || [];
+      const hasNewObjections = Array.isArray(obj.observed_objections)
+        && Array.isArray(obj.potential_objections);
+      const objectionsBlock = hasNewObjections
+        ? `
+        <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
+          <h3>Observed Objections</h3>
+          ${observedObjections.map(o=>`
+            <details>
+              <summary>${escapeHtml(o.objection || "")}</summary>
+              <div class="hint">${escapeHtml(o.best_response || "")}</div>
+              ${
+                o.evidence_quote
+                  ? `<div class="hint muted">Evidence: "${escapeHtml(o.evidence_quote)}"${o.run_id ? ` (run_id: ${escapeHtml(o.run_id)})` : ""}</div>`
+                  : ``
+              }
+            </details>
+          `).join("")}
+        </div>
+
+        <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
+          <h3>Potential Objections</h3>
+          ${potentialObjections.map(o=>`
+            <details>
+              <summary>${escapeHtml(o.objection || "")}</summary>
+              <div class="hint">${escapeHtml(o.best_response || "")}</div>
+            </details>
+          `).join("")}
+        </div>
+        `
+        : `
+        <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
+          <h3>Common Objections</h3>
+          ${objections.map(o=>`
+            <details>
+              <summary>${escapeHtml(o.objection || "")}</summary>
+              <div class="hint">${escapeHtml(o.best_response || "")}</div>
+            </details>
+          `).join("")}
+        </div>
+        `;
 
       box.innerHTML = `
         <div class="kpi" style="margin-bottom:10px;">
@@ -1101,15 +1146,7 @@
           <div class="playLine"><b>Close:</b> ${escapeHtml(script.close || "")}</div>
         </div>
 
-        <div class="card" style="box-shadow:none; border-color:var(--border); margin-bottom:10px;">
-          <h3>Common Objections</h3>
-          ${objections.map(o=>`
-            <details>
-              <summary>${escapeHtml(o.objection || "")}</summary>
-              <div class="hint">${escapeHtml(o.best_response || "")}</div>
-            </details>
-          `).join("")}
-        </div>
+        ${objectionsBlock}
 
         <div class="twoCol" style="margin-bottom:10px;">
           <div class="card" style="box-shadow:none; border-color:var(--border);">
