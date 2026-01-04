@@ -609,7 +609,7 @@
             </tr>
           </thead>
           <tbody id="runsTbody">
-            <tr><td colspan="5" class="muted">Loading…</td></tr>
+            <tr><td colspan="6" class="muted">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -946,7 +946,7 @@
     function renderEntityRuns(runs){
       const tb = $("entityRunsTbody");
       if(!runs.length){
-        tb.innerHTML = `<tr><td colspan="5" class="muted">No runs yet.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="6" class="muted">No runs yet.</td></tr>`;
         return;
       }
       tb.innerHTML = runs.map(r=>`
