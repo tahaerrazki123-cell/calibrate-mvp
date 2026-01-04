@@ -184,7 +184,6 @@ async function assemblyTranscribe(filePath) {
   const initialId = await startTranscript({
     audio_url: upJson.upload_url,
     speaker_labels: true,
-    speaker_options: { min_speakers: 1, max_speakers: 2 },
     speech_models: ["slam-1", "universal"],
     punctuate: true,
     format_text: true,
@@ -204,7 +203,7 @@ async function assemblyTranscribe(filePath) {
     const retryId = await startTranscript({
       audio_url: upJson.upload_url,
       speaker_labels: true,
-      speaker_options: { min_speakers: 2, max_speakers: 2 },
+      speakers_expected: 2,
       speech_models: ["slam-1", "universal"],
       punctuate: true,
       format_text: true,
