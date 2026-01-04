@@ -949,15 +949,26 @@
         tb.innerHTML = `<tr><td colspan="6" class="muted">No runs yet.</td></tr>`;
         return;
       }
-      tb.innerHTML = runs.map(r=>`
+      tb.innerHTML = runs.map(r=>{
+        const reportTitle = r.report_title
+          || r.analysis_json?.report_title
+          || r.analysis_json?.call_result?.label
+          || r.outcome_label
+          || "Legacy run";
+        const scenarioLabel = r.scenario ? prettyScenario(r.scenario) : "Legacy";
+        const resultLabel = r.outcome_label || r.analysis_json?.call_result?.label || "";
+        const isLegacy = !r.report_title || !r.scenario || !r.outcome_label;
+        const legacyTag = isLegacy ? ` <span class="muted">Legacy</span>` : "";
+        return `
         <tr>
-          <td>${escapeHtml(r.report_title || "Call")}</td>
+          <td>${escapeHtml(reportTitle)}${legacyTag}</td>
           <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
-          <td>${escapeHtml(prettyScenario(r.scenario))}</td>
-          <td>${escapeHtml(r.outcome_label || "")}</td>
+          <td>${escapeHtml(scenarioLabel)}</td>
+          <td>${escapeHtml(resultLabel)}</td>
           <td><button class="btn small" data-open-run="${r.id}">Open</button></td>
         </tr>
-      `).join("");
+      `;
+      }).join("");
       tb.querySelectorAll("[data-open-run]").forEach(btn=>{
         btn.addEventListener("click", ()=>{
           const id = btn.getAttribute("data-open-run");
@@ -1240,16 +1251,27 @@
         tb.innerHTML = `<tr><td colspan="5" class="muted">No runs yet.</td></tr>`;
         return;
       }
-      tb.innerHTML = runs.map(r=>`
+      tb.innerHTML = runs.map(r=>{
+        const reportTitle = r.report_title
+          || r.analysis_json?.report_title
+          || r.analysis_json?.call_result?.label
+          || r.outcome_label
+          || "Legacy run";
+        const scenarioLabel = r.scenario ? prettyScenario(r.scenario) : "Legacy";
+        const resultLabel = r.outcome_label || r.analysis_json?.call_result?.label || "";
+        const isLegacy = !r.report_title || !r.scenario || !r.outcome_label;
+        const legacyTag = isLegacy ? ` <span class="muted">Legacy</span>` : "";
+        return `
         <tr>
-          <td>${escapeHtml(r.report_title || "Call")}</td>
+          <td>${escapeHtml(reportTitle)}${legacyTag}</td>
           <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
-          <td>${escapeHtml(prettyScenario(r.scenario))}</td>
+          <td>${escapeHtml(scenarioLabel)}</td>
           <td>${escapeHtml(r.entity_name || "")}</td>
-          <td>${escapeHtml(r.outcome_label || "")}</td>
+          <td>${escapeHtml(resultLabel)}</td>
           <td><button class="btn small" data-open="${r.id}">Open</button></td>
         </tr>
-      `).join("");
+      `;
+      }).join("");
 
       tb.querySelectorAll("[data-open]").forEach(btn=>{
         btn.addEventListener("click", ()=>{
