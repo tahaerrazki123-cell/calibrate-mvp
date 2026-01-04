@@ -129,26 +129,58 @@ async function assemblyTranscribe(filePath) {
     if (stJson.status === "completed") {
       const utterances = stJson.utterances || [];
       const transcriptJson = { utterances };
-      if (utterances.length > 0) {
-        const lines = utterances
-          .map((u) => ({
-            speaker: u?.speaker == null ? "Speaker" : `Speaker ${u.speaker}`,
-            text: String(u?.text || "").trim(),
-          }))
-          .filter((u) => u.text.length > 0)
-          .map((u) => `${u.speaker}: ${u.text}`);
-        if (lines.length === 0) {
-          const fallbackText = stJson.text || "";
-          const needsPrefix = !/^Speaker\s+/i.test(fallbackText);
-          const finalText = needsPrefix ? `Speaker A: ${fallbackText}` : fallbackText;
-          return { transcriptText: finalText, transcriptJson };
-        }
+      const rawText = stJson.text || "";
+      const cleanedUtterances = utterances
+        .map((u) => ({
+          speakerKey: u?.speaker == null ? "unknown" : String(u.speaker),
+          text: String(u?.text || "").trim(),
+        }))
+        .filter((u) => u.text.length > 0);
+      const speakerWordCounts = new Map();
+      let totalWords = 0;
+      let switches = 0;
+      let prevSpeaker = null;
+      cleanedUtterances.forEach((u) => {
+        const words = u.text.match(/\S+/g)?.length || 0;
+        totalWords += words;
+        speakerWordCounts.set(u.speakerKey, (speakerWordCounts.get(u.speakerKey) || 0) + words);
+        if (prevSpeaker !== null && u.speakerKey !== prevSpeaker) switches += 1;
+        prevSpeaker = u.speakerKey;
+      });
+      const speakerCount = speakerWordCounts.size;
+      const topShare = totalWords
+        ? Math.max(...Array.from(speakerWordCounts.values())) / totalWords
+        : 1;
+      const unreliable = speakerCount <= 1 || topShare > 0.92 || switches < 2;
+
+      const buildFallbackTurns = (text) => {
+        const parts = String(text || "").match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+        const chunks = parts.map((p) => p.trim()).filter((p) => p.length > 0);
+        if (!chunks.length) return null;
+        const concatenated = chunks.join(" ");
+        if (normalizeKey(concatenated) !== normalizeKey(text)) return null;
+        const lines = chunks.map((p, i) => `${i % 2 === 0 ? "You" : "Prospect"}: ${p}`);
+        return { lines };
+      };
+
+      if (!unreliable && cleanedUtterances.length > 0) {
+        const speakerLabels = new Map();
+        const labelOrder = ["You", "Prospect"];
+        cleanedUtterances.forEach((u) => {
+          if (!speakerLabels.has(u.speakerKey)) {
+            const label = labelOrder[speakerLabels.size] || "Speaker";
+            speakerLabels.set(u.speakerKey, label);
+          }
+        });
+        const lines = cleanedUtterances.map((u) => `${speakerLabels.get(u.speakerKey)}: ${u.text}`);
         return { transcriptText: lines.join("\n"), transcriptJson };
       }
-      const fallbackText = stJson.text || "";
-      const needsPrefix = !/^Speaker\s+/i.test(fallbackText);
-      const finalText = needsPrefix ? `Speaker A: ${fallbackText}` : fallbackText;
-      return { transcriptText: finalText, transcriptJson };
+
+      const fallback = buildFallbackTurns(rawText);
+      if (fallback?.lines?.length) {
+        return { transcriptText: fallback.lines.join("\n"), transcriptJson };
+      }
+      return { transcriptText: rawText, transcriptJson };
     }
     if (stJson.status === "error") throw new Error(`AssemblyAI error: ${stJson.error}`);
   }
