@@ -109,6 +109,7 @@ async function assemblyTranscribe(filePath) {
     body: JSON.stringify({
       audio_url: upJson.upload_url,
       speaker_labels: true,
+      speakers_expected: 2,
       punctuate: true,
       format_text: true,
     }),
@@ -126,16 +127,28 @@ async function assemblyTranscribe(filePath) {
     if (!st.ok) throw new Error(`AssemblyAI transcript status failed: ${await st.text()}`);
     const stJson = await st.json();
     if (stJson.status === "completed") {
-      // Build a readable speaker transcript if utterances exist
       const utterances = stJson.utterances || [];
-      if (utterances.length) {
-        const lines = utterances.map((u) => {
-          const sp = u.speaker != null ? `Speaker ${u.speaker}` : "Speaker";
-          return `${sp}: ${u.text}`;
-        });
-        return { text: lines.join("\n"), raw: stJson };
+      const transcriptJson = { utterances };
+      if (utterances.length > 0) {
+        const lines = utterances
+          .map((u) => ({
+            speaker: u?.speaker == null ? "Speaker" : `Speaker ${u.speaker}`,
+            text: String(u?.text || "").trim(),
+          }))
+          .filter((u) => u.text.length > 0)
+          .map((u) => `${u.speaker}: ${u.text}`);
+        if (lines.length === 0) {
+          const fallbackText = stJson.text || "";
+          const needsPrefix = !/^Speaker\s+/i.test(fallbackText);
+          const finalText = needsPrefix ? `Speaker A: ${fallbackText}` : fallbackText;
+          return { transcriptText: finalText, transcriptJson };
+        }
+        return { transcriptText: lines.join("\n"), transcriptJson };
       }
-      return { text: stJson.text || "", raw: stJson };
+      const fallbackText = stJson.text || "";
+      const needsPrefix = !/^Speaker\s+/i.test(fallbackText);
+      const finalText = needsPrefix ? `Speaker A: ${fallbackText}` : fallbackText;
+      return { transcriptText: finalText, transcriptJson };
     }
     if (stJson.status === "error") throw new Error(`AssemblyAI error: ${stJson.error}`);
   }
@@ -598,8 +611,7 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
     }
 
     // Transcribe
-    const tr = await assemblyTranscribe(inputPath);
-    const transcriptText = tr.text || "";
+    const { transcriptText, transcriptJson } = await assemblyTranscribe(inputPath);
     const transcriptHash = sha1(Buffer.from(transcriptText, "utf-8"));
 
     // Optional aggregate context for entity
@@ -628,6 +640,7 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
       scenario,
       context_text: context,
       transcript_text: transcriptText,
+      transcript_json: transcriptJson,
       transcript_hash: transcriptHash,
       outcome_label: outcomeLabel,
       analysis_json: analysisJson,
