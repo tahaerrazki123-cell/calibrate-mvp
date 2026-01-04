@@ -231,8 +231,8 @@ async function assemblyTranscribe(filePath) {
 
   let transcriptText = rawText;
   const lowConfidence = baseBad && retryBad;
-  if (cleanedUtterances.length > 0 && !lowConfidence) {
-    if (metrics.speakerCount >= 2) {
+  if (cleanedUtterances.length > 0) {
+    if (metrics.speakerCount >= 2 && !lowConfidence) {
       const speakerOrder = [];
       const speakerText = new Map();
       cleanedUtterances.forEach((u) => {
@@ -281,6 +281,19 @@ async function assemblyTranscribe(filePath) {
       speakerLabels.set(youSpeaker, "You");
       speakerLabels.set(prospectSpeaker, "Prospect");
 
+      const lines = cleanedUtterances.map((u) => {
+        const label = speakerLabels.get(u.speakerKey) || "Speaker";
+        return `${label}: ${u.text}`;
+      });
+      transcriptText = lines.join("\n");
+    } else if (metrics.speakerCount >= 2) {
+      const speakerOrder = [];
+      cleanedUtterances.forEach((u) => {
+        if (!speakerOrder.includes(u.speakerKey)) speakerOrder.push(u.speakerKey);
+      });
+      const speakerLabels = new Map();
+      speakerLabels.set(speakerOrder[0], "Speaker A");
+      speakerLabels.set(speakerOrder[1], "Speaker B");
       const lines = cleanedUtterances.map((u) => {
         const label = speakerLabels.get(u.speakerKey) || "Speaker";
         return `${label}: ${u.text}`;
