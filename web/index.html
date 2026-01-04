@@ -953,7 +953,7 @@
         <tr>
           <td>${escapeHtml(r.report_title || "Call")}</td>
           <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
-          <td>${escapeHtml(r.scenario || "")}</td>
+          <td>${escapeHtml(prettyScenario(r.scenario))}</td>
           <td>${escapeHtml(r.outcome_label || "")}</td>
           <td><button class="btn small" data-open-run="${r.id}">Open</button></td>
         </tr>
@@ -1244,7 +1244,7 @@
         <tr>
           <td>${escapeHtml(r.report_title || "Call")}</td>
           <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
-          <td>${escapeHtml(r.scenario || "")}</td>
+          <td>${escapeHtml(prettyScenario(r.scenario))}</td>
           <td>${escapeHtml(r.entity_name || "")}</td>
           <td>${escapeHtml(r.outcome_label || "")}</td>
           <td><button class="btn small" data-open="${r.id}">Open</button></td>
@@ -1399,6 +1399,44 @@
         .replaceAll(">","&gt;")
         .replaceAll('"',"&quot;")
         .replaceAll("'","&#039;");
+    }
+
+    function prettyScenario(s){
+      if(!s) return "";
+      const map = {
+        b2b: "B2B service / software",
+        ai_receptionist: "Inbound routing / call answering",
+        website_maintenance: "Website maintenance",
+        seo: "SEO",
+        b2b_saas: "B2B SaaS",
+        agency: "Agency services",
+        local_service: "Local services",
+        ecommerce: "Ecommerce",
+        recruiting: "Recruiting / staffing",
+        real_estate: "Real estate",
+        insurance: "Insurance",
+        dental_medical: "Dental / medical",
+        coaching: "Coaching / consulting",
+        it_services: "IT services / MSP",
+        logistics: "Logistics / freight",
+        finance: "Finance / accounting",
+        education: "Education / training",
+        home_improvement: "Home improvement",
+        legal: "Legal services",
+        nonprofit: "Nonprofit / fundraising",
+        hospitality: "Hospitality / travel",
+      };
+      if(map[s]) return map[s];
+      return String(s)
+        .replace(/_/g, " ")
+        .split(" ")
+        .map((w)=>{
+          const upper = w.toUpperCase();
+          if(["B2B","SAAS","IT"].includes(upper)) return upper;
+          return w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "";
+        })
+        .join(" ")
+        .trim();
     }
 
     // ---- Run flow ----
