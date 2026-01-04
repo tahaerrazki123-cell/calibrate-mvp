@@ -87,6 +87,86 @@ async function assemblyTranscribe(filePath) {
 
   const audioData = fs.readFileSync(filePath);
 
+  const startTranscript = async (payload) => {
+    const tr = await fetch("https://api.assemblyai.com/v2/transcript", {
+      method: "POST",
+      headers: {
+        authorization: ASSEMBLYAI_API_KEY,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!tr.ok) throw new Error(`AssemblyAI transcript start failed: ${await tr.text()}`);
+    const trJson = await tr.json();
+    return trJson.id;
+  };
+
+  const waitTranscript = async (id) => {
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const st = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
+        headers: { authorization: ASSEMBLYAI_API_KEY },
+      });
+      if (!st.ok) throw new Error(`AssemblyAI transcript status failed: ${await st.text()}`);
+      const stJson = await st.json();
+      if (stJson.status === "completed") return stJson;
+      if (stJson.status === "error") throw new Error(`AssemblyAI error: ${stJson.error}`);
+    }
+    throw new Error("AssemblyAI transcript timed out");
+  };
+
+  const buildCandidate = (stJson) => {
+    const utterances = stJson?.utterances || [];
+    const rawText = stJson?.text || "";
+    const cleanedUtterances = utterances
+      .map((u) => ({
+        speakerKey: u?.speaker == null ? "unknown" : String(u.speaker),
+        text: String(u?.text || "").trim(),
+      }))
+      .filter((u) => u.text.length > 0);
+    const speakerWordCounts = new Map();
+    let totalWords = 0;
+    let switches = 0;
+    let prevSpeaker = null;
+    cleanedUtterances.forEach((u) => {
+      const words = u.text.match(/\S+/g)?.length || 0;
+      totalWords += words;
+      speakerWordCounts.set(u.speakerKey, (speakerWordCounts.get(u.speakerKey) || 0) + words);
+      if (prevSpeaker !== null && u.speakerKey !== prevSpeaker) switches += 1;
+      prevSpeaker = u.speakerKey;
+    });
+    const speakerCount = speakerWordCounts.size;
+    const topShare = totalWords
+      ? Math.max(...Array.from(speakerWordCounts.values())) / totalWords
+      : 1;
+    return {
+      utterances,
+      cleanedUtterances,
+      rawText,
+      metrics: { speakerCount, totalWords, topShare, switches },
+    };
+  };
+
+  const isUnreliable = ({ speakerCount, totalWords, topShare, switches }) => {
+    if (speakerCount <= 1 && totalWords >= 60) return true;
+    if (totalWords >= 100 && topShare > 0.95) return true;
+    if (totalWords >= 100 && switches < 2) return true;
+    return false;
+  };
+
+  const chooseBetter = (a, b) => {
+    if (a.metrics.speakerCount !== b.metrics.speakerCount) {
+      return a.metrics.speakerCount > b.metrics.speakerCount ? a : b;
+    }
+    if (a.metrics.topShare !== b.metrics.topShare) {
+      return a.metrics.topShare < b.metrics.topShare ? a : b;
+    }
+    if (a.metrics.switches !== b.metrics.switches) {
+      return a.metrics.switches > b.metrics.switches ? a : b;
+    }
+    return a;
+  };
+
   // 1) upload file
   const up = await fetch("https://api.assemblyai.com/v2/upload", {
     method: "POST",
@@ -100,92 +180,66 @@ async function assemblyTranscribe(filePath) {
   const upJson = await up.json();
 
   // 2) request transcript
-  const tr = await fetch("https://api.assemblyai.com/v2/transcript", {
-    method: "POST",
-    headers: {
-      authorization: ASSEMBLYAI_API_KEY,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
+  const initialId = await startTranscript({
+    audio_url: upJson.upload_url,
+    speaker_labels: true,
+    speaker_options: { min_speakers_expected: 1, max_speakers_expected: 2 },
+    punctuate: true,
+    format_text: true,
+  });
+  const initialJson = await waitTranscript(initialId);
+  const initialCandidate = buildCandidate(initialJson);
+  const unreliable = isUnreliable(initialCandidate.metrics);
+
+  let usedRetry = false;
+  let chosen = initialCandidate;
+
+  if (unreliable) {
+    usedRetry = true;
+    const retryId = await startTranscript({
       audio_url: upJson.upload_url,
       speaker_labels: true,
-      speakers_expected: 2,
+      speaker_options: { min_speakers_expected: 2, max_speakers_expected: 2 },
       punctuate: true,
       format_text: true,
-    }),
-  });
-  if (!tr.ok) throw new Error(`AssemblyAI transcript start failed: ${await tr.text()}`);
-  const trJson = await tr.json();
-
-  // 3) poll status
-  const id = trJson.id;
-  for (let i = 0; i < 120; i++) {
-    await new Promise((r) => setTimeout(r, 2500));
-    const st = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
-      headers: { authorization: ASSEMBLYAI_API_KEY },
     });
-    if (!st.ok) throw new Error(`AssemblyAI transcript status failed: ${await st.text()}`);
-    const stJson = await st.json();
-    if (stJson.status === "completed") {
-      const utterances = stJson.utterances || [];
-      const transcriptJson = { utterances };
-      const rawText = stJson.text || "";
-      const cleanedUtterances = utterances
-        .map((u) => ({
-          speakerKey: u?.speaker == null ? "unknown" : String(u.speaker),
-          text: String(u?.text || "").trim(),
-        }))
-        .filter((u) => u.text.length > 0);
-      const speakerWordCounts = new Map();
-      let totalWords = 0;
-      let switches = 0;
-      let prevSpeaker = null;
-      cleanedUtterances.forEach((u) => {
-        const words = u.text.match(/\S+/g)?.length || 0;
-        totalWords += words;
-        speakerWordCounts.set(u.speakerKey, (speakerWordCounts.get(u.speakerKey) || 0) + words);
-        if (prevSpeaker !== null && u.speakerKey !== prevSpeaker) switches += 1;
-        prevSpeaker = u.speakerKey;
-      });
-      const speakerCount = speakerWordCounts.size;
-      const topShare = totalWords
-        ? Math.max(...Array.from(speakerWordCounts.values())) / totalWords
-        : 1;
-      const unreliable = speakerCount <= 1 || topShare > 0.92 || switches < 2;
-
-      const buildFallbackTurns = (text) => {
-        const parts = String(text || "").match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
-        const chunks = parts.map((p) => p.trim()).filter((p) => p.length > 0);
-        if (!chunks.length) return null;
-        const concatenated = chunks.join(" ");
-        if (normalizeKey(concatenated) !== normalizeKey(text)) return null;
-        const lines = chunks.map((p, i) => `${i % 2 === 0 ? "You" : "Prospect"}: ${p}`);
-        return { lines };
-      };
-
-      if (!unreliable && cleanedUtterances.length > 0) {
-        const speakerLabels = new Map();
-        const labelOrder = ["You", "Prospect"];
-        cleanedUtterances.forEach((u) => {
-          if (!speakerLabels.has(u.speakerKey)) {
-            const label = labelOrder[speakerLabels.size] || "Speaker";
-            speakerLabels.set(u.speakerKey, label);
-          }
-        });
-        const lines = cleanedUtterances.map((u) => `${speakerLabels.get(u.speakerKey)}: ${u.text}`);
-        return { transcriptText: lines.join("\n"), transcriptJson };
-      }
-
-      const fallback = buildFallbackTurns(rawText);
-      if (fallback?.lines?.length) {
-        return { transcriptText: fallback.lines.join("\n"), transcriptJson };
-      }
-      return { transcriptText: rawText, transcriptJson };
-    }
-    if (stJson.status === "error") throw new Error(`AssemblyAI error: ${stJson.error}`);
+    const retryJson = await waitTranscript(retryId);
+    const retryCandidate = buildCandidate(retryJson);
+    chosen = chooseBetter(initialCandidate, retryCandidate);
   }
 
-  throw new Error("AssemblyAI transcript timed out");
+  const { cleanedUtterances, rawText, metrics } = chosen;
+  const transcriptJson = {
+    utterances: chosen.utterances,
+    meta: {
+      diarization_unreliable: unreliable,
+      speakerCount: metrics.speakerCount,
+      topShare: metrics.topShare,
+      switches: metrics.switches,
+      used_retry: usedRetry,
+    },
+  };
+
+  let transcriptText = rawText;
+  if (cleanedUtterances.length > 0) {
+    if (metrics.speakerCount >= 2) {
+      const speakerLabels = new Map();
+      const labelOrder = ["You", "Prospect"];
+      cleanedUtterances.forEach((u) => {
+        if (!speakerLabels.has(u.speakerKey)) {
+          const label = labelOrder[speakerLabels.size] || "Speaker";
+          speakerLabels.set(u.speakerKey, label);
+        }
+      });
+      const lines = cleanedUtterances.map((u) => `${speakerLabels.get(u.speakerKey)}: ${u.text}`);
+      transcriptText = lines.join("\n");
+    } else {
+      const lines = cleanedUtterances.map((u) => `Speaker: ${u.text}`);
+      transcriptText = lines.join("\n");
+    }
+  }
+
+  return { transcriptText, transcriptJson };
 }
 
 function extractAudioFromMp4(mp4Path) {
