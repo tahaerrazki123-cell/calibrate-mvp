@@ -228,80 +228,147 @@ async function assemblyTranscribe(filePath) {
     },
   };
 
+  const mergeAdjacent = (segments) => {
+    if (!segments.length) return [];
+    const merged = [segments[0]];
+    for (let i = 1; i < segments.length; i++) {
+      const prev = merged[merged.length - 1];
+      const curr = segments[i];
+      if (prev.speakerKey === curr.speakerKey) {
+        prev.text = `${prev.text} ${curr.text}`.trim();
+        prev.end = curr.end ?? prev.end;
+      } else {
+        merged.push(curr);
+      }
+    }
+    return merged;
+  };
+
+  const isShortBlip = (text) => {
+    const words = text.match(/\S+/g)?.length || 0;
+    return words < 6 || text.length < 25;
+  };
+
+  const smoothSegments = (segments) => {
+    let segs = mergeAdjacent(segments);
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      for (let i = 1; i < segs.length - 1; i++) {
+        const prev = segs[i - 1];
+        const curr = segs[i];
+        const next = segs[i + 1];
+        if (prev.speakerKey === next.speakerKey && curr.speakerKey !== prev.speakerKey) {
+          if (isShortBlip(curr.text)) {
+            curr.speakerKey = prev.speakerKey;
+            changed = true;
+          }
+        }
+      }
+      if (!changed) break;
+      segs = mergeAdjacent(segs);
+    }
+    return segs;
+  };
+
+  const computeMetrics = (segments) => {
+    const speakerWordCounts = new Map();
+    let totalWords = 0;
+    let switches = 0;
+    let prevSpeaker = null;
+    segments.forEach((s) => {
+      const words = s.text.match(/\S+/g)?.length || 0;
+      totalWords += words;
+      speakerWordCounts.set(s.speakerKey, (speakerWordCounts.get(s.speakerKey) || 0) + words);
+      if (prevSpeaker !== null && s.speakerKey !== prevSpeaker) switches += 1;
+      prevSpeaker = s.speakerKey;
+    });
+    const speakerCount = speakerWordCounts.size;
+    const topShare = totalWords
+      ? Math.max(...Array.from(speakerWordCounts.values())) / totalWords
+      : 1;
+    return { speakerCount, totalWords, topShare, switches };
+  };
+
   let transcriptText = rawText;
-  const lowConfidence = baseBad && retryBad;
-  if (cleanedUtterances.length > 0) {
-    if (metrics.speakerCount >= 2 && !lowConfidence) {
-      const speakerOrder = [];
-      const speakerText = new Map();
-      cleanedUtterances.forEach((u) => {
-        if (!speakerText.has(u.speakerKey)) speakerOrder.push(u.speakerKey);
-        speakerText.set(
-          u.speakerKey,
-          `${speakerText.get(u.speakerKey) || ""} ${u.text}`.trim()
-        );
-      });
+  const segments = smoothSegments(
+    (chosen.utterances || []).map((u) => ({
+      speakerKey: u?.speaker == null ? "unknown" : String(u.speaker),
+      text: String(u?.text || "").trim(),
+      start: u?.start,
+      end: u?.end,
+    }))
+  ).filter((s) => s.text.length > 0);
 
-      const callerCues = ["this is", "my name is", "i'm with", "calling about", "quick one"];
-      const prospectCues = ["who's this", "not interested", "stop calling", "send it"];
-      const callerCueKeys = callerCues.map((c) => normalizeKey(c));
-      const prospectCueKeys = prospectCues.map((c) => normalizeKey(c));
+  if (segments.length > 0) {
+    const smoothedMetrics = computeMetrics(segments);
+    const lowConfidence =
+      smoothedMetrics.speakerCount < 2
+      || smoothedMetrics.topShare > 0.92
+      || smoothedMetrics.switches < 2;
 
-      const scoreCues = (text, cues) => {
-        const norm = normalizeKey(text);
-        return cues.reduce((acc, cue) => (cue && norm.includes(cue) ? acc + 1 : acc), 0);
+    transcriptJson.diarization_meta = {
+      ...(transcriptJson.diarization_meta || {}),
+      speakerCount: smoothedMetrics.speakerCount,
+      topShare: smoothedMetrics.topShare,
+      switches: smoothedMetrics.switches,
+      smoothed: true,
+      lowConfidence,
+    };
+
+    const speakerOrder = [];
+    const speakerText = new Map();
+    segments.forEach((s) => {
+      if (!speakerText.has(s.speakerKey)) speakerOrder.push(s.speakerKey);
+      speakerText.set(
+        s.speakerKey,
+        `${speakerText.get(s.speakerKey) || ""} ${s.text}`.trim()
+      );
+    });
+
+    let labels = new Map();
+    let useRoles = false;
+
+    if (smoothedMetrics.speakerCount >= 2 && !lowConfidence) {
+      const callerPattern =
+        /\b(this is|with\s+\w+|calling|quick one|do you have|can i|i'm not calling to sell|i appreciate|best email|calendar invite)\b/gi;
+      const calleePattern =
+        /\b(who'?s this|stop you|already have|not interested|busy|don'?t want|commission|insurance|storm chaser|denied)\b/gi;
+
+      const countMatches = (text, pattern) => {
+        if (!text) return 0;
+        const matches = text.match(pattern);
+        return matches ? matches.length : 0;
       };
 
-      let youSpeaker = null;
-      let prospectSpeaker = null;
-      let bestCallerScore = 0;
-      let bestProspectScore = 0;
-
-      speakerOrder.forEach((key) => {
+      const scores = speakerOrder.map((key) => {
         const text = speakerText.get(key) || "";
-        const callerScore = scoreCues(text, callerCueKeys);
-        const prospectScore = scoreCues(text, prospectCueKeys);
-        if (callerScore > bestCallerScore) {
-          bestCallerScore = callerScore;
-          youSpeaker = key;
-        }
-        if (prospectScore > bestProspectScore) {
-          bestProspectScore = prospectScore;
-          prospectSpeaker = key;
-        }
+        const callerScore = countMatches(text, callerPattern);
+        const calleeScore = countMatches(text, calleePattern);
+        return { key, score: callerScore - calleeScore };
       });
 
-      if (!youSpeaker) youSpeaker = speakerOrder[0];
-      if (!prospectSpeaker || prospectSpeaker === youSpeaker) {
-        prospectSpeaker = speakerOrder.find((s) => s !== youSpeaker) || speakerOrder[0];
+      scores.sort((a, b) => b.score - a.score);
+      const top = scores[0];
+      const second = scores[1];
+      if (top && second && top.score - second.score >= 2) {
+        labels.set(top.key, "You");
+        labels.set(second.key, "Prospect");
+        useRoles = true;
       }
-
-      const speakerLabels = new Map();
-      speakerLabels.set(youSpeaker, "You");
-      speakerLabels.set(prospectSpeaker, "Prospect");
-
-      const lines = cleanedUtterances.map((u) => {
-        const label = speakerLabels.get(u.speakerKey) || "Speaker";
-        return `${label}: ${u.text}`;
-      });
-      transcriptText = lines.join("\n");
-    } else if (metrics.speakerCount >= 2) {
-      const speakerOrder = [];
-      cleanedUtterances.forEach((u) => {
-        if (!speakerOrder.includes(u.speakerKey)) speakerOrder.push(u.speakerKey);
-      });
-      const speakerLabels = new Map();
-      speakerLabels.set(speakerOrder[0], "Speaker A");
-      speakerLabels.set(speakerOrder[1], "Speaker B");
-      const lines = cleanedUtterances.map((u) => {
-        const label = speakerLabels.get(u.speakerKey) || "Speaker";
-        return `${label}: ${u.text}`;
-      });
-      transcriptText = lines.join("\n");
-    } else {
-      const lines = cleanedUtterances.map((u) => `Speaker: ${u.text}`);
-      transcriptText = lines.join("\n");
     }
+
+    if (!useRoles && smoothedMetrics.speakerCount >= 2) {
+      labels.set(speakerOrder[0], "Speaker A");
+      labels.set(speakerOrder[1], "Speaker B");
+    }
+
+    const lines = segments.map((s) => {
+      const label =
+        labels.get(s.speakerKey)
+        || (smoothedMetrics.speakerCount >= 2 ? "Speaker" : "Speaker");
+      return `${label}: ${s.text}`;
+    });
+    transcriptText = lines.join("\n");
   }
 
   return { transcriptText, transcriptJson };
