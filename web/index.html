@@ -501,6 +501,7 @@
           <button class="btn primary" id="btnNewEntity">New entity</button>
         </div>
 
+        <div id="entitiesListView">
         <div class="spacer"></div>
         <div id="entitiesList" class="muted">Loading…</div>
 
@@ -522,6 +523,47 @@
             <button class="btn primary" id="btnSaveEntity">Save</button>
             <button class="btn" id="btnCancelEntity">Cancel</button>
           </div>
+        </div>
+        </div>
+
+        <div class="hide" id="entityDetailView">
+          <div class="row">
+            <div class="grow">
+              <h2 id="entityDetailName">Entity</h2>
+              <p class="muted" id="entityDetailMeta"></p>
+              <p class="muted" id="entityDetailNotes"></p>
+            </div>
+            <button class="btn small" id="btnEntityBack">Back</button>
+          </div>
+
+          <div class="hr"></div>
+
+          <h2>Call Reports</h2>
+          <p class="muted">Runs tied to this entity.</p>
+          <div class="spacer"></div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Created</th>
+                <th>Scenario</th>
+                <th>Result</th>
+                <th>Open</th>
+              </tr>
+            </thead>
+            <tbody id="entityRunsTbody">
+              <tr><td colspan="5" class="muted">Loading...</td></tr>
+            </tbody>
+          </table>
+
+          <div class="hr"></div>
+
+          <h2>Playbook</h2>
+          <div class="row tight">
+            <span class="muted" id="entityPlaybookStatus"></span>
+            <span class="muted" id="entityPlaybookUpdated"></span>
+          </div>
+          <div id="entityPlaybookBox"></div>
         </div>
       </div>
 
@@ -632,6 +674,8 @@
 
     let entities = [];
     let currentEntityId = null;
+    let currentEntityDetailId = null;
+    let viewingEntityDetail = false;
     let currentRun = null;
     let currentPlaybook = null;
 
@@ -798,6 +842,16 @@
       const data = await api("/api/entities");
       entities = data.entities || [];
       renderEntities();
+      if(viewingEntityDetail && currentEntityDetailId){
+        const e = entities.find(x=>x.id===currentEntityDetailId);
+        if(e){
+          renderEntityDetail(e);
+        }else{
+          viewingEntityDetail = false;
+          currentEntityDetailId = null;
+        }
+      }
+      setEntitiesView();
     }
 
     function fillEntitySelects(){
@@ -822,11 +876,17 @@
             <div class="muted">${escapeHtml(e.offer || "")} ${e.industry ? "• "+escapeHtml(e.industry) : ""}</div>
           </div>
           <div class="row tight">
+            <button class="btn small" data-open="${e.id}">Open</button>
             <button class="btn small" data-edit="${e.id}">Edit</button>
           </div>
         </div>
       `).join("");
-
+      wrap.querySelectorAll("[data-open]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const id = btn.getAttribute("data-open");
+          openEntityDetail(id);
+        });
+      });
       wrap.querySelectorAll("[data-edit]").forEach(btn=>{
         btn.addEventListener("click", ()=>{
           const id = btn.getAttribute("data-edit");
@@ -835,9 +895,100 @@
       });
     }
 
+    function setEntitiesView(){
+      $("entitiesListView").classList.toggle("hide", viewingEntityDetail);
+      $("entityDetailView").classList.toggle("hide", !viewingEntityDetail);
+    }
+
+    function renderEntityDetail(e){
+      $("entityDetailName").textContent = e.name || "Entity";
+      const meta = [e.offer, e.industry].filter(Boolean).join(" / ");
+      const metaEl = $("entityDetailMeta");
+      metaEl.textContent = meta;
+      metaEl.classList.toggle("hide", !meta);
+      const notes = (e.notes || "").trim();
+      const notesEl = $("entityDetailNotes");
+      notesEl.textContent = notes;
+      notesEl.classList.toggle("hide", !notes);
+    }
+
+    function openEntityDetail(id){
+      const e = entities.find(x=>x.id===id);
+      if(!e) return;
+      currentEntityDetailId = id;
+      viewingEntityDetail = true;
+      $("entityEditor").classList.add("hide");
+      renderEntityDetail(e);
+      setEntitiesView();
+      $("entityRunsTbody").innerHTML = `<tr><td colspan="5" class="muted">Loading...</td></tr>`;
+      $("entityPlaybookStatus").textContent = "Loading...";
+      $("entityPlaybookUpdated").textContent = "";
+      $("entityPlaybookUpdated").classList.add("hide");
+      $("entityPlaybookBox").innerHTML = "";
+      loadEntityRuns(id);
+      loadEntityPlaybook(id);
+    }
+
+    async function loadEntityRuns(entityId){
+      try{
+        const data = await api(`/api/runs?entity_id=${encodeURIComponent(entityId)}`);
+        const runs = data.runs || [];
+        renderEntityRuns(runs);
+      }catch(e){
+        $("entityRunsTbody").innerHTML =
+          `<tr><td colspan="5" class="muted">Failed to load runs.</td></tr>`;
+      }
+    }
+
+    function renderEntityRuns(runs){
+      const tb = $("entityRunsTbody");
+      if(!runs.length){
+        tb.innerHTML = `<tr><td colspan="5" class="muted">No runs yet.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = runs.map(r=>`
+        <tr>
+          <td>${escapeHtml(r.report_title || "Call")}</td>
+          <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
+          <td>${escapeHtml(r.scenario || "")}</td>
+          <td>${escapeHtml(r.outcome_label || "")}</td>
+          <td><button class="btn small" data-open-run="${r.id}">Open</button></td>
+        </tr>
+      `).join("");
+      tb.querySelectorAll("[data-open-run]").forEach(btn=>{
+        btn.addEventListener("click", ()=>{
+          const id = btn.getAttribute("data-open-run");
+          openRunById(id);
+        });
+      });
+    }
+
+    async function loadEntityPlaybook(entityId){
+      $("entityPlaybookStatus").textContent = "Loading...";
+      $("entityPlaybookUpdated").textContent = "";
+      $("entityPlaybookUpdated").classList.add("hide");
+      try{
+        const data = await api(`/api/entities/${entityId}/playbook`, { method:"POST" });
+        const playbook = data.playbook || null;
+        renderPlaybook(playbook, $("entityPlaybookBox"));
+        const updatedAt = data.updated_at || data.last_run_created_at || data.created_at;
+        if(updatedAt){
+          $("entityPlaybookUpdated").textContent =
+            `Last updated ${new Date(updatedAt).toLocaleString()}`;
+          $("entityPlaybookUpdated").classList.remove("hide");
+        }
+        $("entityPlaybookStatus").textContent = "";
+      }catch(e){
+        $("entityPlaybookStatus").textContent = "Error: " + (e.message || String(e));
+      }
+    }
+
     function openEntityEditor(id){
       const e = entities.find(x=>x.id===id);
       if(!e) return;
+      viewingEntityDetail = false;
+      currentEntityDetailId = null;
+      setEntitiesView();
       currentEntityId = id;
       $("entityEditor").classList.remove("hide");
       $("entityEditName").value = e.name || "";
@@ -847,6 +998,9 @@
     }
 
     $("btnNewEntity").addEventListener("click", ()=>{
+      viewingEntityDetail = false;
+      currentEntityDetailId = null;
+      setEntitiesView();
       currentEntityId = null;
       $("entityEditor").classList.remove("hide");
       $("entityEditName").value = "";
@@ -858,6 +1012,11 @@
     $("btnCancelEntity").addEventListener("click", ()=>{
       $("entityEditor").classList.add("hide");
       currentEntityId = null;
+    });
+    $("btnEntityBack").addEventListener("click", ()=>{
+      viewingEntityDetail = false;
+      currentEntityDetailId = null;
+      setEntitiesView();
     });
 
     $("btnSaveEntity").addEventListener("click", async ()=>{
@@ -902,8 +1061,8 @@
       }
     });
 
-    function renderPlaybook(playbook){
-      const box = $("playbookBox");
+    function renderPlaybook(playbook, targetEl){
+      const box = targetEl || $("playbookBox");
       let obj = playbook;
       if(typeof obj === "string"){
         try{ obj = JSON.parse(obj); }catch{ obj = null; }
@@ -996,6 +1155,15 @@
       }
     }
 
+    async function openRunById(id){
+      const data = await api(`/api/runs/${id}`);
+      currentRun = data.run;
+      viewingPastRun = true;
+      setTab("upload");
+      setUploadView();
+      renderReport(currentRun);
+    }
+
     function renderRuns(runs){
       const tb = $("runsTbody");
       if(!runs.length){
@@ -1014,14 +1182,9 @@
       `).join("");
 
       tb.querySelectorAll("[data-open]").forEach(btn=>{
-        btn.addEventListener("click", async ()=>{
+        btn.addEventListener("click", ()=>{
           const id = btn.getAttribute("data-open");
-          const data = await api(`/api/runs/${id}`);
-          currentRun = data.run;
-          viewingPastRun = true;
-          setTab("upload");
-          setUploadView();
-          renderReport(currentRun);
+          openRunById(id);
         });
       });
     }

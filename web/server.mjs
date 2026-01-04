@@ -477,10 +477,13 @@ app.get("/api/runs", async (req, res) => {
   const user = await getUserFromReq(req);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-  const { data, error } = await supabaseAdmin
+  const entityId = (req.query.entity_id || "").trim();
+  let runsQuery = supabaseAdmin
     .from("runs")
     .select("id, created_at, scenario, outcome_label, analysis_json, entity_id, entities(name)")
-    .eq("user_id", user.id)
+    .eq("user_id", user.id);
+  if (entityId) runsQuery = runsQuery.eq("entity_id", entityId);
+  const { data, error } = await runsQuery
     .order("created_at", { ascending: false })
     .limit(50);
 
