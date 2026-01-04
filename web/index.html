@@ -544,6 +544,11 @@
           <h2>Call Reports</h2>
           <p class="muted">Runs tied to this entity.</p>
           <div class="spacer"></div>
+          <div class="row tight">
+            <input class="input" id="entityRunsSearch" placeholder="Search reports, scenario, result..." />
+            <button class="btn small" id="entityRunsSearchClear">Clear</button>
+          </div>
+          <div class="spacer"></div>
           <table class="table">
             <thead>
               <tr>
@@ -596,6 +601,11 @@
         <h2>Call Reports</h2>
         <p class="muted">Your latest call analyses.</p>
 
+        <div class="spacer"></div>
+        <div class="row tight">
+          <input class="input" id="runsSearch" placeholder="Search reports, scenario, result, entity..." />
+          <button class="btn small" id="runsSearchClear">Clear</button>
+        </div>
         <div class="spacer"></div>
         <table class="table">
           <thead>
@@ -681,6 +691,12 @@
     let viewingEntityDetail = false;
     let currentRun = null;
     let currentPlaybook = null;
+    let runsCache = [];
+    let entityRunsCache = [];
+    let runsSearchValue = "";
+    let entityRunsSearchValue = "";
+    let runsSearchTimer = null;
+    let entityRunsSearchTimer = null;
 
     // ---- API helper (adds Authorization when available) ----
     async function api(path, opts={}){
@@ -936,7 +952,8 @@
       try{
         const data = await api(`/api/runs?entity_id=${encodeURIComponent(entityId)}`);
         const runs = data.runs || [];
-        renderEntityRuns(runs);
+        entityRunsCache = runs;
+        renderEntityRuns(filterRuns(entityRunsCache, entityRunsSearchValue));
       }catch(e){
         $("entityRunsTbody").innerHTML =
           `<tr><td colspan="5" class="muted">Failed to load runs.</td></tr>`;
@@ -1224,7 +1241,8 @@
     async function loadRuns(){
       const data = await api("/api/runs");
       const runs = data.runs || [];
-      renderRuns(runs);
+      runsCache = runs;
+      renderRuns(filterRuns(runsCache, runsSearchValue));
 
       if(runs.length){
         const r = runs[0];
@@ -1243,6 +1261,31 @@
       setTab("upload");
       setUploadView();
       renderReport(currentRun, opts);
+    }
+
+    function filterRuns(runs, query){
+      const q = String(query || "").trim().toLowerCase();
+      if(!q) return runs;
+      return runs.filter((r)=>{
+        const reportTitle = r.report_title
+          || r.analysis_json?.report_title
+          || r.analysis_json?.call_result?.label
+          || r.outcome_label
+          || "Legacy run";
+        const scenarioLabel = r.scenario ? prettyScenario(r.scenario) : "Legacy";
+        const resultLabel = r.outcome_label || r.analysis_json?.call_result?.label || "";
+        const entityName = r.entity_name || "";
+        const hay = `${reportTitle} ${scenarioLabel} ${resultLabel} ${entityName}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    function applyRunsSearch(){
+      renderRuns(filterRuns(runsCache, runsSearchValue));
+    }
+
+    function applyEntityRunsSearch(){
+      renderEntityRuns(filterRuns(entityRunsCache, entityRunsSearchValue));
     }
 
     function renderRuns(runs){
@@ -1280,6 +1323,27 @@
         });
       });
     }
+
+    $("runsSearch").addEventListener("input", ()=>{
+      runsSearchValue = $("runsSearch").value.trim();
+      clearTimeout(runsSearchTimer);
+      runsSearchTimer = setTimeout(applyRunsSearch, 150);
+    });
+    $("runsSearchClear").addEventListener("click", ()=>{
+      $("runsSearch").value = "";
+      runsSearchValue = "";
+      applyRunsSearch();
+    });
+    $("entityRunsSearch").addEventListener("input", ()=>{
+      entityRunsSearchValue = $("entityRunsSearch").value.trim();
+      clearTimeout(entityRunsSearchTimer);
+      entityRunsSearchTimer = setTimeout(applyEntityRunsSearch, 150);
+    });
+    $("entityRunsSearchClear").addEventListener("click", ()=>{
+      $("entityRunsSearch").value = "";
+      entityRunsSearchValue = "";
+      applyEntityRunsSearch();
+    });
 
     // ---- Report render ----
     function renderReport(run, opts = {}){
