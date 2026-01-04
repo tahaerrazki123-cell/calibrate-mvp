@@ -300,10 +300,61 @@ function mergeObservedObjections(existing, incoming) {
       return jaccardSimilarity(keyA, keyB) >= 0.6;
     });
     if (idx === -1) {
-      merged.push(obs);
+      const evidence =
+        obs?.evidence_quote && obs?.run_id
+          ? [{ evidence_quote: obs.evidence_quote, run_id: obs.run_id }]
+          : [];
+      merged.push({
+        ...obs,
+        count: 1,
+        variants: [obsText],
+        evidence,
+      });
       return;
     }
-    merged[idx] = { ...merged[idx], ...obs };
+    const current = merged[idx];
+    const nextCount = (current?.count || 1) + 1;
+    const existingVariants = Array.isArray(current?.variants)
+      ? current.variants.slice()
+      : [current?.objection].filter(Boolean);
+    const obsKey = normalizeKey(obsText);
+    if (obsKey && !existingVariants.some((v) => normalizeKey(v) === obsKey)) {
+      existingVariants.push(obsText);
+    }
+    let evidence = Array.isArray(current?.evidence) ? current.evidence.slice() : [];
+    if (!evidence.length && current?.evidence_quote && current?.run_id) {
+      evidence = [{ evidence_quote: current.evidence_quote, run_id: current.run_id }];
+    }
+    if (obs?.evidence_quote && obs?.run_id) {
+      const evKey = `${normalizeKey(obs.evidence_quote)}|${obs.run_id}`;
+      const exists = evidence.some(
+        (e) => `${normalizeKey(e?.evidence_quote)}|${e?.run_id}` === evKey
+      );
+      if (!exists) {
+        evidence.push({ evidence_quote: obs.evidence_quote, run_id: obs.run_id });
+      }
+    }
+    if (evidence.length > 5) evidence = evidence.slice(-5);
+    const currentObjection = String(current?.objection || "");
+    const currentLen = currentObjection.length;
+    const obsLen = String(obsText).length;
+    const useObs = obsLen > currentLen && obsLen <= 140;
+    const nextObjection = useObs ? obsText : currentObjection || obsText;
+    const currentResp = String(current?.best_response || "");
+    const obsResp = String(obs?.best_response || "");
+    const nextResp = obsResp.length > currentResp.length + 20 ? obsResp : currentResp || obsResp;
+    const latestEvidence = evidence.length ? evidence[evidence.length - 1] : null;
+    merged[idx] = {
+      ...current,
+      ...obs,
+      objection: nextObjection,
+      best_response: nextResp,
+      count: nextCount,
+      variants: existingVariants,
+      evidence,
+      evidence_quote: latestEvidence?.evidence_quote || obs?.evidence_quote || current?.evidence_quote,
+      run_id: latestEvidence?.run_id || obs?.run_id || current?.run_id,
+    };
   });
   return merged;
 }
