@@ -54,11 +54,22 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function requireUser(req) {
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return null;
-  return token;
+async function requireUser(req, res) {
+  const user = await getUserFromReq(req);
+  if (!user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  return user;
+}
+
+function handleMissingUserId(res, table, error) {
+  const msg = String(error?.message || "");
+  if (msg.includes("user_id") && msg.toLowerCase().includes("column")) {
+    res.status(500).json({ error: `Missing user_id column on ${table}` });
+    return true;
+  }
+  return false;
 }
 
 async function getUserFromReq(req) {
@@ -812,8 +823,8 @@ function mergeObservedObjections(existing, incoming) {
 // -------- Entities API --------
 
 app.get("/api/entities", async (req, res) => {
-  const user = await getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const { data, error } = await supabaseAdmin
     .from("entities")
@@ -821,13 +832,16 @@ app.get("/api/entities", async (req, res) => {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    if (handleMissingUserId(res, "entities", error)) return;
+    return res.status(400).json({ error: error.message });
+  }
   res.json({ entities: data || [] });
 });
 
 app.post("/api/entities", async (req, res) => {
-  const user = await getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const { id, name, offer, industry, notes } = req.body || {};
   if (!name) return res.status(400).json({ error: "Missing name" });
@@ -839,7 +853,10 @@ app.post("/api/entities", async (req, res) => {
       .eq("id", id)
       .eq("user_id", user.id);
 
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) {
+      if (handleMissingUserId(res, "entities", error)) return;
+      return res.status(400).json({ error: error.message });
+    }
     return res.json({ ok: true });
   }
 
@@ -849,7 +866,10 @@ app.post("/api/entities", async (req, res) => {
     .select()
     .single();
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    if (handleMissingUserId(res, "entities", error)) return;
+    return res.status(400).json({ error: error.message });
+  }
   res.json({ entity: data });
 });
 
@@ -882,10 +902,22 @@ async function buildEntityAggregate(userId, entityId) {
 }
 
 app.post("/api/entities/:id/playbook", async (req, res) => {
-  const user = await getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const entityId = req.params.id;
+
+  const { data: entityCheck, error: entityCheckErr } = await supabaseAdmin
+    .from("entities")
+    .select("id")
+    .eq("id", entityId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (entityCheckErr) {
+    if (handleMissingUserId(res, "entities", entityCheckErr)) return;
+    return res.status(400).json({ error: entityCheckErr.message });
+  }
+  if (!entityCheck) return res.status(404).json({ error: "Not found" });
 
   const { data: latestRun, error: lrErr } = await supabaseAdmin
     .from("runs")
@@ -896,7 +928,10 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
     .limit(1)
     .maybeSingle();
 
-  if (lrErr) return res.status(400).json({ error: lrErr.message });
+  if (lrErr) {
+    if (handleMissingUserId(res, "runs", lrErr)) return;
+    return res.status(400).json({ error: lrErr.message });
+  }
   if (!latestRun) return res.status(400).json({ error: "No runs found for this entity yet." });
 
   const latestRunCreatedAt = latestRun.created_at;
@@ -908,7 +943,10 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (cErr) return res.status(400).json({ error: cErr.message });
+  if (cErr) {
+    if (handleMissingUserId(res, "entity_playbooks", cErr)) return;
+    return res.status(400).json({ error: cErr.message });
+  }
   if (
     cached?.playbook_json
     && cached.last_run_created_at
@@ -924,7 +962,10 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
     .eq("user_id", user.id)
     .single();
 
-  if (eErr) return res.status(400).json({ error: eErr.message });
+  if (eErr) {
+    if (handleMissingUserId(res, "entities", eErr)) return;
+    return res.status(400).json({ error: eErr.message });
+  }
 
   const { data: runs, error: rErr } = await supabaseAdmin
     .from("runs")
@@ -934,7 +975,10 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
     .order("created_at", { ascending: false })
     .limit(18);
 
-  if (rErr) return res.status(400).json({ error: rErr.message });
+  if (rErr) {
+    if (handleMissingUserId(res, "runs", rErr)) return;
+    return res.status(400).json({ error: rErr.message });
+  }
   if (!runs?.length) return res.status(400).json({ error: "No runs found for this entity yet." });
 
   const runTextById = new Map(runs.map((r) => [r.id, r.transcript_text || ""]));
@@ -1020,15 +1064,18 @@ ${transcripts.slice(0, 15).map((t, i) => `--- TRANSCRIPT ${i + 1} ---\n${t}`).jo
     .select("playbook_json")
     .maybeSingle();
 
-  if (pErr) return res.status(400).json({ error: pErr.message });
+  if (pErr) {
+    if (handleMissingUserId(res, "entity_playbooks", pErr)) return;
+    return res.status(400).json({ error: pErr.message });
+  }
   res.json({ playbook: savedPlaybook?.playbook_json || playbook });
 });
 
 // -------- Runs API --------
 
 app.get("/api/runs", async (req, res) => {
-  const user = await getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const entityId = (req.query.entity_id || "").trim();
   let runsQuery = supabaseAdmin
@@ -1040,7 +1087,10 @@ app.get("/api/runs", async (req, res) => {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    if (handleMissingUserId(res, "runs", error)) return;
+    return res.status(400).json({ error: error.message });
+  }
 
   const runs = (data || []).map((r) => ({
     ...r,
@@ -1052,8 +1102,8 @@ app.get("/api/runs", async (req, res) => {
 });
 
 app.get("/api/runs/:id", async (req, res) => {
-  const user = await getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const id = req.params.id;
 
@@ -1064,13 +1114,30 @@ app.get("/api/runs/:id", async (req, res) => {
     .eq("user_id", user.id)
     .single();
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    if (handleMissingUserId(res, "runs", error)) return;
+    return res.status(400).json({ error: error.message });
+  }
+
+  if (data?.entity_id) {
+    const { data: entityRow, error: eErr } = await supabaseAdmin
+      .from("entities")
+      .select("id")
+      .eq("id", data.entity_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (eErr) {
+      if (handleMissingUserId(res, "entities", eErr)) return;
+      return res.status(400).json({ error: eErr.message });
+    }
+    if (!entityRow) return res.status(404).json({ error: "Not found" });
+  }
   res.json({ run: data });
 });
 
 app.post("/api/runs/:id/regen_followup", async (req, res) => {
-  const user = await getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const id = req.params.id;
 
@@ -1081,7 +1148,10 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     .eq("user_id", user.id)
     .single();
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) {
+    if (handleMissingUserId(res, "runs", error)) return;
+    return res.status(400).json({ error: error.message });
+  }
 
   const prompt = `
 Generate a new 2-line follow-up message based on this call transcript and context.
@@ -1109,15 +1179,18 @@ ${run.context_text || ""}
     .select()
     .single();
 
-  if (uErr) return res.status(400).json({ error: uErr.message });
+  if (uErr) {
+    if (handleMissingUserId(res, "runs", uErr)) return;
+    return res.status(400).json({ error: uErr.message });
+  }
   res.json({ run: saved });
 });
 
 // -------- Main Run Endpoint --------
 
 app.post("/api/run", upload.single("file"), async (req, res) => {
-  const user = await getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const file = req.file;
   if (!file) return res.status(400).json({ error: "Missing file" });
@@ -1148,6 +1221,20 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
     }
 
     // Create entity on the fly if provided
+    if (finalEntityId) {
+      const { data: entityRow, error: eErr } = await supabaseAdmin
+        .from("entities")
+        .select("id")
+        .eq("id", finalEntityId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (eErr) {
+        if (handleMissingUserId(res, "entities", eErr)) return;
+        throw new Error(eErr.message);
+      }
+      if (!entityRow) return res.status(404).json({ error: "Not found" });
+    }
+
     if (!finalEntityId && entityName) {
       const { data: created, error: cErr } = await supabaseAdmin
         .from("entities")
@@ -1162,7 +1249,10 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
         .select()
         .single();
 
-      if (cErr) throw new Error(cErr.message);
+      if (cErr) {
+        if (handleMissingUserId(res, "entities", cErr)) return;
+        throw new Error(cErr.message);
+      }
       finalEntityId = created.id;
     }
 
@@ -1209,7 +1299,10 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
       .select()
       .single();
 
-    if (sErr) throw new Error(sErr.message);
+    if (sErr) {
+      if (handleMissingUserId(res, "runs", sErr)) return;
+      throw new Error(sErr.message);
+    }
 
     // cleanup temp files
     cleanupPaths.forEach((p) => {
