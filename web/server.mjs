@@ -184,7 +184,7 @@ async function assemblyTranscribe(filePath) {
   const initialId = await startTranscript({
     audio_url: upJson.upload_url,
     speaker_labels: true,
-    speech_models: ["slam-1", "universal"],
+    speaker_options: { min_speakers: 1, max_speakers: 2 },
     punctuate: true,
     format_text: true,
   });
@@ -204,7 +204,6 @@ async function assemblyTranscribe(filePath) {
       audio_url: upJson.upload_url,
       speaker_labels: true,
       speakers_expected: 2,
-      speech_models: ["slam-1", "universal"],
       punctuate: true,
       format_text: true,
     });
@@ -287,9 +286,7 @@ async function assemblyTranscribe(filePath) {
     const trimmed = String(text || "").trim();
     if (/[,:;]\s*$/.test(trimmed)) return true;
     if (/[-–—]\s*$/.test(trimmed)) return true;
-    if (/\b(a|an|the|to|no|so|but|or|and|gonna|wanna|gotta)\.\s*$/i.test(trimmed)) {
-      return true;
-    }
+    if (/\b(no|gonna|to|a|the)\.\s*$/i.test(trimmed)) return true;
     const tokens = trimmed.match(/[a-z0-9]+/gi) || [];
     const last = tokens[tokens.length - 1] || "";
     return last.length > 0 && last.length <= 2;
@@ -308,8 +305,13 @@ async function assemblyTranscribe(filePath) {
         if (
           prev
           && prev.speakerKey !== curr.speakerKey
-          && (!endsWithTerminal(prev.text) || endsWithFragment(prev.text))
-          && (startsWithLower(curr.text) || startsWithContinuation(curr.text) || startsWithContinuationToken(curr.text))
+          && (!endsWithTerminal(prev.text) || endsWithFragment(prev.text) || isShortBlip(prev.text))
+          && (
+            startsWithLower(curr.text)
+            || startsWithContinuation(curr.text)
+            || startsWithContinuationToken(curr.text)
+            || endsWithFragment(prev.text)
+          )
         ) {
           prev.text = `${prev.text} ${curr.text}`.trim();
           prev.end = curr.end ?? prev.end;
@@ -376,35 +378,132 @@ async function assemblyTranscribe(filePath) {
       );
     });
 
-    const agentPattern =
-      /\b(this is|calling|quick one|can i|what's better|i'll send|calendar|email)\b/gi;
-    const prospectPattern =
-      /\b(who'?s this|stop you|already have|not interested|busy|don'?t want|we filed|insurance denied)\b/gi;
-    const scoreMatches = (text, pattern) => (text.match(pattern) || []).length;
+    const sentenceSplit = (text) => {
+      const parts = String(text || "")
+        .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+        || [];
+      return parts.map((p) => p.trim()).filter((p) => p.length > 0);
+    };
 
-    let lowConfidenceSemantic = false;
-    if (smoothedMetrics.speakerCount >= 2) {
-      const scores = speakerOrder.slice(0, 2).map((key) => {
-        const text = speakerText.get(key) || "";
-        return {
-          agent: scoreMatches(text, agentPattern),
-          prospect: scoreMatches(text, prospectPattern),
-        };
+    const sentenceSegments = [];
+    segments.forEach((s) => {
+      const sentences = sentenceSplit(s.text);
+      sentences.forEach((t) => {
+        sentenceSegments.push({
+          text: t,
+          approxStart: s.start ?? null,
+          approxEnd: s.end ?? null,
+          speakerKey: s.speakerKey,
+        });
       });
-      if (
-        scores.length === 2
-        && scores[0].agent >= 2
-        && scores[0].prospect >= 2
-        && scores[1].agent >= 2
-        && scores[1].prospect >= 2
-      ) {
-        lowConfidenceSemantic = true;
+    });
+
+    const agentPattern =
+      /\b(this is|i'?m with|calling|quick one|do you have|can i|i'?m not calling to sell|what'?s better|best email|i'?ll send|calendar|we'?re seeing|would it be crazy)\b/gi;
+    const prospectPattern =
+      /\b(who'?s this|stop you|already have|not interested|busy|don'?t want|we filed|denied|storm chaser|commission|not doing that|just text me)\b/gi;
+
+    const scores = sentenceSegments.map((s) => {
+      const agentScore = (s.text.match(agentPattern) || []).length;
+      const prospectScore = (s.text.match(prospectPattern) || []).length;
+      return agentScore - prospectScore;
+    });
+
+    const dp = [];
+    const back = [];
+    const switchPenalty = 2;
+    scores.forEach((score, i) => {
+      const emitYou = score;
+      const emitProspect = -score;
+      if (i === 0) {
+        dp[i] = [emitYou, emitProspect];
+        back[i] = [0, 1];
+        return;
       }
+      dp[i] = [0, 0];
+      back[i] = [0, 0];
+      const stayYou = dp[i - 1][0] + emitYou;
+      const switchToYou = dp[i - 1][1] + emitYou - switchPenalty;
+      if (stayYou >= switchToYou) {
+        dp[i][0] = stayYou;
+        back[i][0] = 0;
+      } else {
+        dp[i][0] = switchToYou;
+        back[i][0] = 1;
+      }
+      const stayProspect = dp[i - 1][1] + emitProspect;
+      const switchToProspect = dp[i - 1][0] + emitProspect - switchPenalty;
+      if (stayProspect >= switchToProspect) {
+        dp[i][1] = stayProspect;
+        back[i][1] = 1;
+      } else {
+        dp[i][1] = switchToProspect;
+        back[i][1] = 0;
+      }
+    });
+
+    const labelsBySentence = new Array(scores.length);
+    let state = dp.length ? (dp[dp.length - 1][0] >= dp[dp.length - 1][1] ? 0 : 1) : 0;
+    for (let i = scores.length - 1; i >= 0; i--) {
+      labelsBySentence[i] = state === 0 ? "You" : "Prospect";
+      state = back[i]?.[state] ?? 0;
     }
 
-    const jitterRatio = segments.length ? smoothedMetrics.switches / segments.length : 0;
-    const jitterFallback =
-      jitterRatio > 0.35 || (segments.length <= 14 && smoothedMetrics.switches >= 6);
+    const avgAbsScore = scores.length
+      ? scores.reduce((sum, s) => sum + Math.abs(s), 0) / scores.length
+      : 0;
+    const youCount = labelsBySentence.filter((l) => l === "You").length;
+    const prospectCount = labelsBySentence.length - youCount;
+    const lowSignal = avgAbsScore < 0.6 || scores.every((s) => s === 0);
+    const nearlyAllOne = labelsBySentence.length > 0
+      && (youCount === 0 || prospectCount === 0);
+    const useDpLabels = !lowSignal && !nearlyAllOne;
+
+    let methodUsed = "speaker_single_stitched";
+    let lines = [];
+
+    if (useDpLabels && smoothedMetrics.speakerCount >= 2) {
+      const grouped = [];
+      sentenceSegments.forEach((s, i) => {
+        const label = labelsBySentence[i];
+        const prev = grouped[grouped.length - 1];
+        if (prev && prev.label === label) {
+          prev.text = `${prev.text} ${s.text}`.trim();
+        } else {
+          grouped.push({ label, text: s.text });
+        }
+      });
+      lines = grouped.map((g) => `${g.label}: ${g.text}`);
+      methodUsed = "you_prospect_dp";
+    } else if (smoothedMetrics.speakerCount >= 2) {
+      const labels = new Map();
+      labels.set(speakerOrder[0], "Speaker A");
+      labels.set(speakerOrder[1], "Speaker B");
+      const grouped = [];
+      segments.forEach((s) => {
+        const label = labels.get(s.speakerKey) || "Speaker";
+        const prev = grouped[grouped.length - 1];
+        if (prev && prev.label === label) {
+          prev.text = `${prev.text} ${s.text}`.trim();
+        } else {
+          grouped.push({ label, text: s.text });
+        }
+      });
+      lines = grouped.map((g) => `${g.label}: ${g.text}`);
+      methodUsed = "speaker_ab_stitched";
+    } else {
+      const grouped = [];
+      segments.forEach((s) => {
+        const prev = grouped[grouped.length - 1];
+        if (prev) {
+          prev.text = `${prev.text} ${s.text}`.trim();
+        } else {
+          grouped.push({ label: "Speaker", text: s.text });
+        }
+      });
+      lines = grouped.map((g) => `${g.label}: ${g.text}`);
+      methodUsed = "speaker_single_stitched";
+    }
 
     transcriptJson.diarization_meta = {
       ...(transcriptJson.diarization_meta || {}),
@@ -412,122 +511,19 @@ async function assemblyTranscribe(filePath) {
       topShare: smoothedMetrics.topShare,
       switches: smoothedMetrics.switches,
       smoothed: true,
-      lowConfidence,
-      lowConfidenceSemantic,
       chunks_before: rawSegments.length,
       chunks_after: segments.length,
       fragments_stitched_count: stitchedResult.fragmentsStitchedCount,
-      jitter_ratio: jitterRatio,
-      used_role_classifier: false,
+      sentences_count: sentenceSegments.length,
+      switches_after_dp: labelsBySentence.reduce((acc, l, i, arr) => {
+        if (i === 0) return acc;
+        return acc + (l !== arr[i - 1] ? 1 : 0);
+      }, 0),
+      avg_abs_score: avgAbsScore,
+      method_used: methodUsed,
     };
 
-    let labels = new Map();
-    let useRoles = false;
-    let usedRoleClassifier = false;
-
-    const classifyRole = (text) => {
-      const agentPattern =
-        /\b(this is|with|calling|quick one|do you have|can i|i'?m not calling to sell|what'?s better|i'?ll send|calendar|best email)\b/gi;
-      const prospectPattern =
-        /\b(who'?s this|stop you|already have|not interested|busy|don'?t want|we filed|denied|storm chaser|commission)\b/gi;
-      const agentScore = (text.match(agentPattern) || []).length;
-      const prospectScore = (text.match(prospectPattern) || []).length;
-      if (agentScore - prospectScore >= 2) return { role: "agent", score: agentScore };
-      if (prospectScore - agentScore >= 2) return { role: "prospect", score: prospectScore };
-      return { role: "unknown", score: 0 };
-    };
-
-    if (smoothedMetrics.speakerCount >= 2 && jitterFallback) {
-      const roleSegments = segments.map((s) => {
-        const result = classifyRole(s.text);
-        return { ...s, role: result.role, roleScore: result.score };
-      });
-      for (let i = 0; i < roleSegments.length; i++) {
-        if (roleSegments[i].role !== "unknown") continue;
-        let resolved = null;
-        for (let j = i - 1; j >= 0; j--) {
-          if (roleSegments[j].role !== "unknown") {
-            resolved = roleSegments[j].role;
-            break;
-          }
-        }
-        if (!resolved) {
-          for (let j = i + 1; j < roleSegments.length; j++) {
-            if (roleSegments[j].role !== "unknown") {
-              resolved = roleSegments[j].role;
-              break;
-            }
-          }
-        }
-        roleSegments[i].role = resolved || "unknown";
-      }
-      const mergedByRole = [];
-      roleSegments.forEach((s) => {
-        const prev = mergedByRole[mergedByRole.length - 1];
-        if (prev && prev.role === s.role && s.role !== "unknown") {
-          prev.text = `${prev.text} ${s.text}`.trim();
-          prev.end = s.end ?? prev.end;
-        } else {
-          mergedByRole.push({ ...s });
-        }
-      });
-      labels.set("agent", "You");
-      labels.set("prospect", "Prospect");
-      labels.set("unknown", "Speaker");
-      usedRoleClassifier = true;
-      const lines = mergedByRole.map((s) => `${labels.get(s.role) || "Speaker"}: ${s.text}`);
-      transcriptText = lines.join("\n");
-    } else if (smoothedMetrics.speakerCount >= 2 && !lowConfidence && !lowConfidenceSemantic) {
-      const callerPattern =
-        /\b(this is|with\s+\w+|calling|quick one|do you have|can i|i'm not calling to sell|i appreciate|best email|calendar invite)\b/gi;
-      const calleePattern =
-        /\b(who'?s this|stop you|already have|not interested|busy|don'?t want|commission|insurance|storm chaser|denied)\b/gi;
-
-      const countMatches = (text, pattern) => {
-        if (!text) return 0;
-        const matches = text.match(pattern);
-        return matches ? matches.length : 0;
-      };
-
-      const scores = speakerOrder.map((key) => {
-        const text = speakerText.get(key) || "";
-        const callerScore = countMatches(text, callerPattern);
-        const calleeScore = countMatches(text, calleePattern);
-        return { key, score: callerScore - calleeScore };
-      });
-
-      scores.sort((a, b) => b.score - a.score);
-      const top = scores[0];
-      const second = scores[1];
-      if (top && second && top.score - second.score >= 2) {
-        labels.set(top.key, "You");
-        labels.set(second.key, "Prospect");
-        useRoles = true;
-      }
-    }
-
-    let methodUsed = "speaker_stitched";
-    if (usedRoleClassifier) {
-      methodUsed = "role_classifier";
-    } else if (!useRoles && smoothedMetrics.speakerCount >= 2) {
-      labels.set(speakerOrder[0], "Speaker A");
-      labels.set(speakerOrder[1], "Speaker B");
-      methodUsed = "speaker_ab_stitched";
-    }
-    if (useRoles) methodUsed = "you_prospect_stitched";
-
-    transcriptJson.diarization_meta.method_used = methodUsed;
-    transcriptJson.diarization_meta.used_role_classifier = usedRoleClassifier;
-
-    if (!usedRoleClassifier) {
-      const lines = segments.map((s) => {
-        const label =
-          labels.get(s.speakerKey)
-          || (smoothedMetrics.speakerCount >= 2 ? "Speaker" : "Speaker");
-        return `${label}: ${s.text}`;
-      });
-      transcriptText = lines.join("\n");
-    }
+    transcriptText = lines.join("\n");
   }
 
   return { transcriptText, transcriptJson };
