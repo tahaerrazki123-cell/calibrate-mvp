@@ -281,12 +281,18 @@ async function assemblyTranscribe(filePath) {
   const startsWithLower = (text) => /^[a-z]/.test(text);
   const startsWithContinuation = (text) =>
     /^(and|but|or|so|because|that|which)\b/i.test(text);
-  const startsWithContinuationToken = (text) => /^[a-z0-9]/i.test(text);
+  const startsWithContinuationToken = (text) => {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return false;
+    if (/^(and|but|or|so|because|that|which|do|a|an|the)\b/i.test(trimmed)) return true;
+    return /^[a-z0-9]/i.test(trimmed);
+  };
   const endsWithFragment = (text) => {
     const trimmed = String(text || "").trim();
     if (/[,:;]\s*$/.test(trimmed)) return true;
     if (/[-–—]\s*$/.test(trimmed)) return true;
-    if (/\b(no|gonna|to|a|the)\.\s*$/i.test(trimmed)) return true;
+    if (/\b(no|gonna|to|a|an|the|and|but|so)\.\s*$/i.test(trimmed)) return true;
+    if (/\b(to do|plus|because)\.\s*$/i.test(trimmed)) return true;
     const tokens = trimmed.match(/[a-z0-9]+/gi) || [];
     const last = tokens[tokens.length - 1] || "";
     return last.length > 0 && last.length <= 2;
@@ -302,15 +308,20 @@ async function assemblyTranscribe(filePath) {
         const curr = stitched[i];
         const prev = next[next.length - 1];
         const upcoming = stitched[i + 1];
+        const prevFragment = prev && endsWithFragment(prev.text);
         if (
           prev
           && prev.speakerKey !== curr.speakerKey
-          && (!endsWithTerminal(prev.text) || endsWithFragment(prev.text) || isShortBlip(prev.text))
+          && (
+            prevFragment
+            || !endsWithTerminal(prev.text)
+            || isShortBlip(prev.text)
+          )
           && (
             startsWithLower(curr.text)
             || startsWithContinuation(curr.text)
             || startsWithContinuationToken(curr.text)
-            || endsWithFragment(prev.text)
+            || prevFragment
           )
         ) {
           prev.text = `${prev.text} ${curr.text}`.trim();
@@ -357,9 +368,70 @@ async function assemblyTranscribe(filePath) {
     }))
     .filter((s) => s.text.length > 0);
 
+  const wordCount = (text) => (String(text || "").match(/[a-z0-9]+/gi) || []).length;
+  const isTinySegment = (text) => {
+    const cleaned = String(text || "").trim();
+    if (!cleaned) return true;
+    if (wordCount(cleaned) <= 3) return true;
+    if (cleaned.length <= 18) return true;
+    if (/^(so|yeah|ok(ay)?|right|sure|alright|perfect)\b/i.test(cleaned)) return true;
+    return false;
+  };
+
+  const absorbTinyTurns = (segments) => {
+    const next = [];
+    let tinyAbsorbedCount = 0;
+    for (let i = 0; i < segments.length; i++) {
+      const curr = segments[i];
+      const prev = next[next.length - 1];
+      const upcoming = segments[i + 1];
+      if (!curr || !curr.text) continue;
+      if (isTinySegment(curr.text)) {
+        if (prev && upcoming && prev.speakerKey === upcoming.speakerKey) {
+          prev.text = `${prev.text} ${curr.text}`.trim();
+          prev.end = curr.end ?? prev.end;
+          tinyAbsorbedCount += 1;
+          continue;
+        }
+        if (prev && endsWithFragment(prev.text)) {
+          prev.text = `${prev.text} ${curr.text}`.trim();
+          prev.end = curr.end ?? prev.end;
+          tinyAbsorbedCount += 1;
+          continue;
+        }
+        if (upcoming && endsWithFragment(curr.text)) {
+          upcoming.text = `${curr.text} ${upcoming.text}`.trim();
+          upcoming.start = curr.start ?? upcoming.start;
+          tinyAbsorbedCount += 1;
+          continue;
+        }
+      }
+      next.push(curr);
+    }
+    return { segments: mergeAdjacent(next), tinyAbsorbedCount };
+  };
+
+  const repairPunctuation = (text) => {
+    let repairs = 0;
+    let next = String(text || "");
+    const rules = [
+      { regex: /\b(no|to|a|an|the|and|but|so)\.\s+([A-Z])/g, replace: "$1 $2" },
+      { regex: /\b(to do|plus|because)\.\s+([A-Z])/g, replace: "$1 $2" },
+    ];
+    rules.forEach((rule) => {
+      next = next.replace(rule.regex, (match, p1, p2) => {
+        repairs += 1;
+        return `${p1} ${p2.toLowerCase()}`;
+      });
+    });
+    return { text: next, repairs };
+  };
+
   let transcriptText = rawText;
   const stitchedResult = stitchSegments(rawSegments);
-  const segments = smoothSegments(stitchedResult.stitched).filter((s) => s.text.length > 0);
+  const smoothedSegments = smoothSegments(stitchedResult.stitched).filter((s) => s.text.length > 0);
+  const tinyResult = absorbTinyTurns(smoothedSegments);
+  const segments = tinyResult.segments;
 
   if (segments.length > 0) {
     const smoothedMetrics = computeMetrics(segments);
@@ -386,8 +458,11 @@ async function assemblyTranscribe(filePath) {
     };
 
     const sentenceSegments = [];
+    let punctuationRepairsCount = 0;
     segments.forEach((s) => {
-      const sentences = sentenceSplit(s.text);
+      const repair = repairPunctuation(s.text);
+      punctuationRepairsCount += repair.repairs;
+      const sentences = sentenceSplit(repair.text);
       sentences.forEach((t) => {
         sentenceSegments.push({
           text: t,
@@ -514,6 +589,8 @@ async function assemblyTranscribe(filePath) {
       chunks_before: rawSegments.length,
       chunks_after: segments.length,
       fragments_stitched_count: stitchedResult.fragmentsStitchedCount,
+      tiny_absorbed_count: tinyResult.tinyAbsorbedCount,
+      punctuation_repairs_count: punctuationRepairsCount,
       sentences_count: sentenceSegments.length,
       switches_after_dp: labelsBySentence.reduce((acc, l, i, arr) => {
         if (i === 0) return acc;
