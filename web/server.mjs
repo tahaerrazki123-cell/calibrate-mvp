@@ -1911,14 +1911,17 @@ ${transcripts.slice(0, 15).map((t, i) => `--- TRANSCRIPT ${i + 1} ---\n${t}`).jo
           last_run_created_at: latestRunCreatedAt,
         },
       ],
-      { onConflict: "entity_id" }
+      { onConflict: "user_id,entity_id" }
     )
     .select("playbook_json, updated_at, last_run_created_at")
     .maybeSingle();
 
   if (pErr) {
     if (handleMissingUserId(res, "entity_playbooks", pErr)) return;
-    return res.status(400).json({ error: pErr.message });
+    return res.status(500).json({
+      error: "Playbook store misconfigured",
+      code: "PLAYBOOK_UPSERT_SCHEMA",
+    });
   }
   res.json({
     playbook: savedPlaybook?.playbook_json || playbook,
