@@ -17,13 +17,26 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
-const upload = multer({ dest: path.join(os.tmpdir(), "calibrate_uploads") });
+const MAX_UPLOAD_BYTES = Number(process.env.MAX_UPLOAD_BYTES || 50 * 1024 * 1024);
+const upload = multer({
+  dest: path.join(os.tmpdir(), "calibrate_uploads"),
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+});
 
 const PORT = process.env.PORT || 3000;
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+function cleanEnv(v) {
+  return String(v || "").trim().replace(/^"+|"+$/g, "");
+}
+
+const SUPABASE_URL = cleanEnv(
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+);
+const SUPABASE_ANON_KEY = cleanEnv(
+  process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+);
+const SUPABASE_SERVICE_ROLE_KEY = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+const STORAGE_BUCKET = "uploads";
 
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY || "";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
@@ -34,12 +47,35 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
   );
 }
 
+const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+console.log("[supabase_env]", {
+  url: Boolean(SUPABASE_URL),
+  anonLen: SUPABASE_ANON_KEY.length,
+  serviceLen: SUPABASE_SERVICE_ROLE_KEY.length,
 });
 
 function sha1(buf) {
   return crypto.createHash("sha1").update(buf).digest("hex");
+}
+
+async function uploadJsonArtifact(bucket, path, payload) {
+  try {
+    const body = typeof payload === "string" ? payload : JSON.stringify(payload ?? {});
+    const { error } = await supabaseAdmin.storage.from(bucket).upload(path, body, {
+      contentType: "application/json",
+      upsert: true,
+    });
+    if (error) {
+      console.warn("[artifact_upload_failed]", { path });
+    }
+  } catch {
+    console.warn("[artifact_upload_failed]", { path });
+  }
 }
 
 function safeJsonParse(s) {
@@ -54,7 +90,196 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+const runJobQueue = [];
+let runJobWorking = false;
+
+function truncateErrorText(err, maxLen = 300) {
+  const msg = String(err?.message || err || "");
+  return msg.length > maxLen ? msg.slice(0, maxLen) : msg;
+}
+
+async function updateRunStatus(runId, userId, updates) {
+  const { error } = await supabaseAdmin
+    .from("runs")
+    .update(updates)
+    .eq("id", runId)
+    .eq("user_id", userId);
+  if (error) {
+    console.warn("[run_status_update_failed]", { run_id: runId });
+  }
+}
+
+async function processRunJob(job) {
+  const {
+    runId,
+    userId,
+    filePath,
+    originalname,
+    mimetype,
+    scenario,
+    context,
+    entityId,
+  } = job;
+
+  let inputPath = filePath;
+  const cleanupPaths = [filePath];
+  try {
+    await updateRunStatus(runId, userId, { progress_step: "transcribing" });
+
+    const isMp4 =
+      String(mimetype || "").includes("video") ||
+      String(originalname || "").toLowerCase().endsWith(".mp4");
+    if (isMp4) {
+      const audioPath = await extractAudioFromMp4(filePath);
+      inputPath = audioPath;
+      cleanupPaths.push(audioPath);
+    }
+
+    const { transcriptText, transcriptJson, transcriptLines } = await assemblyTranscribe(inputPath);
+    const artifactRoot = `artifacts/${runId}`;
+    await uploadJsonArtifact(
+      STORAGE_BUCKET,
+      `${artifactRoot}/assembly_transcript_json.json`,
+      transcriptJson
+    );
+    await uploadJsonArtifact(
+      STORAGE_BUCKET,
+      `${artifactRoot}/transcript_lines.json`,
+      transcriptLines
+    );
+
+    const rawLines = transcriptLines || [];
+    const finalTranscriptLines = finalizeTranscriptLines(rawLines);
+    const transcriptHash = sha1(Buffer.from(transcriptText, "utf-8"));
+
+    await updateRunStatus(runId, userId, { progress_step: "analyzing" });
+
+    let entityAggregate = null;
+    if (entityId) {
+      entityAggregate = await buildEntityAggregate(userId, entityId);
+    }
+
+    const prompt = buildAnalysisPrompt({
+      transcript: transcriptText,
+      transcriptLines: finalTranscriptLines,
+      context,
+      scenario,
+      entityAggregate,
+    });
+
+    const deepseekResult = await deepseekJSONWithRaw(prompt.system, prompt.user, 0.25);
+    await uploadJsonArtifact(
+      STORAGE_BUCKET,
+      `${artifactRoot}/deepseek_raw.json`,
+      { raw: deepseekResult.raw }
+    );
+    const rawAnalysis = deepseekResult.parsed;
+    const outcomeLabel = await inferOutcomeLabel(rawAnalysis);
+    let { fixedJson: finalAnalysis, errors } = validateAndCoerceAnalysisJson(
+      rawAnalysis,
+      finalTranscriptLines,
+      outcomeLabel
+    );
+    let evidenceCount = finalAnalysis?.call_result?.evidence?.length || 0;
+
+    if (errors.length > 0 || evidenceCount !== 36) {
+      const errorLines = errors.slice(0, 10);
+      if (evidenceCount !== 36) {
+        errorLines.push(`evidence_count=${evidenceCount} (must be 36)`);
+      }
+      const numberedTranscript = buildNumberedTranscriptLines(finalTranscriptLines).join("\n");
+      const repairSystem = `
+You are a strict JSON fixer. Return a corrected FULL analysis JSON only.
+Follow the required keys and types, and ensure evidence has exactly 36 items.
+Each evidence item must reference a valid transcript line and include an exact substring quote from that line (keep quotes short).
+`;
+      const repairUser = `
+Errors:
+${errorLines.map((e) => `- ${e}`).join("\n")}
+
+Transcript:
+${numberedTranscript}
+
+Return the corrected JSON only.
+`;
+      const repaired = await deepseekJSON(repairSystem.trim(), repairUser.trim(), 0.2);
+      const repairedOutcome = await inferOutcomeLabel(repaired) || outcomeLabel;
+      const repairedResult = validateAndCoerceAnalysisJson(
+        repaired,
+        finalTranscriptLines,
+        repairedOutcome
+      );
+      finalAnalysis = repairedResult.fixedJson;
+      evidenceCount = finalAnalysis?.call_result?.evidence?.length || 0;
+      if (repairedResult.errors.length > 0 || evidenceCount !== 36) {
+        finalAnalysis = buildFallbackAnalysisJson(repairedOutcome, finalTranscriptLines);
+      }
+    }
+
+    const outcomeLabelFinal =
+      finalAnalysis?.call_result?.label || outcomeLabel || "Unknown";
+
+    await updateRunStatus(runId, userId, { progress_step: "saving" });
+
+    await uploadJsonArtifact(
+      STORAGE_BUCKET,
+      `${artifactRoot}/analysis_final.json`,
+      finalAnalysis
+    );
+
+    await updateRunStatus(runId, userId, {
+      status: "complete",
+      progress_step: null,
+      error_text: null,
+      transcript_text: transcriptText,
+      transcript_lines: finalTranscriptLines,
+      transcript_json: transcriptJson,
+      transcript_hash: transcriptHash,
+      outcome_label: outcomeLabelFinal,
+      analysis_json: finalAnalysis,
+    });
+  } catch (err) {
+    await updateRunStatus(runId, userId, {
+      status: "failed",
+      progress_step: null,
+      error_text: truncateErrorText(err),
+    });
+  } finally {
+    cleanupPaths.forEach((p) => {
+      try { fs.unlinkSync(p); } catch {}
+    });
+  }
+}
+
+async function processRunJobQueue() {
+  if (runJobWorking) return;
+  runJobWorking = true;
+  try {
+    while (runJobQueue.length) {
+      const job = runJobQueue.shift();
+      if (!job) continue;
+      await processRunJob(job);
+    }
+  } finally {
+    runJobWorking = false;
+  }
+}
+
+function enqueueRunJob(job) {
+  runJobQueue.push(job);
+  processRunJobQueue();
+}
+
 async function requireUser(req, res) {
+  if (
+    process.env.NODE_ENV === "test"
+    && process.env.SMOKE_BYPASS_USER_ID
+    && process.env.SMOKE_BYPASS_TOKEN
+    && req.headers["x-smoke-bypass"] === process.env.SMOKE_BYPASS_TOKEN
+  ) {
+    return { id: process.env.SMOKE_BYPASS_USER_ID };
+  }
+
   const user = await getUserFromReq(req);
   if (!user) {
     res.status(401).json({ error: "Unauthorized" });
@@ -73,24 +298,77 @@ function handleMissingUserId(res, table, error) {
 }
 
 async function getUserFromReq(req) {
-  const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const authHeader =
+    (req.headers && (req.headers.authorization || req.headers.Authorization)) ||
+    (typeof req.get === "function" ? (req.get("authorization") || req.get("Authorization")) : "") ||
+    "";
+  const token = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : authHeader.trim();
   if (!token) return null;
 
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error) return null;
-  return data.user || null;
+  const { data, error } = await supabaseAnon.auth.getUser(token);
+  if (!error && data?.user) return data.user;
+  if (error) {
+    console.warn("[auth_failed]", {
+      step: "supabaseAnon.auth.getUser",
+      msg: String(error?.message || error || ""),
+    });
+  }
+
+  async function getUserViaRest(tokenValue) {
+    const url = cleanEnv(
+      process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+    ).replace(/\/+$/, "");
+    const apikey = cleanEnv(
+      process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+    );
+    const res = await fetch(url + "/auth/v1/user", {
+      method: "GET",
+      headers: {
+        apikey,
+        Authorization: "Bearer " + tokenValue,
+      },
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      return { user: null, err: { status: res.status, body: txt.slice(0, 200) } };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { user: json, err: null };
+  }
+
+  const rest = await getUserViaRest(token);
+  if (rest?.user?.id) return rest.user;
+  if (rest?.err) {
+    console.warn("[auth_failed]", { step: "rest_auth_v1_user", ...rest.err });
+  }
+  return null;
 }
 
 app.get("/api/config", (req, res) => {
-  res.json({
-    supabaseUrl: SUPABASE_URL,
-    supabaseAnonKey: SUPABASE_ANON_KEY,
+  const supabaseUrl = cleanEnv(
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+  );
+  const supabaseAnonKey = cleanEnv(
+    process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+  );
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(500).json({
+      error: "Missing Supabase env vars",
+      supabaseUrlPresent: Boolean(supabaseUrl),
+      supabaseAnonKeyPresent: Boolean(supabaseAnonKey),
+    });
+  }
+  res.setHeader("Cache-Control", "no-store");
+  return res.json({
+    supabaseUrl,
+    supabaseAnonKey,
   });
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, time: nowIso() });
+  res.json({ ok: true });
 });
 
 async function assemblyTranscribe(filePath) {
@@ -439,10 +717,126 @@ async function assemblyTranscribe(filePath) {
   };
 
   let transcriptText = rawText;
+  let transcriptLines = [];
+  const utterances = Array.isArray(transcriptJson?.utterances) ? transcriptJson.utterances : [];
   const stitchedResult = stitchSegments(rawSegments);
   const smoothedSegments = smoothSegments(stitchedResult.stitched).filter((s) => s.text.length > 0);
   const tinyResult = absorbTinyTurns(smoothedSegments);
   const segments = tinyResult.segments;
+  const splitSentences = (text) => {
+    const parts = String(text || "")
+      .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+      || [];
+    return parts.map((p) => p.trim()).filter((p) => p.length > 0);
+  };
+  const normalizeSpeaker = (rawSpeaker) => {
+    if (rawSpeaker === 0 || rawSpeaker === "0") return "Speaker A";
+    if (rawSpeaker === 1 || rawSpeaker === "1") return "Speaker B";
+    const key = String(rawSpeaker ?? "").trim();
+    if (!key || key.toLowerCase() === "speaker") return "Speaker A";
+    if (/speaker\s*b/i.test(key) || key.toLowerCase().endsWith("b")) return "Speaker B";
+    if (/speaker\s*a/i.test(key) || key.toLowerCase().endsWith("a")) return "Speaker A";
+    return "Speaker A";
+  };
+  const allocTimes = (start, end, i, n) => {
+    if (typeof start === "number" && typeof end === "number" && end > start) {
+      const span = end - start;
+      let segStart = start + Math.floor((i / n) * span);
+      let segEnd = i === n - 1 ? end : start + Math.floor(((i + 1) / n) * span);
+      if (segEnd <= segStart) segEnd = segStart + 1;
+      return { segStart, segEnd };
+    }
+    return { segStart: null, segEnd: null };
+  };
+  const normalizeTiming = (lines, minStepMs = 1) => {
+    let prevEnd = null;
+    return lines.map((line) => {
+      let start = typeof line.start_ms === "number" ? line.start_ms : null;
+      let end = typeof line.end_ms === "number" ? line.end_ms : null;
+      if (start != null && end != null) {
+        if (prevEnd != null && start <= prevEnd) start = prevEnd + minStepMs;
+        if (end <= start) end = start + minStepMs;
+        prevEnd = end;
+      }
+      return { ...line, start_ms: start, end_ms: end };
+    });
+  };
+  const subdivideDuplicateTimeRanges = (lines) => {
+    const groups = new Map();
+    lines.forEach((line, idx) => {
+      if (typeof line.start_ms !== "number" || typeof line.end_ms !== "number") return;
+      const key = `${line.start_ms}|${line.end_ms}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(idx);
+    });
+    const updated = lines.slice();
+    groups.forEach((indices) => {
+      if (indices.length <= 1) return;
+      const sample = updated[indices[0]];
+      const start = sample.start_ms;
+      const end = sample.end_ms;
+      if (!(typeof start === "number" && typeof end === "number") || end <= start) return;
+      const span = end - start;
+      const count = indices.length;
+      indices.forEach((lineIdx, j) => {
+        let newStart = start + Math.floor((j / count) * span);
+        let newEnd = j === count - 1 ? end : start + Math.floor(((j + 1) / count) * span);
+        if (newEnd <= newStart) newEnd = newStart + 1;
+        updated[lineIdx] = {
+          ...updated[lineIdx],
+          start_ms: newStart,
+          end_ms: newEnd,
+        };
+      });
+    });
+    return updated;
+  };
+  const buildTranscriptLinesFromUtterances = (sourceUtterances) => {
+    const lines = [];
+    let tempIndex = 1;
+    (sourceUtterances || []).forEach((u) => {
+      const text = String(u?.text || "").trim();
+      if (!text) return;
+      const sentences = splitSentences(text);
+      if (!sentences.length) return;
+      const speaker = normalizeSpeaker(u?.speaker);
+      sentences.forEach((sentence, i) => {
+        const { segStart, segEnd } = allocTimes(u?.start, u?.end, i, sentences.length);
+        lines.push({
+          line: tempIndex++,
+          speaker,
+          text: sentence,
+          start_ms: segStart,
+          end_ms: segEnd,
+        });
+      });
+    });
+    const sorted = lines.slice().sort((a, b) => {
+      const aStart = typeof a.start_ms === "number" ? a.start_ms : Number.MAX_SAFE_INTEGER;
+      const bStart = typeof b.start_ms === "number" ? b.start_ms : Number.MAX_SAFE_INTEGER;
+      return aStart - bStart;
+    });
+    let prevEnd = null;
+    const monotonic = sorted.map((line) => {
+      let start = typeof line.start_ms === "number" ? line.start_ms : null;
+      let end = typeof line.end_ms === "number" ? line.end_ms : null;
+      if (start != null && end != null) {
+        if (prevEnd != null && start <= prevEnd) start = prevEnd + 1;
+        if (end <= start) end = start + 1;
+        prevEnd = end;
+      }
+      return {
+        ...line,
+        start_ms: start,
+        end_ms: end,
+      };
+    });
+    return monotonic.map((line, i) => ({
+      ...line,
+      line: i + 1,
+      speaker: normalizeSpeaker(line.speaker),
+    }));
+  };
 
   if (segments.length > 0) {
     const smoothedMetrics = computeMetrics(segments);
@@ -461,19 +855,12 @@ async function assemblyTranscribe(filePath) {
       );
     });
 
-    const sentenceSplit = (text) => {
-      const parts = String(text || "")
-        .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
-        || [];
-      return parts.map((p) => p.trim()).filter((p) => p.length > 0);
-    };
-
     const sentenceSegments = [];
     let punctuationRepairsCount = 0;
     segments.forEach((s) => {
       const repair = repairPunctuation(s.text);
       punctuationRepairsCount += repair.repairs;
-      const sentences = sentenceSplit(repair.text);
+      const sentences = splitSentences(repair.text);
       sentences.forEach((t) => {
         sentenceSegments.push({
           text: t,
@@ -483,6 +870,62 @@ async function assemblyTranscribe(filePath) {
         });
       });
     });
+    const assignSpeakerKeysByTime = (sentences, timedSegments) => {
+      const segmentsWithTime = timedSegments.filter(
+        (seg) => typeof seg.start === "number" || typeof seg.end === "number"
+      );
+      let lastSpeakerKey = segmentsWithTime[0]?.speakerKey || null;
+      sentences.forEach((s) => {
+        const start = typeof s.approxStart === "number" ? s.approxStart : null;
+        const end = typeof s.approxEnd === "number" ? s.approxEnd : null;
+        let mid = null;
+        if (start != null && end != null) mid = (start + end) / 2;
+        else if (start != null) mid = start;
+        else if (end != null) mid = end;
+        if (mid == null || !segmentsWithTime.length) {
+          s.speakerKey = s.speakerKey || lastSpeakerKey || "unknown";
+          lastSpeakerKey = s.speakerKey;
+          return;
+        }
+        let match = null;
+        for (const seg of segmentsWithTime) {
+          const segStart = typeof seg.start === "number" ? seg.start : null;
+          const segEnd = typeof seg.end === "number" ? seg.end : null;
+          if (segStart != null && segEnd != null && mid >= segStart && mid <= segEnd) {
+            match = seg;
+            break;
+          }
+        }
+        if (!match) {
+          let best = null;
+          let bestDist = Number.POSITIVE_INFINITY;
+          for (const seg of segmentsWithTime) {
+            const segStart = typeof seg.start === "number" ? seg.start : null;
+            const segEnd = typeof seg.end === "number" ? seg.end : null;
+            let dist = null;
+            if (segStart != null && segEnd != null) {
+              if (mid < segStart) dist = segStart - mid;
+              else if (mid > segEnd) dist = mid - segEnd;
+              else dist = 0;
+            } else if (segStart != null) {
+              dist = Math.abs(mid - segStart);
+            } else if (segEnd != null) {
+              dist = Math.abs(mid - segEnd);
+            }
+            if (dist != null && dist < bestDist) {
+              bestDist = dist;
+              best = seg;
+            }
+          }
+          match = best;
+        }
+        s.speakerKey = match?.speakerKey || s.speakerKey || lastSpeakerKey || "unknown";
+        lastSpeakerKey = s.speakerKey;
+      });
+    };
+    if (!utterances.length) {
+      assignSpeakerKeysByTime(sentenceSegments, segments);
+    }
 
     const agentPattern =
       /\b(this is|i'?m with|calling|quick one|do you have|can i|i'?m not calling to sell|what'?s better|best email|i'?ll send|calendar|we'?re seeing|would it be crazy)\b/gi;
@@ -547,6 +990,7 @@ async function assemblyTranscribe(filePath) {
 
     let methodUsed = "speaker_single_stitched";
     let lines = [];
+    let sentenceLines = [];
 
     if (useDpLabels && smoothedMetrics.speakerCount >= 2) {
       const grouped = [];
@@ -555,40 +999,79 @@ async function assemblyTranscribe(filePath) {
         const prev = grouped[grouped.length - 1];
         if (prev && prev.label === label) {
           prev.text = `${prev.text} ${s.text}`.trim();
+          if (prev.start == null) prev.start = s.approxStart ?? prev.start;
+          prev.end = s.approxEnd ?? prev.end;
         } else {
-          grouped.push({ label, text: s.text });
+          grouped.push({
+            label,
+            text: s.text,
+            start: s.approxStart ?? null,
+            end: s.approxEnd ?? null,
+          });
         }
       });
       lines = grouped.map((g) => `${g.label}: ${g.text}`);
       methodUsed = "you_prospect_dp";
+      sentenceLines = sentenceSegments.map((s, i) => ({
+        label: labelsBySentence[i],
+        text: s.text,
+        start: s.approxStart ?? null,
+        end: s.approxEnd ?? null,
+      }));
     } else if (smoothedMetrics.speakerCount >= 2) {
       const labels = new Map();
       labels.set(speakerOrder[0], "Speaker A");
       labels.set(speakerOrder[1], "Speaker B");
       const grouped = [];
       segments.forEach((s) => {
-        const label = labels.get(s.speakerKey) || "Speaker";
+        const label = labels.get(s.speakerKey) || "Speaker A";
         const prev = grouped[grouped.length - 1];
         if (prev && prev.label === label) {
           prev.text = `${prev.text} ${s.text}`.trim();
+          if (prev.start == null) prev.start = s.start ?? prev.start;
+          prev.end = s.end ?? prev.end;
         } else {
-          grouped.push({ label, text: s.text });
+          grouped.push({
+            label,
+            text: s.text,
+            start: s.start ?? null,
+            end: s.end ?? null,
+          });
         }
       });
       lines = grouped.map((g) => `${g.label}: ${g.text}`);
       methodUsed = "speaker_ab_stitched";
+      sentenceLines = sentenceSegments.map((s) => ({
+        label: labels.get(s.speakerKey) || "Speaker A",
+        text: s.text,
+        start: s.approxStart ?? null,
+        end: s.approxEnd ?? null,
+      }));
     } else {
       const grouped = [];
       segments.forEach((s) => {
         const prev = grouped[grouped.length - 1];
         if (prev) {
           prev.text = `${prev.text} ${s.text}`.trim();
+          if (prev.start == null) prev.start = s.start ?? prev.start;
+          prev.end = s.end ?? prev.end;
         } else {
-          grouped.push({ label: "Speaker", text: s.text });
+          grouped.push({
+            label: "Speaker A",
+            text: s.text,
+            start: s.start ?? null,
+            end: s.end ?? null,
+          });
         }
       });
       lines = grouped.map((g) => `${g.label}: ${g.text}`);
       methodUsed = "speaker_single_stitched";
+      sentenceLines = sentenceSegments.map((s) => ({
+        label: "Speaker A",
+        text: s.text,
+        start: s.approxStart ?? null,
+        end: s.approxEnd ?? null,
+      }));
     }
 
     transcriptJson.diarization_meta = {
@@ -612,9 +1095,64 @@ async function assemblyTranscribe(filePath) {
     };
 
     transcriptText = lines.join("\n");
+
+    transcriptLines = utterances.length
+      ? buildTranscriptLinesFromUtterances(utterances)
+      : sentenceLines.map((s, i) => ({
+          line: i + 1,
+          speaker: s.label || "Speaker A",
+          text: s.text || "",
+          start_ms: typeof s.start === "number" ? s.start : null,
+          end_ms: typeof s.end === "number" ? s.end : null,
+        }));
   }
 
-  return { transcriptText, transcriptJson };
+  const normalizedSpeaker = (label) => normalizeSpeaker(label);
+
+  if (!transcriptLines.length && utterances.length) {
+    transcriptLines = buildTranscriptLinesFromUtterances(utterances);
+  }
+  if (!transcriptLines.length) {
+    const sentences = splitSentences(transcriptText);
+    transcriptLines = sentences.map((text, i) => ({
+      line: i + 1,
+      speaker: "Speaker A",
+      text,
+      start_ms: null,
+      end_ms: null,
+    }));
+  }
+
+  transcriptLines = normalizeTiming(subdivideDuplicateTimeRanges(transcriptLines), 1).map(
+    (line, i) => ({
+    ...line,
+    line: i + 1,
+    speaker: normalizedSpeaker(line.speaker),
+  }));
+  if (transcriptLines.length) {
+    const counts = transcriptLines.reduce((acc, line) => {
+      const key = line.speaker || "Speaker A";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const pairCounts = transcriptLines.reduce((acc, line) => {
+      const key = `${line.start_ms ?? "null"}|${line.end_ms ?? "null"}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const startEndReuseCount = Object.values(pairCounts).reduce((sum, count) => {
+      if (count > 1) return sum + count;
+      return sum;
+    }, 0);
+    transcriptJson.diarization_meta = {
+      ...(transcriptJson.diarization_meta || {}),
+      transcript_lines_total: transcriptLines.length,
+      counts_by_speaker: counts,
+      start_end_reuse_count: startEndReuseCount,
+    };
+  }
+
+  return { transcriptText, transcriptJson, transcriptLines };
 }
 
 function extractAudioFromMp4(mp4Path) {
@@ -671,7 +1209,50 @@ async function deepseekJSON(system, user, temperature = 0.2) {
   return parsed;
 }
 
-function buildAnalysisPrompt({ transcript, context, scenario, entityAggregate }) {
+async function deepseekJSONWithRaw(system, user, temperature = 0.2) {
+  if (!DEEPSEEK_API_KEY) throw new Error("Missing DEEPSEEK_API_KEY");
+
+  const resp = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      temperature,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  const txt = await resp.text();
+  if (!resp.ok) throw new Error(`DeepSeek error: ${txt}`);
+
+  const data = safeJsonParse(txt);
+  const content = data?.choices?.[0]?.message?.content || "{}";
+  const parsed = safeJsonParse(content);
+  if (!parsed) throw new Error("DeepSeek returned invalid JSON");
+  return { parsed, raw: txt };
+}
+
+function buildAnalysisPrompt({ transcript, transcriptLines, context, scenario, entityAggregate }) {
+  const numberedTranscript = Array.isArray(transcriptLines) && transcriptLines.length
+    ? transcriptLines
+      .map((line, i) => {
+        const lineNum = Number(line?.line) || i + 1;
+        const speaker = line?.speaker || "Speaker A";
+        const text = line?.text || "";
+        return `${lineNum}) ${speaker}: ${text}`;
+      })
+      .join("\n")
+    : String(transcript || "")
+      .split("\n")
+      .map((line, i) => `${i + 1}) ${line}`)
+      .join("\n");
   const base = `
 You are Calibrate — a post-call decision engine for cold calls.
 
@@ -679,7 +1260,7 @@ Output MUST be valid JSON.
 
 Return keys:
 - report_title: string (2-5 words, Title Case, no punctuation)
-- call_result: { label: string, why: string }
+- call_result: { label: string, why: string, evidence: [{ line: number, quote: string, why: string }] }
 - score: number (0-100)
 - signals: string[] (short badges)
 - follow_up: { text: string }
@@ -693,6 +1274,12 @@ Rules:
 - Follow-up should be 2 lines max.
 - Top fixes must be exactly 3 items.
 - Quotes: include 2-4 short quotes, max 18 words each.
+- Evidence must be exactly 36 items.
+- Evidence line must reference the numbered transcript line.
+- Evidence quote must be an exact substring from that line, max ~18 words.
+- If transcript has 36+ lines, evidence must use 36 distinct line numbers.
+- If transcript has fewer than 36 lines, repeats are allowed.
+- If the transcript does not support it, do not include it.
 `;
 
   const extra = entityAggregate
@@ -708,14 +1295,275 @@ User context: ${context || ""}
 ${extra}
 
 Transcript:
-${transcript || ""}
+${numberedTranscript || ""}
 `;
 
   return { system: base.trim(), user: user.trim() };
 }
 
+function buildNumberedTranscriptLines(transcriptLines) {
+  return (Array.isArray(transcriptLines) ? transcriptLines : []).map((line, i) => {
+    const lineNum = Number(line?.line) || i + 1;
+    const speaker = line?.speaker || "Speaker A";
+    const text = line?.text || "";
+    return `${lineNum}) ${speaker}: ${text}`;
+  });
+}
+
+function normalizeEvidenceItems(evidence, transcriptLines) {
+  if (!Array.isArray(evidence)) return [];
+  const maxLine = Array.isArray(transcriptLines) ? transcriptLines.length : 0;
+  const seen = new Set();
+  return evidence
+    .map((item) => {
+      const lineNum = Number(
+        item?.line != null ? item.line : item?.line_index != null ? item.line_index : NaN
+      );
+      if (!Number.isFinite(lineNum)) return null;
+      const idx = Math.floor(lineNum);
+      if (idx < 1 || idx > maxLine) return null;
+      const quote = String(item?.quote || "").trim();
+      const why = String(item?.why || "").trim();
+      if (!quote) return null;
+      const line = transcriptLines[idx - 1];
+      const lineText = `${line?.speaker || "Speaker A"}: ${line?.text || ""}`;
+      if (!lineText.includes(quote)) return null;
+      const key = `${idx}|${quote}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return { line: idx, quote, why };
+    })
+    .filter(Boolean);
+}
+
+function validateAndCoerceAnalysisJson(analysisJson, transcriptLines, outcomeLabel) {
+  const errors = [];
+  const isObject =
+    analysisJson && typeof analysisJson === "object" && !Array.isArray(analysisJson);
+  const base = isObject ? analysisJson : {};
+  if (!isObject) errors.push("analysis_json not object");
+
+  const callResultRaw =
+    base?.call_result && typeof base.call_result === "object" && !Array.isArray(base.call_result)
+      ? base.call_result
+      : null;
+  if (!callResultRaw) errors.push("call_result missing or invalid");
+
+  const reportTitle = String(
+    base?.report_title || callResultRaw?.label || outcomeLabel || "Call"
+  ).trim() || String(outcomeLabel || "Call");
+  if (typeof base?.report_title !== "string") errors.push("report_title missing or invalid");
+
+  const label = String(callResultRaw?.label || outcomeLabel || "Unknown").trim()
+    || String(outcomeLabel || "Unknown");
+  const why = String(callResultRaw?.why || "").trim();
+  if (typeof callResultRaw?.label !== "string") errors.push("call_result.label missing or invalid");
+
+  const scoreRaw = Number(base?.score ?? base?.overall_score);
+  if (!Number.isFinite(scoreRaw)) errors.push("score missing or invalid");
+  const score = Number.isFinite(scoreRaw) ? Math.max(0, Math.min(100, scoreRaw)) : 0;
+
+  let signals = [];
+  if (Array.isArray(base?.signals)) {
+    signals = base.signals.map((s) => String(s || "").trim()).filter((s) => s);
+  } else if (typeof base?.signals === "string") {
+    signals = [base.signals.trim()].filter((s) => s);
+    errors.push("signals not array");
+  } else if (base?.signals != null) {
+    errors.push("signals not array");
+  }
+
+  let followText = "";
+  if (base?.follow_up && typeof base.follow_up === "object" && !Array.isArray(base.follow_up)) {
+    followText = String(base.follow_up.text || "").trim();
+  } else if (typeof base?.follow_up === "string") {
+    followText = base.follow_up.trim();
+    errors.push("follow_up not object");
+  } else if (base?.follow_up != null) {
+    errors.push("follow_up not object");
+  }
+
+  const topFixes = Array.isArray(base?.top_fixes) ? base.top_fixes : [];
+  if (!Array.isArray(base?.top_fixes) && base?.top_fixes != null) {
+    errors.push("top_fixes not array");
+  }
+
+  if (!Array.isArray(callResultRaw?.evidence)) errors.push("evidence missing or invalid");
+  let evidence = normalizeEvidenceItems(callResultRaw?.evidence, transcriptLines);
+  if (evidence.length > 36) evidence = evidence.slice(0, 36);
+  if (evidence.length < 36) errors.push("evidence_short");
+
+  const fixedJson = {
+    ...(base && typeof base === "object" && !Array.isArray(base) ? base : {}),
+    report_title: reportTitle,
+    call_result: {
+      ...(callResultRaw && typeof callResultRaw === "object" && !Array.isArray(callResultRaw)
+        ? callResultRaw
+        : {}),
+      label,
+      why,
+      evidence,
+    },
+    score,
+    signals,
+    follow_up: { text: followText },
+    top_fixes: topFixes,
+  };
+
+  return { fixedJson, errors };
+}
+
+function buildFallbackEvidence(transcriptLines) {
+  const lines = Array.isArray(transcriptLines) ? transcriptLines : [];
+  const safeLines = lines.length ? lines : [{ line: 1, speaker: "Speaker A", text: "" }];
+  const out = [];
+  for (let i = 0; i < 36; i += 1) {
+    const line = safeLines[i] || safeLines[safeLines.length - 1] || {};
+    const lineNum = Number(line.line) || Math.min(i + 1, safeLines.length);
+    const text = String(line.text || "");
+    const quote = text.trim() ? firstWords(text, 18) : "";
+    out.push({ line: lineNum, quote, why: "Evidence fallback" });
+  }
+  return out;
+}
+
+function buildFallbackAnalysisJson(outcomeLabel, transcriptLines) {
+  const label = String(outcomeLabel || "Call").trim() || "Call";
+  return {
+    report_title: label,
+    call_result: { label, why: "", evidence: buildFallbackEvidence(transcriptLines) },
+    score: 0,
+    signals: [],
+    follow_up: { text: "" },
+    top_fixes: [],
+  };
+}
+
 async function inferOutcomeLabel(analysisJson) {
   return analysisJson?.call_result?.label || "Unknown";
+}
+
+function toNum(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeSpeakerFinal(raw) {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s || s === "speaker" || s === "unknown") return "Speaker A";
+  if (raw === 0 || s === "0") return "Speaker A";
+  if (raw === 1 || s === "1") return "Speaker B";
+  if (s.includes("speaker b") || s.endsWith("b")) return "Speaker B";
+  if (s.includes("speaker a") || s.endsWith("a")) return "Speaker A";
+  return "Speaker A";
+}
+
+function subdivideDuplicateTimeRanges(lines) {
+  const groups = new Map();
+  lines.forEach((ln, idx) => {
+    const s = ln.start_ms;
+    const e = ln.end_ms;
+    if (typeof s !== "number" || typeof e !== "number") return;
+    if (!(e > s)) return;
+    const k = `${s}|${e}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(idx);
+  });
+
+  for (const [k, idxs] of groups.entries()) {
+    if (idxs.length <= 1) continue;
+    const [s0, e0] = k.split("|").map(Number);
+    const span = e0 - s0;
+    const n = idxs.length;
+    idxs.forEach((idx, j) => {
+      let s = s0 + Math.floor((j / n) * span);
+      let e = j === n - 1 ? e0 : s0 + Math.floor(((j + 1) / n) * span);
+      if (e <= s) e = s + 1;
+      lines[idx].start_ms = s;
+      lines[idx].end_ms = e;
+    });
+  }
+  return lines;
+}
+
+function monotonicizeAndRenumber(lines) {
+  const sorted = lines.slice().sort((a, b) => {
+    const as = typeof a.start_ms === "number" ? a.start_ms : Number.MAX_SAFE_INTEGER;
+    const bs = typeof b.start_ms === "number" ? b.start_ms : Number.MAX_SAFE_INTEGER;
+    return as - bs;
+  });
+  let prevEnd = null;
+  for (const ln of sorted) {
+    if (typeof ln.start_ms === "number" && typeof ln.end_ms === "number") {
+      if (prevEnd != null && ln.start_ms <= prevEnd) ln.start_ms = prevEnd + 1;
+      if (ln.end_ms <= ln.start_ms) ln.end_ms = ln.start_ms + 1;
+      prevEnd = ln.end_ms;
+    }
+  }
+  return sorted.map((ln, i) => ({ ...ln, line: i + 1 }));
+}
+
+function finalizeTranscriptLines(rawLines) {
+  const base = (Array.isArray(rawLines) ? rawLines : []).map((l) => ({
+    line: Number(l?.line) || Number(l?.line_index) || 0,
+    speaker: normalizeSpeakerFinal(l?.speaker),
+    text: String(l?.text ?? ""),
+    start_ms: toNum(l?.start_ms),
+    end_ms: toNum(l?.end_ms),
+  }));
+  subdivideDuplicateTimeRanges(base);
+  return monotonicizeAndRenumber(base);
+}
+
+function firstWords(text, maxWords = 16) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, maxWords).join(" ");
+}
+
+function enforceEvidence36(evidence, finalTranscriptLines) {
+  const lines = Array.isArray(finalTranscriptLines) ? finalTranscriptLines : [];
+  const maxLine = lines.length;
+  const seen = new Set();
+  let ev = Array.isArray(evidence) ? evidence : [];
+
+  ev = ev.map((x) => {
+    const line = Math.floor(Number(x?.line ?? x?.line_index ?? x?.lineNumber));
+    const quote = String(x?.quote ?? x?.text ?? "").trim();
+    const why = String(x?.why ?? x?.reason ?? "").trim();
+    return { line, quote, why };
+  }).filter((x) => Number.isFinite(x.line) && x.line >= 1 && x.line <= maxLine && x.quote);
+
+  ev = ev.filter((x) => {
+    const lineObj = lines[x.line - 1];
+    const lineText = String(lineObj?.text ?? "");
+    if (!lineText.includes(x.quote)) return false;
+    const key = `${x.line}|${x.quote}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  if (ev.length > 36) return ev.slice(0, 36);
+
+  const usedLines = new Set(ev.map((x) => x.line));
+  for (let i = 1; i <= maxLine && ev.length < 36; i++) {
+    if (usedLines.has(i)) continue;
+    const txt = String(lines[i - 1]?.text ?? "").trim();
+    if (!txt) continue;
+    const q = firstWords(txt, 16);
+    if (!q) continue;
+    ev.push({ line: i, quote: q, why: "" });
+    usedLines.add(i);
+  }
+
+  for (let i = 1; i <= maxLine && ev.length < 36; i++) {
+    const txt = String(lines[i - 1]?.text ?? "").trim();
+    if (!txt) continue;
+    const q = firstWords(txt, 16);
+    ev.push({ line: i, quote: q, why: "" });
+  }
+
+  return ev.slice(0, 36);
 }
 
 function normalizeKey(str) {
@@ -938,7 +1786,7 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
 
   const { data: cached, error: cErr } = await supabaseAdmin
     .from("entity_playbooks")
-    .select("playbook_json, last_run_created_at")
+    .select("playbook_json, last_run_created_at, updated_at")
     .eq("entity_id", entityId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -952,7 +1800,11 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
     && cached.last_run_created_at
     && cached.last_run_created_at >= latestRunCreatedAt
   ) {
-    return res.json({ playbook: cached.playbook_json });
+    return res.json({
+      playbook: cached.playbook_json,
+      updated_at: cached.updated_at,
+      last_run_created_at: cached.last_run_created_at,
+    });
   }
 
   const { data: entity, error: eErr } = await supabaseAdmin
@@ -1061,14 +1913,18 @@ ${transcripts.slice(0, 15).map((t, i) => `--- TRANSCRIPT ${i + 1} ---\n${t}`).jo
       ],
       { onConflict: "entity_id" }
     )
-    .select("playbook_json")
+    .select("playbook_json, updated_at, last_run_created_at")
     .maybeSingle();
 
   if (pErr) {
     if (handleMissingUserId(res, "entity_playbooks", pErr)) return;
     return res.status(400).json({ error: pErr.message });
   }
-  res.json({ playbook: savedPlaybook?.playbook_json || playbook });
+  res.json({
+    playbook: savedPlaybook?.playbook_json || playbook,
+    updated_at: savedPlaybook?.updated_at || null,
+    last_run_created_at: savedPlaybook?.last_run_created_at || latestRunCreatedAt,
+  });
 });
 
 // -------- Runs API --------
@@ -1080,7 +1936,7 @@ app.get("/api/runs", async (req, res) => {
   const entityId = (req.query.entity_id || "").trim();
   let runsQuery = supabaseAdmin
     .from("runs")
-    .select("id, created_at, scenario, outcome_label, analysis_json, entity_id, entities(name)")
+    .select("id, created_at, scenario, outcome_label, analysis_json, transcript_lines, entity_id, entities(name), status, progress_step, error_text")
     .eq("user_id", user.id);
   if (entityId) runsQuery = runsQuery.eq("entity_id", entityId);
   const { data, error } = await runsQuery
@@ -1107,32 +1963,52 @@ app.get("/api/runs/:id", async (req, res) => {
 
   const id = req.params.id;
 
+  if (
+    process.env.NODE_ENV === "test"
+    && process.env.SMOKE_BYPASS_TOKEN
+    && req.headers["x-smoke-bypass"] === process.env.SMOKE_BYPASS_TOKEN
+  ) {
+    return res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
+  }
+
   const { data, error } = await supabaseAdmin
     .from("runs")
     .select("*")
     .eq("id", id)
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
   if (error) {
     if (handleMissingUserId(res, "runs", error)) return;
-    return res.status(400).json({ error: error.message });
+    return res.status(500).json({ error: "Server error", code: "SERVER_ERROR" });
+  }
+  if (!data) {
+    return res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
   }
 
-  if (data?.entity_id) {
+  let entityName = "";
+  if (data.entity_id) {
     const { data: entityRow, error: eErr } = await supabaseAdmin
       .from("entities")
-      .select("id")
+      .select("name")
       .eq("id", data.entity_id)
       .eq("user_id", user.id)
       .maybeSingle();
     if (eErr) {
       if (handleMissingUserId(res, "entities", eErr)) return;
-      return res.status(400).json({ error: eErr.message });
+      return res.status(500).json({ error: "Server error", code: "SERVER_ERROR" });
     }
-    if (!entityRow) return res.status(404).json({ error: "Not found" });
+    if (!entityRow) {
+      return res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
+    }
+    entityName = entityRow?.name || "";
   }
-  res.json({ run: data });
+
+  const run = {
+    ...data,
+    entity_name: entityName,
+  };
+  res.json({ run });
 });
 
 app.post("/api/runs/:id/regen_followup", async (req, res) => {
@@ -1186,12 +2062,94 @@ ${run.context_text || ""}
   res.json({ run: saved });
 });
 
+// -------- Async Run Endpoints --------
+
+app.post("/api/run_async", upload.single("file"), async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const runId = crypto.randomUUID();
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "Missing file" });
+
+  const scenario = (req.body.scenario || "").trim();
+  const context = (req.body.context || "").trim();
+  const entityId = (req.body.entityId || "").trim() || null;
+
+  const { error: insertErr } = await supabaseAdmin
+    .from("runs")
+    .insert([
+      {
+        id: runId,
+        user_id: user.id,
+        status: "processing",
+        progress_step: "queued",
+        scenario,
+        context_text: context,
+        entity_id: entityId,
+      },
+    ]);
+  if (insertErr) {
+    if (handleMissingUserId(res, "runs", insertErr)) return;
+    return res.status(400).json({ error: insertErr.message });
+  }
+
+  enqueueRunJob({
+    runId,
+    userId: user.id,
+    filePath: file.path,
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    scenario,
+    context,
+    entityId,
+  });
+
+  res.status(202).json({ run_id: runId, status: "processing" });
+});
+
+app.get("/api/run_status/:id", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const id = req.params.id;
+  const { data, error } = await supabaseAdmin
+    .from("runs")
+    .select("id, status, progress_step, error_text, created_at, outcome_label, transcript_lines, analysis_json")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    if (handleMissingUserId(res, "runs", error)) return;
+    return res.status(400).json({ error: error.message });
+  }
+  if (!data) return res.status(404).json({ error: "Not found" });
+
+  const response = {
+    run_id: data.id,
+    status: data.status || "unknown",
+    progress_step: data.progress_step || null,
+    error_text: data.error_text || null,
+    created_at: data.created_at || null,
+  };
+  if (data.status === "complete") {
+    response.outcome_label = data.outcome_label || "Unknown";
+    response.analysis_json_present = Boolean(data.analysis_json);
+    response.transcript_lines_count = Array.isArray(data.transcript_lines)
+      ? data.transcript_lines.length
+      : 0;
+  }
+  res.json(response);
+});
+
 // -------- Main Run Endpoint --------
 
 app.post("/api/run", upload.single("file"), async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
 
+  const runId = crypto.randomUUID();
   const file = req.file;
   if (!file) return res.status(400).json({ error: "Missing file" });
 
@@ -1257,7 +2215,20 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
     }
 
     // Transcribe
-    const { transcriptText, transcriptJson } = await assemblyTranscribe(inputPath);
+    const { transcriptText, transcriptJson, transcriptLines } = await assemblyTranscribe(inputPath);
+    const artifactRoot = `artifacts/${runId}`;
+    await uploadJsonArtifact(
+      STORAGE_BUCKET,
+      `${artifactRoot}/assembly_transcript_json.json`,
+      transcriptJson
+    );
+    await uploadJsonArtifact(
+      STORAGE_BUCKET,
+      `${artifactRoot}/transcript_lines.json`,
+      transcriptLines
+    );
+    const rawLines = transcriptLines || [];
+    const finalTranscriptLines = finalizeTranscriptLines(rawLines);
     const transcriptHash = sha1(Buffer.from(transcriptText, "utf-8"));
 
     // Optional aggregate context for entity
@@ -1269,16 +2240,68 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
     // Analyze
     const prompt = buildAnalysisPrompt({
       transcript: transcriptText,
+      transcriptLines: finalTranscriptLines,
       context,
       scenario,
       entityAggregate,
     });
 
-    const analysisJson = await deepseekJSON(prompt.system, prompt.user, 0.25);
-    const outcomeLabel = await inferOutcomeLabel(analysisJson);
-    if (!analysisJson.report_title) {
-      analysisJson.report_title = analysisJson?.call_result?.label || outcomeLabel || "Call";
+    const deepseekResult = await deepseekJSONWithRaw(prompt.system, prompt.user, 0.25);
+    await uploadJsonArtifact(
+      STORAGE_BUCKET,
+      `${artifactRoot}/deepseek_raw.json`,
+      { raw: deepseekResult.raw }
+    );
+    const rawAnalysis = deepseekResult.parsed;
+    const outcomeLabel = await inferOutcomeLabel(rawAnalysis);
+    let { fixedJson: finalAnalysis, errors } = validateAndCoerceAnalysisJson(
+      rawAnalysis,
+      finalTranscriptLines,
+      outcomeLabel
+    );
+    let evidenceCount = finalAnalysis?.call_result?.evidence?.length || 0;
+
+    if (errors.length > 0 || evidenceCount !== 36) {
+      const errorLines = errors.slice(0, 10);
+      if (evidenceCount !== 36) {
+        errorLines.push(`evidence_count=${evidenceCount} (must be 36)`);
+      }
+      const numberedTranscript = buildNumberedTranscriptLines(finalTranscriptLines).join("\n");
+      const repairSystem = `
+You are a strict JSON fixer. Return a corrected FULL analysis JSON only.
+Follow the required keys and types, and ensure evidence has exactly 36 items.
+Each evidence item must reference a valid transcript line and include an exact substring quote from that line (keep quotes short).
+`;
+      const repairUser = `
+Errors:
+${errorLines.map((e) => `- ${e}`).join("\n")}
+
+Transcript:
+${numberedTranscript}
+
+Return the corrected JSON only.
+`;
+      const repaired = await deepseekJSON(repairSystem.trim(), repairUser.trim(), 0.2);
+      const repairedOutcome = await inferOutcomeLabel(repaired) || outcomeLabel;
+      const repairedResult = validateAndCoerceAnalysisJson(
+        repaired,
+        finalTranscriptLines,
+        repairedOutcome
+      );
+      finalAnalysis = repairedResult.fixedJson;
+      evidenceCount = finalAnalysis?.call_result?.evidence?.length || 0;
+      if (repairedResult.errors.length > 0 || evidenceCount !== 36) {
+        finalAnalysis = buildFallbackAnalysisJson(repairedOutcome, finalTranscriptLines);
+      }
     }
+
+    const outcomeLabelFinal =
+      finalAnalysis?.call_result?.label || outcomeLabel || "Unknown";
+    await uploadJsonArtifact(
+      STORAGE_BUCKET,
+      `${artifactRoot}/analysis_final.json`,
+      finalAnalysis
+    );
 
     // Store run
     const runRow = {
@@ -1286,10 +2309,11 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
       scenario,
       context_text: context,
       transcript_text: transcriptText,
+      transcript_lines: finalTranscriptLines,
       transcript_json: transcriptJson,
       transcript_hash: transcriptHash,
-      outcome_label: outcomeLabel,
-      analysis_json: analysisJson,
+      outcome_label: outcomeLabelFinal,
+      analysis_json: finalAnalysis,
       entity_id: finalEntityId,
     };
 
@@ -1304,16 +2328,87 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
       throw new Error(sErr.message);
     }
 
+    const insertedId = saved?.id;
+    const { data: savedFixed, error: fixErr } = await supabaseAdmin
+      .from("runs")
+      .update({ transcript_lines: finalTranscriptLines, analysis_json: finalAnalysis })
+      .eq("id", insertedId)
+      .select("*")
+      .single();
+    if (fixErr) {
+      if (handleMissingUserId(res, "runs", fixErr)) return;
+      throw new Error(fixErr.message);
+    }
+
     // cleanup temp files
     cleanupPaths.forEach((p) => {
       try { fs.unlinkSync(p); } catch {}
     });
 
-    res.json({ run: saved });
+    const transcriptSpeakerCounts = finalTranscriptLines.reduce((acc, line) => {
+      const key = normalizeSpeakerFinal(line?.speaker);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const worstPairCount = finalTranscriptLines.reduce((acc, line) => {
+      const key = `${line.start_ms ?? "null"}|${line.end_ms ?? "null"}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const maxPairCount = Object.values(worstPairCount).reduce(
+      (max, count) => (count > max ? count : max),
+      0
+    );
+    // QA verification payload for transcript lines + speaker distribution.
+    const artifactPaths = {
+      assembly_transcript_json: `${artifactRoot}/assembly_transcript_json.json`,
+      transcript_lines: `${artifactRoot}/transcript_lines.json`,
+      deepseek_raw: `${artifactRoot}/deepseek_raw.json`,
+      analysis_final: `${artifactRoot}/analysis_final.json`,
+    };
+    const diagnostics = {
+      evidence_len: finalAnalysis.call_result.evidence.length,
+      speaker_counts: transcriptSpeakerCounts,
+      worst_pair_count: maxPairCount,
+    };
+    res.json({
+      run: {
+        ...savedFixed,
+        analysis_json: finalAnalysis,
+        transcript_lines: finalTranscriptLines,
+        diagnostics: {
+          ...diagnostics,
+          artifacts: artifactPaths,
+        },
+      },
+    });
   } catch (err) {
     try { fs.unlinkSync(file.path); } catch {}
     return res.status(400).json({ error: err.message || String(err) });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  if (res.headersSent) return next(err);
+
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({
+      error: "File too large",
+      code: "FILE_TOO_LARGE",
+      maxBytes: MAX_UPLOAD_BYTES,
+    });
+  }
+
+  if (err.type === "entity.too.large" || err.status === 413) {
+    return res.status(413).json({
+      error: "File too large",
+      code: "FILE_TOO_LARGE",
+      maxBytes: MAX_UPLOAD_BYTES,
+    });
+  }
+
+  return res.status(500).json({ error: "Server error", code: "SERVER_ERROR" });
 });
 
 // Serve SPA index for all GET routes (Express 5-safe)

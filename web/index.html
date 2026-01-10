@@ -169,6 +169,18 @@
       color:var(--muted);
       gap:6px;
     }
+    .qa-badge{
+      display:inline-flex;
+      align-items:center;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:11px;
+      border:1px solid var(--border);
+      background:#f8fafc;
+      color:var(--muted);
+      white-space:nowrap;
+      max-width:100%;
+    }
     .badge.good{background:#ecfdf5; color:#065f46; border-color:#bbf7d0}
     .badge.warn{background:#fffbeb; color:#92400e; border-color:#fde68a}
     .badge.bad{background:#fef2f2; color:#991b1b; border-color:#fecaca}
@@ -180,6 +192,28 @@
       word-break:break-word;
       color:#0b1220;
     }
+    .transcript-line{padding:2px 6px; border-radius:8px;}
+    .transcript-line.active{background:#fff7ed; box-shadow:inset 3px 0 0 #f59e0b;}
+    .transcript-line mark{background:#fde68a; padding:0 2px;}
+    .evidenceBlock{border:1px solid var(--border); border-radius:12px; padding:10px 12px; background:#fff;}
+    .evidenceTitle{font-size:12px; font-weight:600; color:#334155;}
+    .evidenceList{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;}
+    .evidenceBtn{
+      border:1px solid var(--border);
+      background:#fff;
+      color:var(--text);
+      border-radius:10px;
+      padding:6px 8px;
+      font-size:12px;
+      cursor:pointer;
+      text-align:left;
+      max-width:240px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .evidenceBtn:hover{background:var(--blueSoft); border-color:#bfdbfe; color:var(--blue2);}
+    .evidenceBtn.active{background:#dbeafe; border-color:#93c5fd; color:#1e40af;}
     .muted{color:var(--muted)}
     .hr{height:1px; background:var(--border); margin:12px 0}
     .hide{display:none !important}
@@ -443,6 +477,7 @@
         <div class="card hide" id="reportShell" style="box-shadow:none; border-color:var(--border); background:#fff;">
           <div class="row">
             <h2 id="reportTitle" class="grow">Report</h2>
+            <span class="qa-badge" id="qa-badge">QA: (no diagnostics)</span>
             <button class="btn small hide" id="btnViewEntity">View entity</button>
           </div>
           <p class="muted">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
@@ -460,6 +495,8 @@
             </div>
           </div>
 
+          <div class="spacer"></div>
+          <div id="callResultEvidence" class="evidenceBlock hide"></div>
           <div class="spacer"></div>
 
           <div class="twoCol">
@@ -637,6 +674,22 @@
       toastEl.classList.add("show");
       setTimeout(()=>toastEl.classList.remove("show"), 2200);
     }
+    function getTableColspan(tbodyId){
+      const tbody = $(tbodyId);
+      const table = tbody ? tbody.closest("table") : null;
+      const headers = table ? table.querySelectorAll("thead th") : [];
+      return headers.length || 1;
+    }
+    function setTableEmpty(tbodyId, message){
+      const colspan = getTableColspan(tbodyId);
+      $(tbodyId).innerHTML = `<tr><td colspan="${colspan}" class="muted">${message}</td></tr>`;
+    }
+    function formatMaxBytes(maxBytes){
+      if (!Number.isFinite(maxBytes) || maxBytes <= 0) return "";
+      const mb = maxBytes / (1024 * 1024);
+      const text = mb >= 1 ? `${mb.toFixed(1)} MB` : `${(maxBytes / 1024).toFixed(0)} KB`;
+      return ` (max ${text})`;
+    }
 
     function showAuth(){
       $("viewAuth").classList.remove("hide");
@@ -683,6 +736,7 @@
     let cfg = null;
     let currentUser = null;
     let currentSession = null;
+    let accessToken = null;
     let viewingPastRun = false;
 
     let entities = [];
@@ -711,7 +765,12 @@
       try{ data = text ? JSON.parse(text) : null; }catch(e){}
       if(!res.ok){
         const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || res.statusText);
-        throw new Error(msg);
+        const err = new Error(msg);
+        err.status = res.status;
+        err.code = data?.code;
+        err.maxBytes = data?.maxBytes;
+        err.data = data;
+        throw err;
       }
       return data;
     }
@@ -724,20 +783,32 @@
       if(!supabaseUrl || !supabaseAnonKey){
         throw new Error("Missing Supabase config from /api/config");
       }
+      console.log("CONFIG_KEY_LEN", supabaseAnonKey.length);
 
       sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
         auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
       });
+      window.supabaseClient = sb;
 
-      // Initial session (wait for INITIAL_SESSION to avoid flicker)
-      const initialSession = await new Promise((resolve)=>{
-        const { data: { subscription } } = sb.auth.onAuthStateChange((event, session)=>{
-          if(event === "INITIAL_SESSION"){
-            subscription?.unsubscribe();
-            resolve(session || null);
-          }
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const hashAccessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      const code = new URLSearchParams(window.location.search).get("code");
+      if(hashAccessToken && refreshToken){
+        const { error } = await window.supabaseClient.auth.setSession({
+          access_token: hashAccessToken,
+          refresh_token: refreshToken
         });
-      });
+        if(error) console.warn("Supabase setSession failed", error);
+        history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      }else if(code){
+        const { error } = await window.supabaseClient.auth.exchangeCodeForSession(code);
+        if(error) console.warn("Supabase exchangeCodeForSession failed", error);
+        history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      }
+
+      const { data: initialData } = await window.supabaseClient.auth.getSession();
+      const initialSession = initialData?.session || null;
 
       currentSession = initialSession;
       currentUser = initialSession?.user || null;
@@ -786,9 +857,9 @@
     $("btnGoogle").addEventListener("click", async ()=>{
       $("authMsg").textContent = "Redirecting to Google…";
       try{
-        const { error } = await sb.auth.signInWithOAuth({
+        const { error } = await window.supabaseClient.auth.signInWithOAuth({
           provider: "google",
-          options: { redirectTo: window.location.origin }
+          options: { redirectTo: window.location.origin + window.location.pathname }
         });
         if(error) throw error;
       }catch(e){
@@ -801,7 +872,7 @@
       if(!email){ toast("Enter an email"); return; }
       $("authMsg").textContent = "Sending…";
       try{
-        const { error } = await sb.auth.signInWithOtp({
+        const { error } = await window.supabaseClient.auth.signInWithOtp({
           email,
           options: { emailRedirectTo: window.location.origin }
         });
@@ -816,7 +887,7 @@
     $("btnAlreadyClicked").addEventListener("click", async ()=>{
       $("authMsg").textContent = "Checking session…";
       try{
-        const { data } = await sb.auth.getSession();
+        const { data } = await window.supabaseClient.auth.getSession();
         currentSession = data?.session || null;
         const u = currentSession?.user || null;
         if(u){
@@ -832,7 +903,7 @@
 
     $("btnSignOut").addEventListener("click", async ()=>{
       try{
-        await sb.auth.signOut();
+        await window.supabaseClient.auth.signOut();
         toast("Signed out");
       }catch(e){
         toast("Sign out failed");
@@ -939,7 +1010,7 @@
       $("entityEditor").classList.add("hide");
       renderEntityDetail(e);
       setEntitiesView();
-      $("entityRunsTbody").innerHTML = `<tr><td colspan="5" class="muted">Loading...</td></tr>`;
+      setTableEmpty("entityRunsTbody", "Loading...");
       $("entityPlaybookStatus").textContent = "Loading...";
       $("entityPlaybookUpdated").textContent = "";
       $("entityPlaybookUpdated").classList.add("hide");
@@ -955,15 +1026,14 @@
         entityRunsCache = runs;
         renderEntityRuns(filterRuns(entityRunsCache, entityRunsSearchValue));
       }catch(e){
-        $("entityRunsTbody").innerHTML =
-          `<tr><td colspan="5" class="muted">Failed to load runs.</td></tr>`;
+        setTableEmpty("entityRunsTbody", "Failed to load runs.");
       }
     }
 
     function renderEntityRuns(runs){
       const tb = $("entityRunsTbody");
       if(!runs.length){
-        tb.innerHTML = `<tr><td colspan="6" class="muted">No runs yet.</td></tr>`;
+        setTableEmpty("entityRunsTbody", "No runs yet.");
         return;
       }
       tb.innerHTML = runs.map(r=>{
@@ -1003,14 +1073,14 @@
         const playbook = data.playbook || null;
         renderPlaybook(playbook, $("entityPlaybookBox"));
         const updatedAt = data.updated_at || data.last_run_created_at || data.created_at;
-        if(updatedAt){
-          $("entityPlaybookUpdated").textContent =
-            `Last updated ${new Date(updatedAt).toLocaleString()}`;
-          $("entityPlaybookUpdated").classList.remove("hide");
-        }
+        $("entityPlaybookUpdated").textContent =
+          `Last updated ${updatedAt ? new Date(updatedAt).toLocaleString() : "Unknown"}`;
+        $("entityPlaybookUpdated").classList.remove("hide");
         $("entityPlaybookStatus").textContent = "";
       }catch(e){
         $("entityPlaybookStatus").textContent = "Error: " + (e.message || String(e));
+        $("entityPlaybookUpdated").textContent = "Last updated Unknown";
+        $("entityPlaybookUpdated").classList.remove("hide");
       }
     }
 
@@ -1255,12 +1325,27 @@
     }
 
     async function openRunById(id, opts = {}){
-      const data = await api(`/api/runs/${id}`);
-      currentRun = data.run;
-      viewingPastRun = true;
-      setTab("upload");
-      setUploadView();
-      renderReport(currentRun, opts);
+      try{
+        const data = await api(`/api/runs/${id}`);
+        currentRun = data.run;
+        viewingPastRun = true;
+        setTab("upload");
+        setUploadView();
+        renderReport(currentRun, opts);
+      }catch(e){
+        if(e.code === "NOT_FOUND" || e.status === 404){
+          viewingPastRun = true;
+          setTab("upload");
+          setUploadView();
+          renderReport({
+            analysis_json: { report_title: "Report", call_result: { label: "Not found", why: "This run was not found." } },
+            outcome_label: "Not found",
+            entity_name: "",
+          }, opts);
+          return;
+        }
+        toast("Failed to load run");
+      }
     }
 
     function filterRuns(runs, query){
@@ -1291,7 +1376,7 @@
     function renderRuns(runs){
       const tb = $("runsTbody");
       if(!runs.length){
-        tb.innerHTML = `<tr><td colspan="5" class="muted">No runs yet.</td></tr>`;
+        setTableEmpty("runsTbody", "No runs yet.");
         return;
       }
       tb.innerHTML = runs.map(r=>{
@@ -1345,17 +1430,53 @@
       applyEntityRunsSearch();
     });
 
+    function buildQABadgeText(run){
+      const diag = run?.diagnostics;
+      if (!diag || typeof diag !== "object") return "QA: (no diagnostics)";
+      const ev = Number.isFinite(diag.evidence_len) ? diag.evidence_len : 0;
+      const reuse = Number.isFinite(diag.worst_pair_count) ? diag.worst_pair_count : 0;
+      const sc = diag.speaker_counts && typeof diag.speaker_counts === "object"
+        ? diag.speaker_counts
+        : {};
+      const aCount = Number.isFinite(sc["Speaker A"]) ? sc["Speaker A"] : 0;
+      const bCount = Number.isFinite(sc["Speaker B"]) ? sc["Speaker B"] : 0;
+      return `QA: ev=${ev}  reuse=${reuse}  A=${aCount} B=${bCount}`;
+    }
+
     // ---- Report render ----
     function renderReport(run, opts = {}){
       if(!run) return;
       $("reportShell").classList.remove("hide");
 
       const a = run.analysis_json || run.analysis || null;
-      const reportTitle = a?.report_title || a?.call_result?.label || run.outcome_label || "Call";
       const entityName = run.entity_name || "";
-      $("reportTitle").textContent = entityName
-        ? `${reportTitle} Report — ${entityName}`
-        : `${reportTitle} Report`;
+      const reportTitleEl = $("reportTitle");
+      const setReportTitle = (name)=>{
+        const safeName = String(name || "").trim();
+        reportTitleEl.textContent = safeName ? `Report — ${safeName}` : "Report";
+      };
+      setReportTitle(entityName);
+      if(!entityName && run.entity_id){
+        api("/api/entities")
+          .then((data)=>{
+            const match = (data?.entities || []).find((e)=>e.id === run.entity_id);
+            setReportTitle(match?.name || "");
+          })
+          .catch(()=>{
+            setReportTitle("");
+          });
+      }
+      let qaBadge = document.getElementById("qa-badge");
+      if (!qaBadge) {
+        const row = document.querySelector("#reportShell .row");
+        if (row) {
+          qaBadge = document.createElement("span");
+          qaBadge.className = "qa-badge";
+          qaBadge.id = "qa-badge";
+          row.insertBefore(qaBadge, $("btnViewEntity"));
+        }
+      }
+      if (qaBadge) qaBadge.textContent = buildQABadgeText(run);
       const viewEntityBtn = $("btnViewEntity");
       if(run.entity_id){
         viewEntityBtn.classList.remove("hide");
@@ -1375,6 +1496,8 @@
 
       $("callResult").textContent = a?.call_result?.label || run.outcome_label || "—";
       $("callResultWhy").textContent = a?.call_result?.why || run.call_result_reason || "—";
+      const shell = document.getElementById("reportCard") || document.getElementById("reportShell");
+      if (shell) shell.classList.remove("hide");
 
       const score = a?.score ?? a?.overall_score ?? run.overall_score ?? null;
       $("scoreBadge").textContent = score == null ? "Score: —" : `Score: ${score}`;
@@ -1403,54 +1526,144 @@
         $("topFixes").innerHTML = `<div class="muted">—</div>`;
       }
 
+      const evidence = Array.isArray(a?.call_result?.evidence) ? a.call_result.evidence : [];
+      const evidenceBox = $("callResultEvidence");
+      if(evidence.length){
+        const items = evidence.slice(0, 36);
+        evidenceBox.classList.remove("hide");
+        evidenceBox.innerHTML = `
+          <div class="evidenceTitle">Evidence</div>
+          <div class="evidenceList">
+            ${items.map((ev, i)=>{
+              const lineNum = Number(ev?.line) || i + 1;
+              const quote = String(ev?.quote || "").trim();
+              const why = String(ev?.why || "").trim();
+              let label = quote ? `"${quote}"` : (why || `Line ${lineNum}`);
+              if(quote && why) label = `"${quote}" - ${why}`;
+              else if(!quote && why) label = why;
+              const short = label.length > 180 ? `${label.slice(0, 177)}...` : label;
+              return `<button class="evidenceBtn" data-evidence-line="${lineNum}" title="${escapeHtml(label)}">${escapeHtml(short)}</button>`;
+            }).join("")}
+          </div>
+        `;
+      }else{
+        evidenceBox.classList.add("hide");
+        evidenceBox.innerHTML = "";
+      }
+
       const transcriptText = run.transcript_text || "—";
       const transcriptBox = $("transcriptBox");
       const transcriptDetails = $("transcriptDetails");
       const quote = String(opts?.highlightQuote || "");
-      let html = escapeHtml(transcriptText);
-      let match = null;
-      if(quote){
+      const findMatchInText = (text, target)=>{
+        if(!target) return null;
+        const exactIdx = text.indexOf(target);
+        if(exactIdx !== -1) return { idx: exactIdx, len: target.length };
+        const lowerText = text.toLowerCase();
+        const lowerQuote = target.toLowerCase();
+        const ciIdx = lowerText.indexOf(lowerQuote);
+        if(ciIdx !== -1) return { idx: ciIdx, len: lowerQuote.length };
+        const normalize = (s)=>String(s || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const words = normalize(target).split(" ").filter(Boolean).slice(0, 610);
+        if(words.length){
+          const pattern = words
+            .map((w)=>w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+            .join("\\W+");
+          const re = new RegExp(pattern, "i");
+          const m = re.exec(text);
+          if(m) return { idx: m.index, len: m[0].length };
+        }
+        return null;
+      };
+
+      const transcriptLines = Array.isArray(run.transcript_lines) ? run.transcript_lines : null;
+      const useTranscriptLines = Array.isArray(transcriptLines) && transcriptLines.length > 0;
+
+      const highlightTranscriptLine = (lineNum)=>{
+        if(!useTranscriptLines) return;
         transcriptDetails.open = true;
-        const exactIdx = transcriptText.indexOf(quote);
-        if(exactIdx !== -1){
-          match = { idx: exactIdx, len: quote.length };
-        }else{
-          const lowerText = transcriptText.toLowerCase();
-          const lowerQuote = quote.toLowerCase();
-          const ciIdx = lowerText.indexOf(lowerQuote);
-          if(ciIdx !== -1){
-            match = { idx: ciIdx, len: lowerQuote.length };
-          }else{
-            const normalize = (s)=>String(s || "")
-              .toLowerCase()
-              .replace(/[^a-z0-9\s]+/g, " ")
-              .replace(/\s+/g, " ")
-              .trim();
-            const words = normalize(quote).split(" ").filter(Boolean).slice(0, 610);
-            if(words.length){
-              const pattern = words
-                .map((w)=>w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-                .join("\\W+");
-              const re = new RegExp(pattern, "i");
-              const m = re.exec(transcriptText);
-              if(m){
-                match = { idx: m.index, len: m[0].length };
-              }
+        transcriptBox.querySelectorAll(".transcript-line").forEach((el)=>{
+          const isMatch = Number(el.getAttribute("data-line")) === lineNum;
+          el.classList.toggle("active", isMatch);
+        });
+        const target = transcriptBox.querySelector(`#line-${lineNum}`);
+        if(target) target.scrollIntoView({ block:"center" });
+      };
+
+      if(useTranscriptLines){
+        let matchedLine = null;
+        let matchedRange = null;
+        if(quote){
+          for(const lineItem of transcriptLines){
+            const lineNum = Number(lineItem?.line);
+            const speaker = lineItem?.speaker || "Speaker";
+            const text = lineItem?.text || "";
+            const lineText = `${speaker}: ${text}`.trim();
+            const match = findMatchInText(lineText, quote);
+            if(match){
+              matchedLine = lineNum;
+              matchedRange = match;
+              break;
             }
           }
+          if(matchedLine != null) transcriptDetails.open = true;
+        }
+        transcriptBox.innerHTML = transcriptLines.map((lineItem, i)=>{
+          const lineNum = Number(lineItem?.line) || i + 1;
+          const speaker = lineItem?.speaker || "Speaker";
+          const text = lineItem?.text || "";
+          const lineText = `${speaker}: ${text}`.trim();
+          let lineHtml = escapeHtml(lineText);
+          const isMatch = matchedLine === lineNum && matchedRange;
+          if(isMatch){
+            const before = lineText.slice(0, matchedRange.idx);
+            const mid = lineText.slice(matchedRange.idx, matchedRange.idx + matchedRange.len);
+            const after = lineText.slice(matchedRange.idx + matchedRange.len);
+            lineHtml = `${escapeHtml(before)}<mark id="hl">${escapeHtml(mid)}</mark>${escapeHtml(after)}`;
+          }
+          return `<div class="transcript-line${isMatch ? " active" : ""}" id="line-${lineNum}" data-line="${lineNum}">${lineHtml}</div>`;
+        }).join("");
+        if(matchedLine != null){
+          requestAnimationFrame(()=>{
+            const hl = transcriptBox.querySelector("#hl");
+            if(hl) hl.scrollIntoView({ block:"center" });
+          });
+        }
+      }else{
+        let html = escapeHtml(transcriptText);
+        let match = null;
+        if(quote){
+          transcriptDetails.open = true;
+          match = findMatchInText(transcriptText, quote);
+        }
+        if(match){
+          const before = transcriptText.slice(0, match.idx);
+          const mid = transcriptText.slice(match.idx, match.idx + match.len);
+          const after = transcriptText.slice(match.idx + match.len);
+          html = `${escapeHtml(before)}<mark id="hl">${escapeHtml(mid)}</mark>${escapeHtml(after)}`;
+        }
+        transcriptBox.innerHTML = html;
+        if(match){
+          requestAnimationFrame(()=>{
+            const hl = transcriptBox.querySelector("#hl");
+            if(hl) hl.scrollIntoView({ block:"center" });
+          });
         }
       }
-      if(match){
-        const before = transcriptText.slice(0, match.idx);
-        const mid = transcriptText.slice(match.idx, match.idx + match.len);
-        const after = transcriptText.slice(match.idx + match.len);
-        html = `${escapeHtml(before)}<mark id="hl">${escapeHtml(mid)}</mark>${escapeHtml(after)}`;
-      }
-      transcriptBox.innerHTML = html;
-      if(match){
-        requestAnimationFrame(()=>{
-          const hl = transcriptBox.querySelector("#hl");
-          if(hl) hl.scrollIntoView({ block:"center" });
+
+      if(evidence.length){
+        evidenceBox.querySelectorAll("[data-evidence-line]").forEach((btn)=>{
+          btn.addEventListener("click", ()=>{
+            const lineNum = Number(btn.getAttribute("data-evidence-line"));
+            if(!lineNum || !useTranscriptLines) return;
+            evidenceBox.querySelectorAll(".evidenceBtn").forEach((b)=>b.classList.remove("active"));
+            btn.classList.add("active");
+            highlightTranscriptLine(lineNum);
+          });
         });
       }
     }
@@ -1563,8 +1776,14 @@
         await loadEntities();
         fillEntitySelects();
       }catch(e){
-        $("runStatus").textContent = e.message || String(e);
-        toast("Run failed");
+        if (e.code === "FILE_TOO_LARGE" || e.status === 413) {
+          const maxText = e.maxBytes ? formatMaxBytes(e.maxBytes) : "";
+          $("runStatus").textContent = `File too large${maxText}`;
+          toast("File too large");
+        } else {
+          $("runStatus").textContent = e.message || String(e);
+          toast("Run failed");
+        }
       }finally{
         $("btnRun").disabled = false;
       }
