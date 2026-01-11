@@ -90,6 +90,40 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function randSuffix(len = 5) {
+  return Math.random().toString(36).slice(2, 2 + len);
+}
+
+function buildAutoEntityName(base) {
+  const date = new Date().toISOString().slice(0, 10);
+  const suffix = randSuffix(5);
+  const name = `${base} ${date} ${suffix}`;
+  return name.slice(0, 120);
+}
+
+async function insertEntityUniqueName(userId, baseName) {
+  const base = String(baseName || "Unassigned Entity").trim() || "Unassigned Entity";
+  for (let i = 0; i < 10; i += 1) {
+    const name = buildAutoEntityName(base);
+    const { data, error } = await supabaseAdmin
+      .from("entities")
+      .insert([{ user_id: userId, name }])
+      .select()
+      .single();
+    if (!error) return data;
+    const msg = String(error?.message || "");
+    if (
+      error?.code === "23505"
+      || msg.includes("entities_user_name_unique")
+      || msg.toLowerCase().includes("duplicate key value")
+    ) {
+      continue;
+    }
+    throw new Error(msg || "Failed to create entity");
+  }
+  throw new Error("Failed to create unique entity name");
+}
+
 const runJobQueue = [];
 let runJobWorking = false;
 
@@ -2463,17 +2497,8 @@ app.post("/api/run_async", upload.single("file"), async (req, res) => {
   }
 
   if (!finalEntityId) {
-    const defaultName = `Unassigned ${new Date().toISOString().slice(0, 10)}`;
-    const { data: created, error: cErr } = await supabaseAdmin
-      .from("entities")
-      .insert([{ user_id: user.id, name: defaultName }])
-      .select()
-      .single();
-    if (cErr) {
-      if (handleMissingUserId(res, "entities", cErr)) return;
-      return res.status(400).json({ error: cErr.message });
-    }
-    finalEntityId = created.id;
+    const entity = await insertEntityUniqueName(user.id, "Unassigned Entity");
+    finalEntityId = entity.id;
   }
 
   const { error: insertErr } = await supabaseAdmin
@@ -2614,17 +2639,8 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
       finalEntityId = created.id;
     }
     if (!finalEntityId) {
-      const defaultName = `Unassigned ${new Date().toISOString().slice(0, 10)}`;
-      const { data: created, error: cErr } = await supabaseAdmin
-        .from("entities")
-        .insert([{ user_id: user.id, name: defaultName }])
-        .select()
-        .single();
-      if (cErr) {
-        if (handleMissingUserId(res, "entities", cErr)) return;
-        throw new Error(cErr.message);
-      }
-      finalEntityId = created.id;
+      const entity = await insertEntityUniqueName(user.id, "Unassigned Entity");
+      finalEntityId = entity.id;
     }
 
     // Transcribe
