@@ -103,6 +103,63 @@ async function run() {
       throw new Error(`Expected 413 FILE_TOO_LARGE, got ${res2.status} ${JSON.stringify(json2)}`);
     }
     console.log("PASS upload size limit");
+
+    const boundary2 = `----smoke${Date.now()}b`;
+    const body2 = buildMultipart(
+      boundary2,
+      { scenario: "smoke", context: "smoke" },
+      "file",
+      "tiny.bin",
+      Buffer.alloc(8, 1)
+    );
+    const res3 = await fetch(`http://127.0.0.1:${port}/api/run_async`, {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary2}`,
+        "x-smoke-bypass": "smoke-token",
+      },
+      body: body2,
+    });
+    const json3 = await res3.json().catch(() => ({}));
+    if (!(res3.status === 202 && json3.run_id)) {
+      throw new Error(`Expected 202 run_async, got ${res3.status} ${JSON.stringify(json3)}`);
+    }
+    const runId = json3.run_id;
+    const res4 = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+      headers: { "x-smoke-bypass": "smoke-token" },
+    });
+    const json4 = await res4.json().catch(() => ({}));
+    const runRow = (json4.runs || []).find((r) => r.id === runId);
+    if (!runRow?.entity_id) {
+      throw new Error(`Expected run entity_id set, got ${JSON.stringify(runRow)}`);
+    }
+    console.log("PASS run auto-entity");
+
+    const res5 = await fetch(`http://127.0.0.1:${port}/api/entities`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-smoke-bypass": "smoke-token",
+      },
+      body: JSON.stringify({ name: "Smoke Entity" }),
+    });
+    const json5 = await res5.json().catch(() => ({}));
+    if (!json5?.entity?.id) {
+      throw new Error(`Expected entity created, got ${res5.status} ${JSON.stringify(json5)}`);
+    }
+    const res6 = await fetch(`http://127.0.0.1:${port}/api/runs/${runId}/reassign_entity`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-smoke-bypass": "smoke-token",
+      },
+      body: JSON.stringify({ entity_id: json5.entity.id }),
+    });
+    const json6 = await res6.json().catch(() => ({}));
+    if (!(res6.status === 200 && json6?.run?.entity_id === json5.entity.id)) {
+      throw new Error(`Expected reassign_entity ok, got ${res6.status} ${JSON.stringify(json6)}`);
+    }
+    console.log("PASS reassign_entity");
   } catch (err) {
     failed = true;
     console.error("FAIL", err?.message || err);

@@ -1,0 +1,7 @@
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/server.mjs', LF will be replaced by CRLF the next time Git touches it
+ package.json   |    2 [32m+[m
+ web/index.html |  371 [32m++++++++++++++[m[31m----[m
+ web/server.mjs | 1191 [32m+++++++++++++++++++++++++++++++++++++++++++++++++++++[m[31m---[m
+ 3 files changed, 1438 insertions(+), 126 deletions(-)

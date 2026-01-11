@@ -452,6 +452,7 @@
             <input class="input" id="entityName" placeholder="e.g., Acme Services - Customer Support" />
           </div>
         </div>
+        <p class="muted">If left blank, Calibrate will create an entity you can rename later.</p>
 
         <div class="row">
           <div class="grow">
@@ -479,6 +480,7 @@
             <h2 id="reportTitle" class="grow">Report</h2>
             <span class="qa-badge" id="qa-badge">QA: (no diagnostics)</span>
             <button class="btn small hide" id="btnViewEntity">View entity</button>
+            <button class="btn small hide" id="btnMoveEntity">Move</button>
           </div>
           <p class="muted">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
 
@@ -573,6 +575,7 @@
               <p class="muted" id="entityDetailMeta"></p>
               <p class="muted" id="entityDetailNotes"></p>
             </div>
+            <button class="btn small" id="btnEntityAiName">AI name</button>
             <button class="btn small" id="btnEntityBack">Back</button>
           </div>
 
@@ -1000,6 +1003,23 @@
       const notesEl = $("entityDetailNotes");
       notesEl.textContent = notes;
       notesEl.classList.toggle("hide", !notes);
+      $("btnEntityAiName").onclick = async () => {
+        if (!e.id) return;
+        try {
+          const data = await api(`/api/entities/${e.id}/ai_name`, { method: "POST" });
+          if (data?.name) {
+            e.name = data.name;
+            const idx = entities.findIndex((x) => x.id === e.id);
+            if (idx >= 0) entities[idx].name = data.name;
+            renderEntityDetail(e);
+            renderEntitiesList();
+            fillEntitySelects();
+          }
+          toast("Renamed");
+        } catch (err) {
+          toast(err.message || "AI name failed");
+        }
+      };
     }
 
     function openEntityDetail(id){
@@ -1478,6 +1498,7 @@
       }
       if (qaBadge) qaBadge.textContent = buildQABadgeText(run);
       const viewEntityBtn = $("btnViewEntity");
+      const moveEntityBtn = $("btnMoveEntity");
       if(run.entity_id){
         viewEntityBtn.classList.remove("hide");
         viewEntityBtn.onclick = async ()=>{
@@ -1492,6 +1513,34 @@
       }else{
         viewEntityBtn.classList.add("hide");
         viewEntityBtn.onclick = null;
+      }
+      if (moveEntityBtn && run.id) {
+        moveEntityBtn.classList.remove("hide");
+        moveEntityBtn.onclick = async () => {
+          try {
+            await loadEntities();
+            if (!entities.length) { toast("No entities"); return; }
+            const list = entities.map((e, i) => `${i + 1}) ${e.name || "Entity"}`).join("\n");
+            const choice = prompt(`Move to which entity?\n${list}`);
+            if (!choice) return;
+            const idx = Number(choice) - 1;
+            const target = entities[idx];
+            if (!target) { toast("Invalid selection"); return; }
+            const data = await api(`/api/runs/${run.id}/reassign_entity`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ entity_id: target.id }),
+            });
+            currentRun = data.run;
+            renderReport(currentRun);
+            await loadRuns();
+          } catch (e) {
+            toast(e.message || "Move failed");
+          }
+        };
+      } else if (moveEntityBtn) {
+        moveEntityBtn.classList.add("hide");
+        moveEntityBtn.onclick = null;
       }
 
       $("callResult").textContent = a?.call_result?.label || run.outcome_label || "—";

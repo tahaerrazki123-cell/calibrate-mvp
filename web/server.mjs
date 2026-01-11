@@ -270,14 +270,45 @@ function enqueueRunJob(job) {
   processRunJobQueue();
 }
 
+let smokeUserCache = null;
+
+async function ensureSmokeUser() {
+  if (smokeUserCache?.id) return smokeUserCache;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  const email = `smoke+${Date.now()}@calibrate.local`;
+  const password = crypto.randomUUID();
+  const res = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/admin/users`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email,
+      password,
+      email_confirm: true,
+    }),
+  });
+  if (!res.ok) return null;
+  const json = await res.json().catch(() => ({}));
+  if (!json?.id) return null;
+  smokeUserCache = { id: json.id, email };
+  return smokeUserCache;
+}
+
 async function requireUser(req, res) {
   if (
     process.env.NODE_ENV === "test"
-    && process.env.SMOKE_BYPASS_USER_ID
     && process.env.SMOKE_BYPASS_TOKEN
     && req.headers["x-smoke-bypass"] === process.env.SMOKE_BYPASS_TOKEN
   ) {
-    return { id: process.env.SMOKE_BYPASS_USER_ID };
+    const smokeUser = await ensureSmokeUser();
+    if (!smokeUser?.id) {
+      res.status(500).json({ error: "Smoke user unavailable" });
+      return null;
+    }
+    return { id: smokeUser.id, email: smokeUser.email, is_smoke: true };
   }
 
   const user = await getUserFromReq(req);
@@ -1721,6 +1752,112 @@ app.post("/api/entities", async (req, res) => {
   res.json({ entity: data });
 });
 
+app.post("/api/entities/:id/ai_name", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const entityId = req.params.id;
+  const { data: entity, error: eErr } = await supabaseAdmin
+    .from("entities")
+    .select("id, name, offer, industry, notes")
+    .eq("id", entityId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (eErr) {
+    if (handleMissingUserId(res, "entities", eErr)) return;
+    return res.status(400).json({ error: eErr.message });
+  }
+  if (!entity) return res.status(404).json({ error: "Not found" });
+
+  const { data: runs, error: rErr } = await supabaseAdmin
+    .from("runs")
+    .select("scenario, context_text, outcome_label, created_at")
+    .eq("user_id", user.id)
+    .eq("entity_id", entityId)
+    .order("created_at", { ascending: false })
+    .limit(13);
+
+  if (rErr) {
+    if (handleMissingUserId(res, "runs", rErr)) return;
+    return res.status(400).json({ error: rErr.message });
+  }
+
+  const summary = (runs || []).map((r, i) => {
+    const scenario = r.scenario || "";
+    const outcome = r.outcome_label || "";
+    const ctx = r.context_text || "";
+    return `Run ${i + 1}: scenario=${scenario}; outcome=${outcome}; context=${ctx}`;
+  }).join("\n");
+
+  const system = `
+You are Calibrate. Return valid JSON only.
+`.trim();
+
+  const prompt = `
+Create a short, professional entity name.
+Return JSON: { "name": string }
+Rules:
+- 2-6 words, no quotes, no placeholders, no "Entity".
+- Avoid private personal-life content.
+- Must be clear and business-appropriate.
+Entity details:
+name=${entity.name || ""}
+offer=${entity.offer || ""}
+industry=${entity.industry || ""}
+notes=${entity.notes || ""}
+Recent runs:
+${summary}
+`.trim();
+
+  const containsPlaceholders = (text) => {
+    const t = String(text || "");
+    return (
+      /\[[^\]]+\]/.test(t)
+      || /\{[^}]+\}/.test(t)
+      || /\bTBD\b/i.test(t)
+      || /\blorem\b/i.test(t)
+      || /\bplaceholder\b/i.test(t)
+    );
+  };
+
+  const containsPersonalLife = (text) => (
+    /\b(wife|husband|kid|kids|mom|dad|birthday|party)\b/i.test(String(text || ""))
+  );
+
+  const normalizeName = (raw) => String(raw || "")
+    .replace(/["']/g, "")
+    .replace(/\bentity\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  let name = "";
+  try {
+    const result = await deepseekJSON(system, prompt, 0.2);
+    name = normalizeName(result?.name);
+  } catch {
+    name = "";
+  }
+
+  const wordCount = name ? name.split(/\s+/).length : 0;
+  if (!name || containsPlaceholders(name) || containsPersonalLife(name) || wordCount < 2 || wordCount > 6) {
+    name = entity.name || `Unassigned ${new Date().toISOString().slice(0, 10)}`;
+  }
+
+  const { error: uErr } = await supabaseAdmin
+    .from("entities")
+    .update({ name })
+    .eq("id", entityId)
+    .eq("user_id", user.id);
+
+  if (uErr) {
+    if (handleMissingUserId(res, "entities", uErr)) return;
+    return res.status(400).json({ error: uErr.message });
+  }
+
+  res.json({ name });
+});
+
 async function buildEntityAggregate(userId, entityId) {
   const { data, error } = await supabaseAdmin
     .from("runs")
@@ -2014,6 +2151,58 @@ app.get("/api/runs/:id", async (req, res) => {
   res.json({ run });
 });
 
+app.post("/api/runs/:id/reassign_entity", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const id = req.params.id;
+  const { entity_id: entityId } = req.body || {};
+  if (!entityId) return res.status(400).json({ error: "Missing entity_id" });
+
+  const { data: run, error: rErr } = await supabaseAdmin
+    .from("runs")
+    .select("id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (rErr) {
+    if (handleMissingUserId(res, "runs", rErr)) return;
+    return res.status(400).json({ error: rErr.message });
+  }
+  if (!run) return res.status(404).json({ error: "Not found" });
+
+  const { data: entityRow, error: eErr } = await supabaseAdmin
+    .from("entities")
+    .select("id, name")
+    .eq("id", entityId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (eErr) {
+    if (handleMissingUserId(res, "entities", eErr)) return;
+    return res.status(400).json({ error: eErr.message });
+  }
+  if (!entityRow) return res.status(404).json({ error: "Not found" });
+
+  const { data: saved, error: uErr } = await supabaseAdmin
+    .from("runs")
+    .update({ entity_id: entityId })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("*")
+    .single();
+  if (uErr) {
+    if (handleMissingUserId(res, "runs", uErr)) return;
+    return res.status(400).json({ error: uErr.message });
+  }
+
+  res.json({
+    run: {
+      ...saved,
+      entity_name: entityRow.name || "",
+    },
+  });
+});
+
 app.post("/api/runs/:id/regen_followup", async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -2257,6 +2446,35 @@ app.post("/api/run_async", upload.single("file"), async (req, res) => {
   const scenario = (req.body.scenario || "").trim();
   const context = (req.body.context || "").trim();
   const entityId = (req.body.entityId || "").trim() || null;
+  let finalEntityId = entityId;
+
+  if (finalEntityId) {
+    const { data: entityRow, error: eErr } = await supabaseAdmin
+      .from("entities")
+      .select("id")
+      .eq("id", finalEntityId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (eErr) {
+      if (handleMissingUserId(res, "entities", eErr)) return;
+      return res.status(400).json({ error: eErr.message });
+    }
+    if (!entityRow) return res.status(404).json({ error: "Not found" });
+  }
+
+  if (!finalEntityId) {
+    const defaultName = `Unassigned ${new Date().toISOString().slice(0, 10)}`;
+    const { data: created, error: cErr } = await supabaseAdmin
+      .from("entities")
+      .insert([{ user_id: user.id, name: defaultName }])
+      .select()
+      .single();
+    if (cErr) {
+      if (handleMissingUserId(res, "entities", cErr)) return;
+      return res.status(400).json({ error: cErr.message });
+    }
+    finalEntityId = created.id;
+  }
 
   const { error: insertErr } = await supabaseAdmin
     .from("runs")
@@ -2268,7 +2486,7 @@ app.post("/api/run_async", upload.single("file"), async (req, res) => {
         progress_step: "queued",
         scenario,
         context_text: context,
-        entity_id: entityId,
+        entity_id: finalEntityId,
       },
     ]);
   if (insertErr) {
@@ -2284,7 +2502,7 @@ app.post("/api/run_async", upload.single("file"), async (req, res) => {
     mimetype: file.mimetype,
     scenario,
     context,
-    entityId,
+    entityId: finalEntityId,
   });
 
   res.status(202).json({ run_id: runId, status: "processing" });
@@ -2389,6 +2607,19 @@ app.post("/api/run", upload.single("file"), async (req, res) => {
         .select()
         .single();
 
+      if (cErr) {
+        if (handleMissingUserId(res, "entities", cErr)) return;
+        throw new Error(cErr.message);
+      }
+      finalEntityId = created.id;
+    }
+    if (!finalEntityId) {
+      const defaultName = `Unassigned ${new Date().toISOString().slice(0, 10)}`;
+      const { data: created, error: cErr } = await supabaseAdmin
+        .from("entities")
+        .insert([{ user_id: user.id, name: defaultName }])
+        .select()
+        .single();
       if (cErr) {
         if (handleMissingUserId(res, "entities", cErr)) return;
         throw new Error(cErr.message);
