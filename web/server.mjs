@@ -2147,7 +2147,7 @@ app.get("/api/runs/:id", async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from("runs")
-    .select("*")
+    .select("id, user_id, created_at, scenario, context_text, transcript_text, transcript_lines, transcript_json, transcript_hash, outcome_label, analysis_json, entity_id")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -2359,6 +2359,20 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     return false;
   };
 
+  const looksLikeInstructional = (text) => {
+    const t = String(text || "").trim().toLowerCase();
+    if (!t) return false;
+    return (
+      t.startsWith("follow up")
+      || t.startsWith("follow-up")
+      || t.startsWith("followup")
+      || t.includes("recap")
+      || t.includes("solidify interest")
+      || t.includes("as requested")
+      || t.includes("internal notes")
+    );
+  };
+
   const looksLikeTranscript = (text) => {
     const t = String(text || "").trim();
     if (!t) return false;
@@ -2377,6 +2391,7 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     if (t.length > 1200) return false;
     if (containsPlaceholders(t)) return false;
     if (looksLikeTranscript(t)) return false;
+    if (looksLikeInstructional(t)) return false;
     if (hasBannedPhrases(t)) return false;
     if (hasCoachingLeakage(t)) return false;
     if (containsPersonalLife(t)) return false;
@@ -2389,7 +2404,7 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
 
   const buildFallbackFollowup = () => {
     const topic = entityName || scenario || "your team";
-    const msg = `Hi - thanks again for taking the call about ${topic}. If it makes sense, can we do a quick 10-min follow-up tomorrow or Thursday? Happy to send a short recap first.`;
+    const msg = `Hi - thanks again for taking the call about ${topic}. If it makes sense, can we do a quick 10-min follow-up tomorrow or Thursday?`;
     return msg.slice(0, 1200);
   };
 
@@ -2424,6 +2439,7 @@ notes=${run.context_text || ""}
     if (!isFollowupValid(followText)) {
       const repairPrompt = `
 Fix the follow-up. Return JSON only: { "follow_up": { "text": string } }
+Write the exact message to send to the prospect. Do not write instructions or notes.
 Hard rules: no placeholders, no transcript quotes, no speaker labels, <=1200 chars, one message only.
 Must include a concrete next step or scheduling ask and a CTA question.
 Must include the entity_name or scenario topic.

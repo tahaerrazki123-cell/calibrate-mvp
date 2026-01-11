@@ -506,10 +506,7 @@
               <h2>Follow-Up Generator</h2>
               <p class="muted">Two-line follow-up you can send right now.</p>
               <div class="spacer"></div>
-              <textarea class="input" id="followupText" rows="4" placeholder="Write a follow-up message you can actually send.
-Who are you following up with?
-What are you selling / why should they care?
-Whats the next step? Offer 2 times and end with a question."></textarea>
+              <textarea class="input" id="followupText" rows="4" placeholder="Click Generate to create a follow-up you can paste/send."></textarea>
               <div class="spacer"></div>
               <div class="row tight">
                 <button class="btn primary" id="btnCopyFollowup">Copy</button>
@@ -1560,6 +1557,7 @@ Whats the next step? Offer 2 times and end with a question."></textarea>
 
       const followUp = a?.follow_up?.text || a?.followup || "";
       $("followupText").value = followUp || "";
+      updateFollowupButtonLabel();
 
       const fixes = a?.top_fixes || a?.fixes || [];
       if(Array.isArray(fixes) && fixes.length){
@@ -1721,6 +1719,14 @@ Whats the next step? Offer 2 times and end with a question."></textarea>
       }
     }
 
+    function updateFollowupButtonLabel(){
+      const txt = String($("followupText").value || "").trim();
+      $("btnRegenFollowup").textContent = txt ? "Regenerate" : "Generate";
+    }
+
+    $("followupText").addEventListener("input", updateFollowupButtonLabel);
+    updateFollowupButtonLabel();
+
     $("btnCopyFollowup").addEventListener("click", async ()=>{
       const txt = $("followupText").value || "";
       if(!txt){ toast("Nothing to copy"); return; }
@@ -1738,6 +1744,7 @@ Whats the next step? Offer 2 times and end with a question."></textarea>
         const data = await api(`/api/runs/${currentRun.id}/regen_followup`, { method:"POST" });
         currentRun = data.run;
         renderReport(currentRun);
+        updateFollowupButtonLabel();
         toast("Regenerated");
       }catch(e){
         toast(e.message || "Error");
