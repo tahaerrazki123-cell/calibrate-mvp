@@ -2032,7 +2032,17 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
 
-  const entityName = run.entity_name || "";
+  // Ensure we have entity_name when entity_id exists
+  let entityName = run.entity_name || "";
+  if (!entityName && run.entity_id) {
+    const { data: ent } = await supabaseAdmin
+      .from("entities")
+      .select("name")
+      .eq("id", run.entity_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    entityName = ent?.name || "";
+  }
   const scenario = run.scenario || "";
   const callWhy = run.analysis_json?.call_result?.why || "";
   const topFixes = Array.isArray(run.analysis_json?.top_fixes)

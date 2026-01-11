@@ -81,6 +81,12 @@ async function main() {
 
   const text = data?.run?.analysis_json?.follow_up?.text || "";
   const entityName = data?.run?.entity_name || "";
+  const entityId = data?.run?.entity_id || "";
+  if (entityId && !entityName) {
+    console.error("FAIL missing entity_name for entity run");
+    console.log("FOLLOW_UP_TEXT:", text);
+    process.exit(1);
+  }
   if (!text) {
     console.error("FAIL empty follow_up");
     console.log("FOLLOW_UP_TEXT:", text);
