@@ -2032,22 +2032,191 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
 
-  const prompt = `
-Generate a new 2-line follow-up message based on this call transcript and context.
-Return JSON: { "follow_up": { "text": string } }
-Be concise, confident, and specific.
-Transcript:
-${run.transcript_text || ""}
-Context:
-${run.context_text || ""}
-`.trim();
+  const entityName = run.entity_name || "";
+  const scenario = run.scenario || "";
+  const callWhy = run.analysis_json?.call_result?.why || "";
+  const topFixes = Array.isArray(run.analysis_json?.top_fixes)
+    ? run.analysis_json.top_fixes
+        .map((f) => f?.title || f?.fix || f?.problem || f?.do_instead || f?.instead || "")
+        .filter(Boolean)
+        .slice(0, 12)
+    : [];
+
+  const stopwords = new Set([
+    "the", "and", "for", "with", "that", "this", "from", "your", "you", "our",
+    "are", "was", "were", "have", "has", "had", "will", "would", "could", "should",
+    "into", "about", "their", "they", "them", "then", "than", "just", "also",
+  ]);
+  const topicTerms = []
+    .concat(entityName, scenario, run.context_text || "")
+    .join(" ")
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((w) => w.length >= 4 && !stopwords.has(w));
+
+  const containsPlaceholders = (text) => {
+    const t = String(text || "");
+    return (
+      /\[[^\]]+\]/.test(t)
+      || /\{[^}]+\}/.test(t)
+      || /\bTBD\b/i.test(t)
+      || /\blorem\b/i.test(t)
+      || /\bplaceholder\b/i.test(t)
+    );
+  };
+
+  const containsTopicTerm = (text) => {
+    if (!topicTerms.length) return true;
+    const t = String(text || "").toLowerCase();
+    return topicTerms.some((term) => t.includes(term));
+  };
+
+  const containsNextStep = (text) => (
+    /(tomorrow|thursday|next week|this week|schedule|calendar|time to|available|quick call|follow[- ]?up|chat|meet|15[- ]?min|10[- ]?min)/i
+      .test(String(text || ""))
+  );
+
+  const hasBannedPhrases = (text) => {
+    const t = String(text || "").toLowerCase();
+    return (
+      t.includes("i'll let my wife")
+      || t.includes("my wife")
+      || t.includes("birthday party")
+      || t.includes("party packages")
+    );
+  };
+
+  const includesEntityReference = (text, name) => {
+    const nm = String(name || "").toLowerCase();
+    if (!nm) return true;
+    const tokens = nm.split(/[^a-z0-9]+/).filter((t) => t.length >= 3 || t === "ai");
+    if (!tokens.length) return true;
+    const t = String(text || "").toLowerCase();
+    return tokens.some((tok) => {
+      if (tok.length >= 5) return t.includes(tok);
+      return new RegExp(`\\b${tok.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\b`, "i").test(t);
+    });
+  };
+
+  const containsPersonalLife = (text) => {
+    const t = String(text || "");
+    return (
+      /\bmy (wife|husband|kid|kids|mom|dad|birthday|party)\b/i.test(t)
+      || /\bI'?ll let my (wife|husband)\b/i.test(t)
+    );
+  };
+
+  const hasCoachingLeakage = (text) => {
+    const t = String(text || "").toLowerCase();
+    const banned = [
+      "quick improvements",
+      "top fixes",
+      "call result",
+      "rejected",
+      "qualified lead",
+      "score",
+      "signals",
+      "evidence",
+    ];
+    if (banned.some((term) => t.includes(term))) return true;
+    if (topFixes.length) {
+      const words = topFixes.join(" ").toLowerCase().split(/[^a-z]+/).filter(Boolean);
+      return words.some((w) => w.length >= 4 && t.includes(w));
+    }
+    return false;
+  };
+
+  const looksLikeTranscript = (text) => {
+    const t = String(text || "").trim();
+    if (!t) return false;
+    const linePrefix = /^(speaker|agent|prospect|rep|customer|caller)\s*[ab]?:/i;
+    if (linePrefix.test(t)) return true;
+    if (/\bSpeaker\s*[AB]:/i.test(t)) return true;
+    const prefixed = t.split(/\r?\n/).filter((l) => linePrefix.test(l.trim())).length;
+    if (prefixed > 0) return true;
+    const quoteCount = (t.match(/["“”]/g) || []).length;
+    return quoteCount >= 4;
+  };
+
+  const isFollowupValid = (text) => {
+    const t = String(text || "").trim();
+    if (!t) return false;
+    if (t.length > 1200) return false;
+    if (containsPlaceholders(t)) return false;
+    if (looksLikeTranscript(t)) return false;
+    if (hasBannedPhrases(t)) return false;
+    if (hasCoachingLeakage(t)) return false;
+    if (containsPersonalLife(t)) return false;
+    if (!containsNextStep(t)) return false;
+    if (!includesEntityReference(t, entityName)) return false;
+    if (!t.includes("?")) return false;
+    if (!containsTopicTerm(t)) return false;
+    return true;
+  };
+
+  const buildFallbackFollowup = () => {
+    const topic = entityName || scenario || "your team";
+    const msg = `Hi - thanks again for taking the call about ${topic}. If it makes sense, can we do a quick 10-min follow-up tomorrow or Thursday? Happy to send a short recap first.`;
+    return msg.slice(0, 1200);
+  };
 
   const system = `You are Calibrate. Return valid JSON only.`.trim();
-  const result = await deepseekJSON(system, prompt, 0.35);
+  const basePrompt = `
+Write a concise follow-up message from the SALES REP to the PROSPECT.
+Return JSON: { "follow_up": { "text": string } }
+Rules:
+- One message only, no analysis.
+- <=1200 characters.
+- No placeholders like [Your Name], {company}, TBD, lorem.
+- Do not quote the transcript verbatim or include speaker labels.
+- Professional and direct, with a concrete next step.
+- Write as the sales rep.
+- Mention the offer/company topic (entity_name) explicitly.
+- Propose 2 specific time options or ask for availability.
+- Do not ask for product/package details or sound like the prospect replying.
+- Do not include personal-life lines (wife/birthday/party/etc).
+- Do not mention internal fixes, diagnostics, scores, call outcomes, or anything like top fixes.
+Context:
+entity_name=${entityName}
+scenario=${scenario}
+call_why=${callWhy}
+top_fixes=${topFixes.join(" | ")}
+notes=${run.context_text || ""}
+`.trim();
+
+  let followText = "";
+  try {
+    const result = await deepseekJSON(system, basePrompt, 0.2);
+    followText = String(result?.follow_up?.text || result?.follow_up || "").trim();
+    if (!isFollowupValid(followText)) {
+      const repairPrompt = `
+Fix the follow-up. Return JSON only: { "follow_up": { "text": string } }
+Hard rules: no placeholders, no transcript quotes, no speaker labels, <=1200 chars, one message only.
+Must include a concrete next step or scheduling ask and a CTA question.
+Must include the entity_name or scenario topic.
+Do not ask for product/package details or sound like the prospect replying.
+Do not include personal-life lines (wife/birthday/party/etc).
+Do not mention internal fixes, diagnostics, scores, call outcomes, or anything like top fixes.
+Context:
+entity_name=${entityName}
+scenario=${scenario}
+call_why=${callWhy}
+top_fixes=${topFixes.join(" | ")}
+notes=${run.context_text || ""}
+`.trim();
+      const repaired = await deepseekJSON(system, repairPrompt, 0.2);
+      followText = String(repaired?.follow_up?.text || repaired?.follow_up || "").trim();
+    }
+  } catch {
+    followText = "";
+  }
+  if (!isFollowupValid(followText)) {
+    followText = buildFallbackFollowup();
+  }
 
   const updated = {
     ...(run.analysis_json || {}),
-    follow_up: result.follow_up || { text: "" },
+    follow_up: { text: followText },
   };
 
   const { data: saved, error: uErr } = await supabaseAdmin
