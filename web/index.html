@@ -512,6 +512,11 @@
                 <button class="btn primary" id="btnCopyFollowup">Copy</button>
                 <button class="btn" id="btnRegenFollowup">Regenerate</button>
               </div>
+              <div class="spacer"></div>
+              <div>
+                <div class="muted"><b>Follow-up guidance</b></div>
+                <div class="hint" id="followupGuidanceText"></div>
+              </div>
             </div>
 
             <div class="card" style="box-shadow:none; border-color:var(--border);">
@@ -1555,9 +1560,32 @@
       const signals = (a?.signals && Array.isArray(a.signals)) ? a.signals : [];
       $("signalBadges").textContent = signals.length ? `Signals: ${signals.slice(0,3).join(", ")}${signals.length>3?"…":""}` : "Signals: —";
 
-      const followUp = a?.follow_up?.text || a?.followup || "";
+      const followUpRaw = a?.follow_up?.text || a?.followup || "";
+      let followUp = followUpRaw || "";
+      let guidanceText = a?.follow_up_guidance || "";
+      if (followUp && !isSendableFollowupLite(followUp)) {
+        if (!guidanceText) guidanceText = followUp;
+        followUp = "";
+      }
       $("followupText").value = followUp || "";
+      const guidanceEl = $("followupGuidanceText");
+      if (guidanceEl) guidanceEl.textContent = guidanceText || "No guidance yet.";
       updateFollowupButtonLabel();
+
+      const autogenDone = window.__followup_autogen_done || (window.__followup_autogen_done = {});
+      const hasContext = !!(run.transcript_text || run.context_text || (Array.isArray(run.transcript_lines) && run.transcript_lines.length));
+      if (!followUpRaw && run.id && hasContext && !autogenDone[run.id]) {
+        autogenDone[run.id] = true;
+        (async ()=>{
+          try{
+            const data = await api(`/api/runs/${run.id}/regen_followup`, { method:"POST" });
+            currentRun = data.run;
+            renderReport(currentRun);
+          }catch(e){
+            /* no-op */
+          }
+        })();
+      }
 
       const fixes = a?.top_fixes || a?.fixes || [];
       if(Array.isArray(fixes) && fixes.length){
@@ -1722,6 +1750,14 @@
     function updateFollowupButtonLabel(){
       const txt = String($("followupText").value || "").trim();
       $("btnRegenFollowup").textContent = txt ? "Regenerate" : "Generate";
+    }
+
+    function isSendableFollowupLite(text){
+      const t = String(text || "").trim();
+      if (!t) return false;
+      if (/^(send|include|follow[ -]?up|recap|propose)\b/i.test(t)) return false;
+      if (!t.includes("?")) return false;
+      return true;
     }
 
     $("followupText").addEventListener("input", updateFollowupButtonLabel);

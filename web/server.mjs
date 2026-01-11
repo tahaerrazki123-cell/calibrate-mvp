@@ -2359,17 +2359,35 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     return false;
   };
 
+  const startsWithImperative = (text) => (
+    /^(send|include|follow[ -]?up|recap|propose)\b/i.test(String(text || "").trim())
+  );
+
+  const hasGreetingOrOpener = (text) => (
+    /^(hi|hey|hello|thanks|thank you|appreciate|great speaking|good speaking|good talking|nice speaking|nice talking)\b/i
+      .test(String(text || "").trim())
+  );
+
+  const hasRepVoice = (text) => (
+    /\b(i|we|i'm|we're|i\s*am|we\s*are|i\s*will|we\s*will|i'?ve|we'?ve|i'?d|we'?d)\b/i
+      .test(String(text || ""))
+  );
+
+  const endsWithQuestion = (text) => /\?\s*$/.test(String(text || "").trim());
+
   const looksLikeInstructional = (text) => {
     const t = String(text || "").trim().toLowerCase();
     if (!t) return false;
     return (
-      t.startsWith("follow up")
-      || t.startsWith("follow-up")
-      || t.startsWith("followup")
+      startsWithImperative(t)
       || t.includes("recap")
       || t.includes("solidify interest")
       || t.includes("as requested")
       || t.includes("internal notes")
+      || (/(agenda|calendar invite|calendar|zoom call|zoom meeting|invite)\b/i.test(t)
+        && !hasGreetingOrOpener(t)
+        && !hasRepVoice(t))
+      || (!hasGreetingOrOpener(t) && !hasRepVoice(t) && !t.includes("?"))
     );
   };
 
@@ -2396,8 +2414,10 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     if (hasCoachingLeakage(t)) return false;
     if (containsPersonalLife(t)) return false;
     if (!containsNextStep(t)) return false;
+    if (!hasGreetingOrOpener(t)) return false;
+    if (!hasRepVoice(t)) return false;
     if (!includesEntityReference(t, entityName)) return false;
-    if (!t.includes("?")) return false;
+    if (!endsWithQuestion(t)) return false;
     if (!containsTopicTerm(t)) return false;
     return true;
   };
@@ -2406,6 +2426,17 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     const topic = entityName || scenario || "your team";
     const msg = `Hi - thanks again for taking the call about ${topic}. If it makes sense, can we do a quick 10-min follow-up tomorrow or Thursday?`;
     return msg.slice(0, 1200);
+  };
+
+  const buildFollowupGuidance = () => {
+    const parts = [];
+    if (scenario) parts.push(`Scenario: ${scenario}.`);
+    if (callWhy) parts.push(`Call takeaway: ${String(callWhy).trim()}.`);
+    if (topFixes.length) parts.push(`Top fixes: ${topFixes.join("; ")}.`);
+    const text = parts.join(" ").trim();
+    if (!text) return "";
+    const sentences = text.split(/(?<=[.!?])\s+/).slice(0, 12);
+    return sentences.join(" ").trim();
   };
 
   const system = `You are Calibrate. Return valid JSON only.`.trim();
@@ -2439,7 +2470,7 @@ notes=${run.context_text || ""}
     if (!isFollowupValid(followText)) {
       const repairPrompt = `
 Fix the follow-up. Return JSON only: { "follow_up": { "text": string } }
-Write the exact message to send to the prospect. Do not write instructions or notes.
+Write the exact text message/email to send to the prospect. Do not write instructions or notes.
 Hard rules: no placeholders, no transcript quotes, no speaker labels, <=1200 chars, one message only.
 Must include a concrete next step or scheduling ask and a CTA question.
 Must include the entity_name or scenario topic.
@@ -2463,9 +2494,12 @@ notes=${run.context_text || ""}
     followText = buildFallbackFollowup();
   }
 
+  const guidance = buildFollowupGuidance();
+
   const updated = {
     ...(run.analysis_json || {}),
     follow_up: { text: followText },
+    follow_up_guidance: guidance,
   };
 
   const { data: saved, error: uErr } = await supabaseAdmin
@@ -2480,7 +2514,7 @@ notes=${run.context_text || ""}
     if (handleMissingUserId(res, "runs", uErr)) return;
     return res.status(400).json({ error: uErr.message });
   }
-  res.json({ run: saved });
+  res.json({ run: saved, guidance });
 });
 
 // -------- Async Run Endpoints --------
