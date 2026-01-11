@@ -578,6 +578,7 @@
             <button class="btn small" id="btnEntityAiName">AI name</button>
             <button class="btn small" id="btnEntityBack">Back</button>
           </div>
+          <p class="muted">Generate a clean entity name from the call context.</p>
 
           <div class="hr"></div>
 
@@ -1012,7 +1013,7 @@
             const idx = entities.findIndex((x) => x.id === e.id);
             if (idx >= 0) entities[idx].name = data.name;
             renderEntityDetail(e);
-            renderEntitiesList();
+            renderEntities();
             fillEntitySelects();
           }
           toast("Renamed");
