@@ -507,8 +507,16 @@
           <div class="spacer"></div>
           <div id="callResultEvidence" class="evidenceBlock hide"></div>
           <div class="card hide" id="moveEntityPanel" style="box-shadow:none; border-color:var(--border); background:#f7f7f7;">
+            <label>Current entity</label>
+            <div class="muted" id="moveEntityCurrent">Unassigned</div>
+            <div class="spacer"></div>
+            <label>Move to</label>
+            <input class="input" id="moveEntitySearch" placeholder="Search entities..." />
+            <div class="spacer"></div>
+            <select class="input" id="moveEntitySelect"></select>
+            <div class="hint hide" id="moveEntityEmpty">No entities yet.</div>
+            <div class="spacer"></div>
             <div class="row tight">
-              <select class="input" id="moveEntitySelect"></select>
               <button class="btn primary" id="btnMoveEntityConfirm">Move report</button>
               <button class="btn" id="btnMoveEntityCancel">Cancel</button>
             </div>
@@ -1573,6 +1581,17 @@
         moveEntityBtn.onclick = async () => {
           try {
             await loadEntities();
+            const currentLabel = $("moveEntityCurrent");
+            if (currentLabel) {
+              const match = entities.find((e)=>e.id === run.entity_id);
+              currentLabel.textContent = match?.name || run.entity_name || "Unassigned";
+            }
+            const searchInput = $("moveEntitySearch");
+            if (searchInput) searchInput.value = "";
+            renderMoveEntitySelect(run);
+            if (movePanel) movePanel.classList.remove("hide");
+            if (searchInput) searchInput.focus();
+            return;
             if (!entities.length) { toast("No entities"); return; }
             const select = $("moveEntitySelect");
             select.innerHTML = entities.map((e) => {
@@ -1874,6 +1893,54 @@
       if (panel) panel.classList.add("hide");
     }
 
+    function renderMoveEntitySelect(run){
+      const select = $("moveEntitySelect");
+      const emptyEl = $("moveEntityEmpty");
+      const searchInput = $("moveEntitySearch");
+      if (!select) return;
+      const filterText = String(searchInput?.value || "").trim().toLowerCase();
+      const all = Array.isArray(entities) ? entities : [];
+      if (!all.length) {
+        select.innerHTML = "";
+        select.disabled = true;
+        if (emptyEl) {
+          emptyEl.textContent = "No entities yet.";
+          emptyEl.classList.remove("hide");
+        }
+        return;
+      }
+      const filtered = all.filter((e)=>{
+        const name = e.name || "Entity";
+        const industry = e.industry || "";
+        const offer = e.offer || "";
+        const haystack = `${name} ${industry} ${offer}`.toLowerCase();
+        return !filterText || haystack.includes(filterText);
+      });
+      if (!filtered.length) {
+        select.innerHTML = "";
+        select.disabled = true;
+        if (emptyEl) {
+          emptyEl.textContent = "No matching entities.";
+          emptyEl.classList.remove("hide");
+        }
+        return;
+      }
+      if (emptyEl) emptyEl.classList.add("hide");
+      select.disabled = false;
+      const keepId = select.value || "";
+      select.innerHTML = filtered.map((e)=>{
+        const name = e.name || "Entity";
+        return `<option value="${e.id}">${escapeHtml(name)}</option>`;
+      }).join("");
+      if (keepId && filtered.some((e)=>e.id === keepId)) {
+        select.value = keepId;
+      } else if (run?.entity_id && filtered.some((e)=>e.id === run.entity_id)) {
+        select.value = run.entity_id;
+      } else {
+        select.value = filtered[0]?.id || "";
+      }
+    }
+
     function isSendableFollowupLite(text){
       const t = String(text || "").trim();
       if (!t) return false;
@@ -1961,6 +2028,15 @@
       }
     });
 
+    $("moveEntitySearch").addEventListener("input", ()=>{
+      renderMoveEntitySelect(currentRun);
+    });
+    $("moveEntitySearch").addEventListener("keydown", (e)=>{
+      if (e.key === "Enter") {
+        e.preventDefault();
+        $("btnMoveEntityConfirm").click();
+      }
+    });
     $("moveEntitySelect").addEventListener("keydown", (e)=>{
       if (e.key === "Enter") {
         e.preventDefault();
