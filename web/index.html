@@ -482,7 +482,7 @@
             <button class="btn small hide" id="btnViewEntity">View entity</button>
             <button class="btn small hide" id="btnMoveEntity">Move</button>
           </div>
-          <p class="muted">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
+          <p class="muted" id="reportSubtitle">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
 
           <div class="spacer"></div>
 
@@ -741,7 +741,7 @@
 
     function setUploadView(){
       $("uploadForm").classList.toggle("hide", viewingPastRun);
-      $("uploadTitle").textContent = viewingPastRun ? "Run Report" : "Upload Call";
+      $("uploadTitle").textContent = viewingPastRun ? "Call Report" : "Upload Call";
       $("uploadSubtitle").textContent = viewingPastRun
         ? "Reviewing a past run."
         : "Accepts audio + video (MP4). Video audio is extracted server-side.";
@@ -1070,11 +1070,7 @@
         return;
       }
       tb.innerHTML = runs.map(r=>{
-        const reportTitle = r.report_title
-          || r.analysis_json?.report_title
-          || r.analysis_json?.call_result?.label
-          || r.outcome_label
-          || "Legacy run";
+        const reportTitle = formatReportTitle(r);
         const scenarioLabel = r.scenario ? prettyScenario(r.scenario) : "Legacy";
         const resultLabel = r.outcome_label || r.analysis_json?.call_result?.label || "";
         const isLegacy = !r.report_title || !r.scenario || !r.outcome_label;
@@ -1385,11 +1381,7 @@
       const q = String(query || "").trim().toLowerCase();
       if(!q) return runs;
       return runs.filter((r)=>{
-        const reportTitle = r.report_title
-          || r.analysis_json?.report_title
-          || r.analysis_json?.call_result?.label
-          || r.outcome_label
-          || "Legacy run";
+        const reportTitle = formatReportTitle(r);
         const scenarioLabel = r.scenario ? prettyScenario(r.scenario) : "Legacy";
         const resultLabel = r.outcome_label || r.analysis_json?.call_result?.label || "";
         const entityName = r.entity_name || "";
@@ -1413,11 +1405,7 @@
         return;
       }
       tb.innerHTML = runs.map(r=>{
-        const reportTitle = r.report_title
-          || r.analysis_json?.report_title
-          || r.analysis_json?.call_result?.label
-          || r.outcome_label
-          || "Legacy run";
+        const reportTitle = formatReportTitle(r);
         const scenarioLabel = r.scenario ? prettyScenario(r.scenario) : "Legacy";
         const resultLabel = r.outcome_label || r.analysis_json?.call_result?.label || "";
         const isLegacy = !r.report_title || !r.scenario || !r.outcome_label;
@@ -1476,6 +1464,22 @@
       return `QA: ev=${ev}  reuse=${reuse}  A=${aCount} B=${bCount}`;
     }
 
+    function formatReportTitle(run, nameOverride = ""){
+      const entityName = String(nameOverride || run?.entity_name || "").trim();
+      const scenarioName = run?.scenario ? prettyScenario(run.scenario) : "";
+      const label = entityName || scenarioName || "Unassigned";
+      return `Call Report  ${label}`;
+    }
+
+    function formatReportMeta(run){
+      const scenarioName = run?.scenario ? prettyScenario(run.scenario) : "";
+      const createdAt = run?.created_at ? new Date(run.created_at).toLocaleString() : "";
+      if (scenarioName && createdAt) return `${scenarioName}  •  ${createdAt}`;
+      if (scenarioName) return scenarioName;
+      if (createdAt) return createdAt;
+      return "";
+    }
+
     // ---- Report render ----
     function renderReport(run, opts = {}){
       if(!run) return;
@@ -1484,15 +1488,20 @@
       const a = run.analysis_json || run.analysis || null;
       const entityName = run.entity_name || "";
       const reportTitleEl = $("reportTitle");
+      const reportSubtitleEl = $("reportSubtitle");
+      const defaultSubtitle = reportSubtitleEl ? reportSubtitleEl.textContent : "";
       const setReportTitle = (name)=>{
-        const safeName = String(name || "").trim();
-        reportTitleEl.textContent = safeName ? `Report — ${safeName}` : "Report";
+        reportTitleEl.textContent = formatReportTitle(run, name);
+        if (reportSubtitleEl) {
+          reportSubtitleEl.textContent = formatReportMeta(run) || defaultSubtitle;
+        }
       };
       setReportTitle(entityName);
       if(!entityName && run.entity_id){
         api("/api/entities")
           .then((data)=>{
             const match = (data?.entities || []).find((e)=>e.id === run.entity_id);
+            if (match?.name) run.entity_name = match.name;
             setReportTitle(match?.name || "");
           })
           .catch(()=>{
