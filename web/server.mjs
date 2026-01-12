@@ -2372,6 +2372,8 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
 
+  const prev = String(run.analysis_json?.follow_up?.text || "").trim();
+
   // Ensure we have entity_name when entity_id exists
   let entityName = run.entity_name || "";
   if (!entityName && run.entity_id) {
@@ -2556,8 +2558,29 @@ app.post("/api/runs/:id/regen_followup", async (req, res) => {
     return sentences.join(" ").trim();
   };
 
+  console.log("[regen_followup]", { run_id: id, prev_len: prev.length, entityName, scenario });
+
+  const normalizeText = (text) => (
+    String(text || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+
+  const buildFallbackFollowupVariant = (seed) => {
+    const topic = entityName || scenario || "your team";
+    const options = [
+      `Hi there - thanks again for the time on ${topic}. Could we set a quick 10-min check-in tomorrow morning or Thursday afternoon?`,
+      `Thanks for the call about ${topic}. If it helps, I can send a brief recap and we can pick a 15-min slot this week. Does Tue 2pm or Wed 11am work?`,
+      `Appreciate the conversation around ${topic}. Are you open to a short follow-up? I can do Thu 3pm or Fri 10am, or share another time that works.`,
+    ];
+    const pick = options[seed % options.length] || options[0];
+    return pick.slice(0, 1200);
+  };
+
   const system = `You are Calibrate. Return valid JSON only.`.trim();
-  const basePrompt = `
+  const buildBasePrompt = (nonce) => `
 Write a concise follow-up message from the SALES REP to the PROSPECT.
 Return JSON: { "follow_up": { "text": string } }
 Rules:
@@ -2572,20 +2595,18 @@ Rules:
 - Do not ask for product/package details or sound like the prospect replying.
 - Do not include personal-life lines (wife/birthday/party/etc).
 - Do not mention internal fixes, diagnostics, scores, call outcomes, or anything like top fixes.
+- The new follow-up MUST be meaningfully different from previous_follow_up (different wording + structure). Do not repeat it.
 Context:
 entity_name=${entityName}
 scenario=${scenario}
 call_why=${callWhy}
 top_fixes=${topFixes.join(" | ")}
 notes=${run.context_text || ""}
+previous_follow_up=${prev}
+regen_nonce=${nonce}
 `.trim();
 
-  let followText = "";
-  try {
-    const result = await deepseekJSON(system, basePrompt, 0.2);
-    followText = String(result?.follow_up?.text || result?.follow_up || "").trim();
-    if (!isFollowupValid(followText)) {
-      const repairPrompt = `
+  const buildRepairPrompt = (nonce) => `
 Fix the follow-up. Return JSON only: { "follow_up": { "text": string } }
 Write the exact text message/email to send to the prospect. Do not write instructions or notes.
 Hard rules: no placeholders, no transcript quotes, no speaker labels, <=1200 chars, one message only.
@@ -2594,22 +2615,43 @@ Must include the entity_name or scenario topic.
 Do not ask for product/package details or sound like the prospect replying.
 Do not include personal-life lines (wife/birthday/party/etc).
 Do not mention internal fixes, diagnostics, scores, call outcomes, or anything like top fixes.
+The new follow-up MUST be meaningfully different from previous_follow_up (different wording + structure). Do not repeat it.
 Context:
 entity_name=${entityName}
 scenario=${scenario}
 call_why=${callWhy}
 top_fixes=${topFixes.join(" | ")}
 notes=${run.context_text || ""}
+previous_follow_up=${prev}
+regen_nonce=${nonce}
 `.trim();
-      const repaired = await deepseekJSON(system, repairPrompt, 0.2);
-      followText = String(repaired?.follow_up?.text || repaired?.follow_up || "").trim();
+  let followText = "";
+  let mode = "ai";
+  let nonce = Date.now();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    nonce = Date.now();
+    try {
+      const result = await deepseekJSON(system, buildBasePrompt(nonce), 0.2);
+      followText = String(result?.follow_up?.text || result?.follow_up || "").trim();
+      if (!isFollowupValid(followText)) {
+        const repaired = await deepseekJSON(system, buildRepairPrompt(nonce), 0.2);
+        followText = String(repaired?.follow_up?.text || repaired?.follow_up || "").trim();
+      }
+      const normalized = normalizeText(followText);
+      const prevNormalized = normalizeText(prev);
+      if (!isFollowupValid(followText)) continue;
+      if (prevNormalized && normalized === prevNormalized) continue;
+      mode = "ai";
+      break;
+    } catch {
+      followText = "";
     }
-  } catch {
-    followText = "";
   }
-  if (!isFollowupValid(followText)) {
-    followText = buildFallbackFollowup();
+  if (!isFollowupValid(followText) || (prev && normalizeText(followText) === normalizeText(prev))) {
+    followText = buildFallbackFollowupVariant(nonce);
+    mode = "fallback";
   }
+  console.log("[regen_followup_result]", { run_id: id, mode, len: followText.length });
 
   const guidance = buildFollowupGuidance();
 
