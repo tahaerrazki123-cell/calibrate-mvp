@@ -1615,7 +1615,29 @@
         const evidenceState = window.__evidence_state || (window.__evidence_state = { expanded: {}, filter: {} });
         const evidenceKey = run.id || "current";
         const items = evidence.slice(0, 36);
-        const renderEvidenceList = () => {
+        const ensureEvidenceShell = () => {
+          evidenceBox.classList.remove("hide");
+          if (evidenceBox.dataset.evidenceKey === evidenceKey) return;
+          evidenceBox.dataset.evidenceKey = evidenceKey;
+          evidenceBox.innerHTML = `
+            <div class="evidenceTitle">Evidence</div>
+            <div class="spacer"></div>
+            <input class="input" id="evidenceFilterInput" placeholder="Filter evidence..." />
+            <div class="spacer"></div>
+            <div class="evidenceList" id="evidenceChipsList"></div>
+            <div class="spacer" id="evidenceToggleSpacer"></div>
+            <div id="evidenceToggleWrap"></div>
+          `;
+          const filterInput = document.getElementById("evidenceFilterInput");
+          if (filterInput) {
+            filterInput.value = String(evidenceState.filter[evidenceKey] || "");
+            filterInput.addEventListener("input", ()=>{
+              evidenceState.filter[evidenceKey] = filterInput.value;
+              renderEvidenceChipsList();
+            });
+          }
+        };
+        const renderEvidenceChipsList = () => {
           const filterText = String(evidenceState.filter[evidenceKey] || "").trim().toLowerCase();
           const expanded = !!evidenceState.expanded[evidenceKey];
           const filtered = filterText
@@ -1630,38 +1652,28 @@
           const visible = effectiveExpanded ? filtered : filtered.slice(0, EVIDENCE_COLLAPSE_LIMIT);
           const showToggle = !filterText && filtered.length > EVIDENCE_COLLAPSE_LIMIT;
           const toggleText = effectiveExpanded ? "Show fewer" : `Show all evidence (${filtered.length})`;
-          evidenceBox.classList.remove("hide");
-          evidenceBox.innerHTML = `
-            <div class="evidenceTitle">Evidence</div>
-            <div class="spacer"></div>
-            <input class="input" id="evidenceFilterInput" placeholder="Filter evidence..." value="${escapeHtml(evidenceState.filter[evidenceKey] || "")}" />
-            <div class="spacer"></div>
-            <div class="evidenceList">
-              ${visible.map((ev, i)=>{
-                const lineNum = Number(ev?.line) || i + 1;
-                const quote = String(ev?.quote || "").trim();
-                const why = String(ev?.why || "").trim();
-                let label = quote ? `"${quote}"` : (why || `Line ${lineNum}`);
-                if(quote && why) label = `"${quote}" - ${why}`;
-                else if(!quote && why) label = why;
-                const short = label.length > 180 ? `${label.slice(0, 177)}...` : label;
-                return `<button class="evidenceBtn" data-evidence-line="${lineNum}" title="${escapeHtml(label)}">${escapeHtml(short)}</button>`;
-              }).join("")}
-            </div>
-            ${showToggle ? `<div class="spacer"></div><button class="btn small" id="evidenceToggleBtn">${escapeHtml(toggleText)}</button>` : ``}
-          `;
-          const filterInput = document.getElementById("evidenceFilterInput");
-          if (filterInput) {
-            filterInput.addEventListener("input", ()=>{
-              evidenceState.filter[evidenceKey] = filterInput.value;
-              renderEvidenceList();
-            });
+          const listEl = document.getElementById("evidenceChipsList");
+          if (listEl) {
+            listEl.innerHTML = visible.map((ev, i)=>{
+              const lineNum = Number(ev?.line) || i + 1;
+              const quote = String(ev?.quote || "").trim();
+              const why = String(ev?.why || "").trim();
+              let label = quote ? `"${quote}"` : (why || `Line ${lineNum}`);
+              if(quote && why) label = `"${quote}" - ${why}`;
+              else if(!quote && why) label = why;
+              const short = label.length > 180 ? `${label.slice(0, 177)}...` : label;
+              return `<button class="evidenceBtn" data-evidence-line="${lineNum}" title="${escapeHtml(label)}">${escapeHtml(short)}</button>`;
+            }).join("");
           }
+          const toggleWrap = document.getElementById("evidenceToggleWrap");
+          const toggleSpacer = document.getElementById("evidenceToggleSpacer");
+          if (toggleWrap) toggleWrap.innerHTML = showToggle ? `<button class="btn small" id="evidenceToggleBtn">${escapeHtml(toggleText)}</button>` : ``;
+          if (toggleSpacer) toggleSpacer.classList.toggle("hide", !showToggle);
           const toggleBtn = document.getElementById("evidenceToggleBtn");
           if (toggleBtn) {
             toggleBtn.addEventListener("click", ()=>{
               evidenceState.expanded[evidenceKey] = !evidenceState.expanded[evidenceKey];
-              renderEvidenceList();
+              renderEvidenceChipsList();
             });
           }
           evidenceBox.querySelectorAll("[data-evidence-line]").forEach((btn)=>{
@@ -1674,7 +1686,8 @@
             });
           });
         };
-        renderEvidenceList();
+        ensureEvidenceShell();
+        renderEvidenceChipsList();
       }else{
         evidenceBox.classList.add("hide");
         evidenceBox.innerHTML = "";
@@ -1784,10 +1797,6 @@
         }
       }
 
-      if(evidence.length && useTranscriptLines){
-        const filterInput = document.getElementById("evidenceFilterInput");
-        if (filterInput) filterInput.value = String(window.__evidence_state?.filter?.[run.id] || "");
-      }
     }
 
     function updateFollowupButtonLabel(){
