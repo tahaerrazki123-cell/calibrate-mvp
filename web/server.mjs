@@ -2110,7 +2110,7 @@ app.get("/api/runs", async (req, res) => {
   const entityId = (req.query.entity_id || "").trim();
   let runsQuery = supabaseAdmin
     .from("runs")
-    .select("id, created_at, scenario, outcome_label, analysis_json, transcript_lines, entity_id, entities(name), status, progress_step, error_text")
+    .select("id, name, created_at, scenario, outcome_label, analysis_json, transcript_lines, entity_id, entities(name), status, progress_step, error_text")
     .eq("user_id", user.id);
   if (entityId) runsQuery = runsQuery.eq("entity_id", entityId);
   const { data, error } = await runsQuery
@@ -2147,7 +2147,7 @@ app.get("/api/runs/:id", async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from("runs")
-    .select("id, user_id, created_at, scenario, context_text, transcript_text, transcript_lines, transcript_json, transcript_hash, outcome_label, analysis_json, entity_id")
+    .select("id, name, user_id, created_at, scenario, context_text, transcript_text, transcript_lines, transcript_json, transcript_hash, outcome_label, analysis_json, entity_id")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -2235,6 +2235,123 @@ app.post("/api/runs/:id/reassign_entity", async (req, res) => {
       entity_name: entityRow.name || "",
     },
   });
+});
+
+app.post("/api/runs/:id/set_name", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const id = req.params.id;
+  const name = String(req.body?.name || "").trim();
+
+  if (!name) return res.status(400).json({ error: "Missing name" });
+  if (name.length > 180) return res.status(400).json({ error: "Name too long" });
+  if (/\[[^\]]+\]/.test(name) || /\{[^}]+\}/.test(name) || /\bTBD\b/i.test(name) || /\blorem\b/i.test(name)) {
+    return res.status(400).json({ error: "Invalid name" });
+  }
+
+  const { data: saved, error: uErr } = await supabaseAdmin
+    .from("runs")
+    .update({ name })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (uErr) {
+    if (handleMissingUserId(res, "runs", uErr)) return;
+    return res.status(400).json({ error: uErr.message });
+  }
+
+  res.json({ run: saved });
+});
+
+app.post("/api/runs/:id/suggest_name", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const id = req.params.id;
+  const { data: run, error } = await supabaseAdmin
+    .from("runs")
+    .select("id, name, scenario, outcome_label, analysis_json, transcript_text, entity_id, entity_name")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (error) {
+    if (handleMissingUserId(res, "runs", error)) return;
+    return res.status(400).json({ error: error.message });
+  }
+
+  let entityName = run.entity_name || "";
+  if (!entityName && run.entity_id) {
+    const { data: ent } = await supabaseAdmin
+      .from("entities")
+      .select("name")
+      .eq("id", run.entity_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    entityName = ent?.name || "";
+  }
+
+  const displayEntity = (() => {
+    const n = String(entityName || "").trim();
+    if (/^unassigned entity/i.test(n) || /^unspecified entity/i.test(n)) return "Unspecified entity";
+    return n || "Unspecified entity";
+  })();
+  const callLabel = run.analysis_json?.call_result?.label || run.outcome_label || "Report";
+  const fallback = `${displayEntity}  ${callLabel}`.slice(0, 180);
+
+  const snippet = String(run.transcript_text || "").slice(0, 500);
+  const system = `You are Calibrate. Return valid JSON only.`.trim();
+  const prompt = `
+Generate a short report name. Return JSON: { "name": "..." }
+Rules:
+- 38 words max, title-case-ish, not a full sentence.
+- No trailing punctuation.
+- Must not include "Call Report" or "Unassigned Entity".
+- No placeholders like [Name], {company}, TBD, lorem.
+Context:
+entity_name=${entityName}
+scenario=${run.scenario || ""}
+call_result=${callLabel}
+snippet=${snippet}
+`.trim();
+
+  const isValidName = (name) => {
+    const n = String(name || "").trim();
+    if (!n) return false;
+    if (n.length > 180) return false;
+    if (/\[[^\]]+\]/.test(n) || /\{[^}]+\}/.test(n) || /\bTBD\b/i.test(n) || /\blorem\b/i.test(n)) return false;
+    if (/call report/i.test(n)) return false;
+    if (/unassigned entity/i.test(n) || /unspecified entity/i.test(n)) return false;
+    if (/[.!?;:,]\s*$/.test(n)) return false;
+    const words = n.split(/\s+/).filter(Boolean);
+    if (words.length > 38) return false;
+    return true;
+  };
+
+  let name = "";
+  try {
+    const result = await deepseekJSON(system, prompt, 0.2);
+    name = String(result?.name || "").trim();
+  } catch {
+    name = "";
+  }
+  if (!isValidName(name)) name = fallback;
+
+  const { data: saved, error: uErr } = await supabaseAdmin
+    .from("runs")
+    .update({ name })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+  if (uErr) {
+    if (handleMissingUserId(res, "runs", uErr)) return;
+    return res.status(400).json({ error: uErr.message });
+  }
+  res.json({ run: saved });
 });
 
 app.post("/api/runs/:id/regen_followup", async (req, res) => {

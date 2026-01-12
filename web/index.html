@@ -479,8 +479,15 @@
           <div class="row">
             <h2 id="reportTitle" class="grow">Report</h2>
             <span class="qa-badge" id="qa-badge">QA: (no diagnostics)</span>
+            <button class="btn small" id="btnEditReportTitle">Edit name</button>
+            <button class="btn small" id="btnSuggestReportTitle">Suggest name</button>
             <button class="btn small hide" id="btnViewEntity">View entity</button>
             <button class="btn small hide" id="btnMoveEntity">Move</button>
+          </div>
+          <div class="row tight hide" id="reportTitleEditor">
+            <input class="input" id="reportTitleInput" placeholder="Name this report" />
+            <button class="btn primary small" id="btnSaveReportTitle">Save</button>
+            <button class="btn small" id="btnCancelReportTitle">Cancel</button>
           </div>
           <p class="muted" id="reportSubtitle">Post-call command center (result → follow-up → top fixes). Transcript is collapsible.</p>
 
@@ -1384,7 +1391,7 @@
         const reportTitle = formatReportTitle(r);
         const scenarioLabel = r.scenario ? prettyScenario(r.scenario) : "Legacy";
         const resultLabel = r.outcome_label || r.analysis_json?.call_result?.label || "";
-        const entityName = r.entity_name || "";
+        const entityName = displayEntityName(r.entity_name || "");
         const hay = `${reportTitle} ${scenarioLabel} ${resultLabel} ${entityName}`.toLowerCase();
         return hay.includes(q);
       });
@@ -1415,7 +1422,7 @@
           <td>${escapeHtml(reportTitle)}${legacyTag}</td>
           <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
           <td>${escapeHtml(scenarioLabel)}</td>
-          <td>${escapeHtml(r.entity_name || "")}</td>
+          <td>${escapeHtml(displayEntityName(r.entity_name || ""))}</td>
           <td>${escapeHtml(resultLabel)}</td>
           <td><button class="btn small" data-open="${r.id}">Open</button></td>
         </tr>
@@ -1464,11 +1471,25 @@
       return `QA: ev=${ev}  reuse=${reuse}  A=${aCount} B=${bCount}`;
     }
 
-    function formatReportTitle(run, nameOverride = ""){
-      const entityName = String(nameOverride || run?.entity_name || "").trim();
-      const scenarioName = run?.scenario ? prettyScenario(run.scenario) : "";
-      const label = entityName || scenarioName || "Unassigned";
-      return `Call Report  ${label}`;
+    function displayEntityName(name){
+      const n = String(name || "").trim();
+      if (!n) return "";
+      if (/^unassigned entity/i.test(n) || /^unspecified entity/i.test(n)) return "Unspecified entity";
+      return n;
+    }
+
+    function getReportName(run){
+      const saved = String(run?.name || "").trim();
+      if (saved) return saved;
+      const entityLabel = displayEntityName(run?.entity_name || "");
+      const scenarioLabel = run?.scenario ? prettyScenario(run.scenario) : "";
+      const base = entityLabel || scenarioLabel || "Unspecified entity";
+      const resultLabel = run?.analysis_json?.call_result?.label || run?.outcome_label || "Report";
+      return `${base}  ${resultLabel}`;
+    }
+
+    function formatReportTitle(run){
+      return `Call Report  ${getReportName(run)}`;
     }
 
     function formatReportMeta(run){
@@ -1490,13 +1511,22 @@
       const reportTitleEl = $("reportTitle");
       const reportSubtitleEl = $("reportSubtitle");
       const defaultSubtitle = reportSubtitleEl ? reportSubtitleEl.textContent : "";
+      const titleEditor = $("reportTitleEditor");
+      const titleInput = $("reportTitleInput");
+      const editTitleBtn = $("btnEditReportTitle");
+      const suggestTitleBtn = $("btnSuggestReportTitle");
       const setReportTitle = (name)=>{
-        reportTitleEl.textContent = formatReportTitle(run, name);
+        if (name) run.entity_name = displayEntityName(name);
+        reportTitleEl.textContent = formatReportTitle(run);
         if (reportSubtitleEl) {
           reportSubtitleEl.textContent = formatReportMeta(run) || defaultSubtitle;
         }
       };
       setReportTitle(entityName);
+      if (titleEditor) titleEditor.classList.add("hide");
+      if (titleInput) titleInput.value = getReportName(run);
+      if (editTitleBtn) editTitleBtn.classList.toggle("hide", !run.id);
+      if (suggestTitleBtn) suggestTitleBtn.classList.toggle("hide", !run.id);
       if(!entityName && run.entity_id){
         api("/api/entities")
           .then((data)=>{
@@ -1852,8 +1882,63 @@
       return true;
     }
 
+    function openReportTitleEditor(){
+      if (!currentRun?.id) return;
+      const editor = $("reportTitleEditor");
+      const input = $("reportTitleInput");
+      if (!editor || !input) return;
+      input.value = getReportName(currentRun);
+      editor.classList.remove("hide");
+      input.focus();
+      input.select();
+    }
+
+    function closeReportTitleEditor(){
+      const editor = $("reportTitleEditor");
+      if (editor) editor.classList.add("hide");
+    }
+
     $("followupText").addEventListener("input", updateFollowupButtonLabel);
     updateFollowupButtonLabel();
+
+    $("btnEditReportTitle").addEventListener("click", openReportTitleEditor);
+    $("btnCancelReportTitle").addEventListener("click", closeReportTitleEditor);
+    $("btnSaveReportTitle").addEventListener("click", async ()=>{
+      try{
+        if (!currentRun?.id) return closeReportTitleEditor();
+        const name = String($("reportTitleInput").value || "").trim();
+        if (!name) { toast("Enter a name"); return; }
+        const data = await api(`/api/runs/${currentRun.id}/set_name`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        currentRun = { ...currentRun, ...data.run, name };
+        closeReportTitleEditor();
+        renderReport(currentRun);
+        const idx = runsCache.findIndex((r)=>r.id === currentRun.id);
+        if (idx >= 0) runsCache[idx].name = name;
+        const eidx = entityRunsCache.findIndex((r)=>r.id === currentRun.id);
+        if (eidx >= 0) entityRunsCache[eidx].name = name;
+      }catch(e){
+        toast(e.message || "Save failed");
+      }
+    });
+
+    $("btnSuggestReportTitle").addEventListener("click", async ()=>{
+      try{
+        if (!currentRun?.id) return;
+        const data = await api(`/api/runs/${currentRun.id}/suggest_name`, { method:"POST" });
+        currentRun = { ...currentRun, ...data.run };
+        renderReport(currentRun);
+        const idx = runsCache.findIndex((r)=>r.id === currentRun.id);
+        if (idx >= 0) runsCache[idx].name = currentRun.name;
+        const eidx = entityRunsCache.findIndex((r)=>r.id === currentRun.id);
+        if (eidx >= 0) entityRunsCache[eidx].name = currentRun.name;
+      }catch(e){
+        toast(e.message || "Suggest failed");
+      }
+    });
 
     $("btnMoveEntityCancel").addEventListener("click", closeMoveEntityPanel);
     $("btnMoveEntityConfirm").addEventListener("click", async ()=>{
