@@ -1821,7 +1821,7 @@ app.post("/api/entities/:id/ai_name", async (req, res) => {
     const scenario = r.scenario || "";
     const outcome = r.outcome_label || "";
     const ctx = r.context_text || "";
-    return `Run ${i + 1}: scenario=${scenario}; outcome=${outcome}; context=${ctx}`;
+    return `Report ${i + 1}: scenario=${scenario}; outcome=${outcome}; context=${ctx}`;
   }).join("\n");
 
   const system = `
@@ -1840,7 +1840,7 @@ name=${entity.name || ""}
 offer=${entity.offer || ""}
 industry=${entity.industry || ""}
 notes=${entity.notes || ""}
-Recent runs:
+Recent reports:
 ${summary}
 `.trim();
 
@@ -1951,7 +1951,7 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
     if (handleMissingUserId(res, "runs", lrErr)) return;
     return res.status(400).json({ error: lrErr.message });
   }
-  if (!latestRun) return res.status(400).json({ error: "No runs found for this entity yet." });
+  if (!latestRun) return res.status(400).json({ error: "No reports found for this entity yet." });
 
   const latestRunCreatedAt = latestRun.created_at;
 
@@ -2002,7 +2002,7 @@ app.post("/api/entities/:id/playbook", async (req, res) => {
     if (handleMissingUserId(res, "runs", rErr)) return;
     return res.status(400).json({ error: rErr.message });
   }
-  if (!runs?.length) return res.status(400).json({ error: "No runs found for this entity yet." });
+  if (!runs?.length) return res.status(400).json({ error: "No reports found for this entity yet." });
 
   const runTextById = new Map(runs.map((r) => [r.id, r.transcript_text || ""]));
   const transcripts = runs
@@ -2616,7 +2616,7 @@ notes=${run.context_text || ""}
   const updated = {
     ...(run.analysis_json || {}),
     follow_up: { text: followText },
-    follow_up_guidance: guidance,
+    follow_up_guidance: guidance || "",
   };
 
   const { data: saved, error: uErr } = await supabaseAdmin
