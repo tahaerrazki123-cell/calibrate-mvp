@@ -499,6 +499,13 @@
 
           <div class="spacer"></div>
           <div id="callResultEvidence" class="evidenceBlock hide"></div>
+          <div class="card hide" id="moveEntityPanel" style="box-shadow:none; border-color:var(--border); background:#f7f7f7;">
+            <div class="row tight">
+              <select class="input" id="moveEntitySelect"></select>
+              <button class="btn primary" id="btnMoveEntityConfirm">Move report</button>
+              <button class="btn" id="btnMoveEntityCancel">Cancel</button>
+            </div>
+          </div>
           <div class="spacer"></div>
 
           <div class="twoCol">
@@ -1505,6 +1512,8 @@
       if (qaBadge) qaBadge.textContent = buildQABadgeText(run);
       const viewEntityBtn = $("btnViewEntity");
       const moveEntityBtn = $("btnMoveEntity");
+      const movePanel = $("moveEntityPanel");
+      if (movePanel) movePanel.classList.add("hide");
       if(run.entity_id){
         viewEntityBtn.classList.remove("hide");
         viewEntityBtn.onclick = async ()=>{
@@ -1526,20 +1535,14 @@
           try {
             await loadEntities();
             if (!entities.length) { toast("No entities"); return; }
-            const list = entities.map((e, i) => `${i + 1}) ${e.name || "Entity"}`).join("\n");
-            const choice = prompt(`Move to which entity?\n${list}`);
-            if (!choice) return;
-            const idx = Number(choice) - 1;
-            const target = entities[idx];
-            if (!target) { toast("Invalid selection"); return; }
-            const data = await api(`/api/runs/${run.id}/reassign_entity`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ entity_id: target.id }),
-            });
-            currentRun = data.run;
-            renderReport(currentRun);
-            await loadRuns();
+            const select = $("moveEntitySelect");
+            select.innerHTML = entities.map((e) => {
+              const name = e.name || "Entity";
+              const meta = e.industry ? ` — ${e.industry}` : "";
+              return `<option value="${e.id}">${escapeHtml(`${name}${meta}`)}</option>`;
+            }).join("");
+            select.value = run.entity_id || entities[0]?.id || "";
+            if (movePanel) movePanel.classList.remove("hide");
           } catch (e) {
             toast(e.message || "Move failed");
           }
@@ -1608,23 +1611,70 @@
       const evidence = Array.isArray(a?.call_result?.evidence) ? a.call_result.evidence : [];
       const evidenceBox = $("callResultEvidence");
       if(evidence.length){
+        const EVIDENCE_COLLAPSE_LIMIT = 12;
+        const evidenceState = window.__evidence_state || (window.__evidence_state = { expanded: {}, filter: {} });
+        const evidenceKey = run.id || "current";
         const items = evidence.slice(0, 36);
-        evidenceBox.classList.remove("hide");
-        evidenceBox.innerHTML = `
-          <div class="evidenceTitle">Evidence</div>
-          <div class="evidenceList">
-            ${items.map((ev, i)=>{
-              const lineNum = Number(ev?.line) || i + 1;
-              const quote = String(ev?.quote || "").trim();
-              const why = String(ev?.why || "").trim();
-              let label = quote ? `"${quote}"` : (why || `Line ${lineNum}`);
-              if(quote && why) label = `"${quote}" - ${why}`;
-              else if(!quote && why) label = why;
-              const short = label.length > 180 ? `${label.slice(0, 177)}...` : label;
-              return `<button class="evidenceBtn" data-evidence-line="${lineNum}" title="${escapeHtml(label)}">${escapeHtml(short)}</button>`;
-            }).join("")}
-          </div>
-        `;
+        const renderEvidenceList = () => {
+          const filterText = String(evidenceState.filter[evidenceKey] || "").trim().toLowerCase();
+          const expanded = !!evidenceState.expanded[evidenceKey];
+          const filtered = filterText
+            ? items.filter((ev)=>{
+                const lineNum = Number(ev?.line) || 0;
+                const quote = String(ev?.quote || "").trim();
+                const why = String(ev?.why || "").trim();
+                return `${quote} ${why} ${lineNum}`.toLowerCase().includes(filterText);
+              })
+            : items;
+          const effectiveExpanded = filterText ? true : expanded;
+          const visible = effectiveExpanded ? filtered : filtered.slice(0, EVIDENCE_COLLAPSE_LIMIT);
+          const showToggle = !filterText && filtered.length > EVIDENCE_COLLAPSE_LIMIT;
+          const toggleText = effectiveExpanded ? "Show fewer" : `Show all evidence (${filtered.length})`;
+          evidenceBox.classList.remove("hide");
+          evidenceBox.innerHTML = `
+            <div class="evidenceTitle">Evidence</div>
+            <div class="spacer"></div>
+            <input class="input" id="evidenceFilterInput" placeholder="Filter evidence..." value="${escapeHtml(evidenceState.filter[evidenceKey] || "")}" />
+            <div class="spacer"></div>
+            <div class="evidenceList">
+              ${visible.map((ev, i)=>{
+                const lineNum = Number(ev?.line) || i + 1;
+                const quote = String(ev?.quote || "").trim();
+                const why = String(ev?.why || "").trim();
+                let label = quote ? `"${quote}"` : (why || `Line ${lineNum}`);
+                if(quote && why) label = `"${quote}" - ${why}`;
+                else if(!quote && why) label = why;
+                const short = label.length > 180 ? `${label.slice(0, 177)}...` : label;
+                return `<button class="evidenceBtn" data-evidence-line="${lineNum}" title="${escapeHtml(label)}">${escapeHtml(short)}</button>`;
+              }).join("")}
+            </div>
+            ${showToggle ? `<div class="spacer"></div><button class="btn small" id="evidenceToggleBtn">${escapeHtml(toggleText)}</button>` : ``}
+          `;
+          const filterInput = document.getElementById("evidenceFilterInput");
+          if (filterInput) {
+            filterInput.addEventListener("input", ()=>{
+              evidenceState.filter[evidenceKey] = filterInput.value;
+              renderEvidenceList();
+            });
+          }
+          const toggleBtn = document.getElementById("evidenceToggleBtn");
+          if (toggleBtn) {
+            toggleBtn.addEventListener("click", ()=>{
+              evidenceState.expanded[evidenceKey] = !evidenceState.expanded[evidenceKey];
+              renderEvidenceList();
+            });
+          }
+          evidenceBox.querySelectorAll("[data-evidence-line]").forEach((btn)=>{
+            btn.addEventListener("click", ()=>{
+              const lineNum = Number(btn.getAttribute("data-evidence-line"));
+              if(!lineNum || !useTranscriptLines) return;
+              evidenceBox.querySelectorAll(".evidenceBtn").forEach((b)=>b.classList.remove("active"));
+              btn.classList.add("active");
+              highlightTranscriptLine(lineNum);
+            });
+          });
+        };
+        renderEvidenceList();
       }else{
         evidenceBox.classList.add("hide");
         evidenceBox.innerHTML = "";
@@ -1734,22 +1784,20 @@
         }
       }
 
-      if(evidence.length){
-        evidenceBox.querySelectorAll("[data-evidence-line]").forEach((btn)=>{
-          btn.addEventListener("click", ()=>{
-            const lineNum = Number(btn.getAttribute("data-evidence-line"));
-            if(!lineNum || !useTranscriptLines) return;
-            evidenceBox.querySelectorAll(".evidenceBtn").forEach((b)=>b.classList.remove("active"));
-            btn.classList.add("active");
-            highlightTranscriptLine(lineNum);
-          });
-        });
+      if(evidence.length && useTranscriptLines){
+        const filterInput = document.getElementById("evidenceFilterInput");
+        if (filterInput) filterInput.value = String(window.__evidence_state?.filter?.[run.id] || "");
       }
     }
 
     function updateFollowupButtonLabel(){
       const txt = String($("followupText").value || "").trim();
       $("btnRegenFollowup").textContent = txt ? "Regenerate" : "Generate";
+    }
+
+    function closeMoveEntityPanel(){
+      const panel = $("moveEntityPanel");
+      if (panel) panel.classList.add("hide");
     }
 
     function isSendableFollowupLite(text){
@@ -1762,6 +1810,38 @@
 
     $("followupText").addEventListener("input", updateFollowupButtonLabel);
     updateFollowupButtonLabel();
+
+    $("btnMoveEntityCancel").addEventListener("click", closeMoveEntityPanel);
+    $("btnMoveEntityConfirm").addEventListener("click", async ()=>{
+      try{
+        if (!currentRun?.id) return closeMoveEntityPanel();
+        const select = $("moveEntitySelect");
+        const entityId = select?.value || "";
+        if (!entityId) { toast("Pick an entity"); return; }
+        const data = await api(`/api/runs/${currentRun.id}/reassign_entity`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entity_id: entityId }),
+        });
+        currentRun = data.run;
+        closeMoveEntityPanel();
+        renderReport(currentRun);
+        await loadRuns();
+      }catch(e){
+        toast(e.message || "Move failed");
+      }
+    });
+
+    $("moveEntitySelect").addEventListener("keydown", (e)=>{
+      if (e.key === "Enter") {
+        e.preventDefault();
+        $("btnMoveEntityConfirm").click();
+      }
+    });
+
+    document.addEventListener("keydown", (e)=>{
+      if (e.key === "Escape") closeMoveEntityPanel();
+    });
 
     $("btnCopyFollowup").addEventListener("click", async ()=>{
       const txt = $("followupText").value || "";
