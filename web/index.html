@@ -385,7 +385,7 @@
             <div class="hr"></div>
             <div class="kpi">
               <div>
-                <b>Last run</b><div class="muted" id="lastRunLabel">None yet</div>
+                <b>Last report</b><div class="muted" id="lastRunLabel">None yet</div>
               </div>
               <span class="badge" id="lastRunBadge">—</span>
             </div>
@@ -396,7 +396,7 @@
             <div class="spacer"></div>
             <div class="row tight">
               <button class="btn primary" id="goUpload">Upload a call</button>
-              <button class="btn" id="goRuns">View runs</button>
+              <button class="btn" id="goRuns">View reports</button>
             </div>
           </div>
         </div>
@@ -565,7 +565,7 @@
         <div class="row">
           <div class="grow">
             <h2>Entities</h2>
-            <p class="muted">Group calls under one business/offer so Calibrate can learn patterns across runs.</p>
+            <p class="muted">Group calls under one business/offer so Calibrate can learn patterns across reports.</p>
           </div>
           <button class="btn primary" id="btnNewEntity">New entity</button>
         </div>
@@ -610,7 +610,7 @@
           <div class="hr"></div>
 
           <h2>Call Reports</h2>
-          <p class="muted">Runs tied to this entity.</p>
+          <p class="muted">Reports tied to this entity.</p>
           <div class="spacer"></div>
           <div class="row tight">
             <input class="input" id="entityRunsSearch" placeholder="Search reports, scenario, result..." />
@@ -1074,14 +1074,14 @@
         entityRunsCache = runs;
         renderEntityRuns(filterRuns(entityRunsCache, entityRunsSearchValue));
       }catch(e){
-        setTableEmpty("entityRunsTbody", "Failed to load runs.");
+        setTableEmpty("entityRunsTbody", "Failed to load reports.");
       }
     }
 
     function renderEntityRuns(runs){
       const tb = $("entityRunsTbody");
       if(!runs.length){
-        setTableEmpty("entityRunsTbody", "No runs yet.");
+        setTableEmpty("entityRunsTbody", "No reports yet.");
         return;
       }
       tb.innerHTML = runs.map(r=>{
@@ -1264,8 +1264,8 @@
                   const encQuote = encodeURIComponent(q);
                   return `
                   <div class="hint">
-                    "${escapeHtml(shortQ)}" ${runId ? `(run_id: ${escapeHtml(runId)})` : ""}
-                    ${runId ? `<button class="btn small" data-open-run="${escapeHtml(runId)}" data-quote="${escapeHtml(encQuote)}">Open run</button>` : ""}
+                    "${escapeHtml(shortQ)}" ${runId ? `(report_id: ${escapeHtml(runId)})` : ""}
+                    ${runId ? `<button class="btn small" data-open-run="${escapeHtml(runId)}" data-quote="${escapeHtml(encQuote)}">Open report</button>` : ""}
                   </div>
                   `;
                 }).join("")}
@@ -1382,13 +1382,13 @@
           setTab("upload");
           setUploadView();
           renderReport({
-            analysis_json: { report_title: "Report", call_result: { label: "Not found", why: "This run was not found." } },
+            analysis_json: { report_title: "Report", call_result: { label: "Not found", why: "This report was not found." } },
             outcome_label: "Not found",
             entity_name: "",
           }, opts);
           return;
         }
-        toast("Failed to load run");
+        toast("Failed to load report");
       }
     }
 
@@ -1416,7 +1416,7 @@
     function renderRuns(runs){
       const tb = $("runsTbody");
       if(!runs.length){
-        setTableEmpty("runsTbody", "No runs yet.");
+        setTableEmpty("runsTbody", "No reports yet.");
         return;
       }
       tb.innerHTML = runs.map(r=>{
@@ -2060,7 +2060,7 @@
     });
 
     $("btnRegenFollowup").addEventListener("click", async ()=>{
-      if(!currentRun?.id){ toast("Run a call first"); return; }
+      if(!currentRun?.id){ toast("Generate a report first"); return; }
       try{
         const data = await api(`/api/runs/${currentRun.id}/regen_followup`, { method:"POST" });
         currentRun = data.run;
@@ -2128,7 +2128,7 @@
       if(!context){ toast("Context required"); return; }
 
       $("btnRun").disabled = true;
-      $("runStatus").textContent = "Running…";
+      $("runStatus").textContent = "Processing…";
       $("reportShell").classList.add("hide");
 
       try{
@@ -2163,7 +2163,7 @@
           toast("File too large");
         } else {
           $("runStatus").textContent = e.message || String(e);
-          toast("Run failed");
+          toast("Report failed");
         }
       }finally{
         $("btnRun").disabled = false;
