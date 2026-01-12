@@ -1622,11 +1622,15 @@
           evidenceBox.innerHTML = `
             <div class="evidenceTitle">Evidence</div>
             <div class="spacer"></div>
+            <div class="row tight">
+              <button class="btn small" id="evidenceToggleRelevant">Most relevant</button>
+              <button class="btn small" id="evidenceToggleAll">Show all</button>
+              <span class="muted" id="evidenceCountLabel"></span>
+            </div>
+            <div class="spacer"></div>
             <input class="input" id="evidenceFilterInput" placeholder="Filter evidence..." />
             <div class="spacer"></div>
             <div class="evidenceList" id="evidenceChipsList"></div>
-            <div class="spacer" id="evidenceToggleSpacer"></div>
-            <div id="evidenceToggleWrap"></div>
           `;
           const filterInput = document.getElementById("evidenceFilterInput");
           if (filterInput) {
@@ -1636,10 +1640,25 @@
               renderEvidenceChipsList();
             });
           }
+          if (!evidenceState.mode) evidenceState.mode = {};
+          if (!evidenceState.mode[evidenceKey]) evidenceState.mode[evidenceKey] = "relevant";
+          const btnRelevant = document.getElementById("evidenceToggleRelevant");
+          const btnAll = document.getElementById("evidenceToggleAll");
+          if (btnRelevant) {
+            btnRelevant.addEventListener("click", ()=>{
+              evidenceState.mode[evidenceKey] = "relevant";
+              renderEvidenceChipsList();
+            });
+          }
+          if (btnAll) {
+            btnAll.addEventListener("click", ()=>{
+              evidenceState.mode[evidenceKey] = "all";
+              renderEvidenceChipsList();
+            });
+          }
         };
         const renderEvidenceChipsList = () => {
           const filterText = String(evidenceState.filter[evidenceKey] || "").trim().toLowerCase();
-          const expanded = !!evidenceState.expanded[evidenceKey];
           const filtered = filterText
             ? items.filter((ev)=>{
                 const lineNum = Number(ev?.line) || 0;
@@ -1648,10 +1667,24 @@
                 return `${quote} ${why} ${lineNum}`.toLowerCase().includes(filterText);
               })
             : items;
-          const effectiveExpanded = filterText ? true : expanded;
-          const visible = effectiveExpanded ? filtered : filtered.slice(0, EVIDENCE_COLLAPSE_LIMIT);
-          const showToggle = !filterText && filtered.length > EVIDENCE_COLLAPSE_LIMIT;
-          const toggleText = effectiveExpanded ? "Show fewer" : `Show all evidence (${filtered.length})`;
+          const mode = evidenceState.mode?.[evidenceKey] || "relevant";
+          const sorted = filtered
+            .map((ev, idx)=>({ ev, idx }))
+            .sort((a, b)=>{
+              const sa = Number(a.ev?.score);
+              const sb = Number(b.ev?.score);
+              const hasA = Number.isFinite(sa);
+              const hasB = Number.isFinite(sb);
+              if (hasA && hasB && sa !== sb) return sb - sa;
+              if (hasA && !hasB) return -1;
+              if (!hasA && hasB) return 1;
+              return a.idx - b.idx;
+            })
+            .map((x)=>x.ev);
+          const useAll = !!filterText || mode === "all";
+          const visible = useAll ? sorted : sorted.slice(0, 5);
+          const countLabel = document.getElementById("evidenceCountLabel");
+          if (countLabel) countLabel.textContent = `Showing ${visible.length} of ${items.length}`;
           const listEl = document.getElementById("evidenceChipsList");
           if (listEl) {
             listEl.innerHTML = visible.map((ev, i)=>{
@@ -1665,17 +1698,10 @@
               return `<button class="evidenceBtn" data-evidence-line="${lineNum}" title="${escapeHtml(label)}">${escapeHtml(short)}</button>`;
             }).join("");
           }
-          const toggleWrap = document.getElementById("evidenceToggleWrap");
-          const toggleSpacer = document.getElementById("evidenceToggleSpacer");
-          if (toggleWrap) toggleWrap.innerHTML = showToggle ? `<button class="btn small" id="evidenceToggleBtn">${escapeHtml(toggleText)}</button>` : ``;
-          if (toggleSpacer) toggleSpacer.classList.toggle("hide", !showToggle);
-          const toggleBtn = document.getElementById("evidenceToggleBtn");
-          if (toggleBtn) {
-            toggleBtn.addEventListener("click", ()=>{
-              evidenceState.expanded[evidenceKey] = !evidenceState.expanded[evidenceKey];
-              renderEvidenceChipsList();
-            });
-          }
+          const btnRelevant = document.getElementById("evidenceToggleRelevant");
+          const btnAll = document.getElementById("evidenceToggleAll");
+          if (btnRelevant) btnRelevant.classList.toggle("primary", mode === "relevant");
+          if (btnAll) btnAll.classList.toggle("primary", mode === "all");
           evidenceBox.querySelectorAll("[data-evidence-line]").forEach((btn)=>{
             btn.addEventListener("click", ()=>{
               const lineNum = Number(btn.getAttribute("data-evidence-line"));
