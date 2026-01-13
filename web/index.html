@@ -760,6 +760,12 @@
       $("uploadSubtitle").textContent = viewingPastRun
         ? "Reviewing a past report."
         : "Accepts audio + video (MP4). Video audio is extracted server-side.";
+      if (!viewingPastRun) {
+        const reportShell = $("reportShell");
+        if (reportShell) reportShell.classList.add("hide");
+        const movePanel = $("moveEntityPanel");
+        if (movePanel) movePanel.classList.add("hide");
+      }
     }
 
     // ---- State ----
