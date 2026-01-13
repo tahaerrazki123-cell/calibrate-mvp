@@ -461,7 +461,6 @@
             <div class="tab active" data-tab="home">Home</div>
             <div class="tab" data-tab="upload">Upload Call</div>
             <div class="tab" data-tab="entities">Entities</div>
-            <div class="tab" data-tab="playbook">Playbook</div>
             <div class="tab" data-tab="runs">Call Reports</div>
           </div>
         </div>
@@ -940,6 +939,7 @@
     }
 
     function setTab(name){
+      if (name === "playbook") name = "entities";
       document.querySelectorAll(".tab").forEach(t=>{
         t.classList.toggle("active", t.dataset.tab === name);
       });
