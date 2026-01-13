@@ -357,6 +357,55 @@
       .heatmapLabel{flex-basis:120px;}
     }
 
+    .entityHeaderBar{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .entityHeaderActions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .entityReportsDrawer{
+      position:fixed;
+      inset:0;
+      display:none;
+      z-index:30;
+    }
+    .entityReportsDrawer.open{display:block;}
+    .entityReportsBackdrop{
+      position:absolute;
+      inset:0;
+      background:rgba(15,23,42,.4);
+    }
+    .entityReportsPanel{
+      position:absolute;
+      top:0;
+      right:0;
+      height:100%;
+      width:420px;
+      background:#fff;
+      border-left:1px solid var(--border);
+      box-shadow:var(--shadow);
+      padding:16px;
+      overflow:auto;
+    }
+    .reportsList{display:flex; flex-direction:column; gap:10px;}
+    .reportsItem{
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px 12px;
+      background:#fff;
+    }
+    .reportsItemHeader{display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
+    .reportsMeta{font-size:12px; color:var(--muted); margin-top:4px;}
+    @media (max-width: 900px){
+      .entityReportsPanel{width:100%;}
+    }
+
     #tab_playbook #playbookBox { margin-top: 8px; }
     #tab_playbook #playbookBox .kpi { padding: 10px 14px !important; margin-bottom: 10px !important; }
     #tab_playbook #playbookBox .card { padding: 12px 14px !important; margin-bottom: 10px !important; }
@@ -728,41 +777,20 @@
         </div>
 
         <div class="hide" id="entityDetailView">
-          <div class="row">
+          <div class="entityHeaderBar">
             <div class="grow">
               <h2 id="entityDetailName">Entity</h2>
               <p class="muted" id="entityDetailMeta"></p>
               <p class="muted" id="entityDetailNotes"></p>
             </div>
-            <button class="btn small" id="btnEntityAiName">AI name</button>
-            <button class="btn small" id="btnEntityBack">Back</button>
+            <div class="entityHeaderActions">
+              <button class="btn primary small" id="btnEntityUpload">Upload call</button>
+              <button class="btn small" id="btnEntityReports">Reports</button>
+              <button class="btn small" id="btnEntityAiName">AI name</button>
+              <button class="btn small" id="btnEntityBack">Back</button>
+            </div>
           </div>
           <p class="muted">Generate a clean entity name from the call context.</p>
-
-          <div class="hr"></div>
-
-          <h2>Call Reports</h2>
-          <p class="muted">Reports tied to this entity.</p>
-          <div class="spacer"></div>
-          <div class="row tight">
-            <input class="input" id="entityRunsSearch" placeholder="Search reports, scenario, result..." />
-            <button class="btn small" id="entityRunsSearchClear">Clear</button>
-          </div>
-          <div class="spacer"></div>
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Created</th>
-                <th>Scenario</th>
-                <th>Result</th>
-                <th>Open</th>
-              </tr>
-            </thead>
-            <tbody id="entityRunsTbody">
-              <tr><td colspan="5" class="muted">Loading...</td></tr>
-            </tbody>
-          </table>
 
           <div class="hr"></div>
 
@@ -772,6 +800,25 @@
             <span class="muted" id="entityPlaybookUpdated"></span>
           </div>
           <div id="entityPlaybookBox"></div>
+
+          <div class="entityReportsDrawer" id="entityReportsDrawer">
+            <div class="entityReportsBackdrop" id="entityReportsBackdrop"></div>
+            <div class="entityReportsPanel">
+              <div class="row">
+                <h2 class="grow">Reports</h2>
+                <button class="btn small" id="btnEntityReportsClose">Back to Playbook</button>
+              </div>
+              <p class="muted">Reports tied to this entity.</p>
+              <div class="row tight">
+                <input class="input" id="entityRunsSearch" placeholder="Search reports, scenario, result..." />
+                <button class="btn small" id="entityRunsSearchClear">Clear</button>
+              </div>
+              <div class="spacer"></div>
+              <div id="entityRunsList" class="reportsList">
+                <div class="muted">Loading...</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -892,6 +939,10 @@
     function setTableEmpty(tbodyId, message){
       const colspan = getTableColspan(tbodyId);
       $(tbodyId).innerHTML = `<tr><td colspan="${colspan}" class="muted">${message}</td></tr>`;
+    }
+    function setListEmpty(containerId, message){
+      const el = $(containerId);
+      if (el) el.innerHTML = `<div class="muted">${message}</div>`;
     }
     function formatMaxBytes(maxBytes){
       if (!Number.isFinite(maxBytes) || maxBytes <= 0) return "";
@@ -1297,15 +1348,26 @@
       };
     }
 
+    function openEntityReportsDrawer(){
+      const drawer = $("entityReportsDrawer");
+      if (drawer) drawer.classList.add("open");
+    }
+
+    function closeEntityReportsDrawer(){
+      const drawer = $("entityReportsDrawer");
+      if (drawer) drawer.classList.remove("open");
+    }
+
     function openEntityDetail(id){
       const e = entities.find(x=>x.id===id);
       if(!e) return;
       currentEntityDetailId = id;
       viewingEntityDetail = true;
       $("entityEditor").classList.add("hide");
+      closeEntityReportsDrawer();
       renderEntityDetail(e);
       setEntitiesView();
-      setTableEmpty("entityRunsTbody", "Loading...");
+      setListEmpty("entityRunsList", "Loading...");
       $("entityPlaybookStatus").textContent = "Loading...";
       $("entityPlaybookUpdated").textContent = "";
       $("entityPlaybookUpdated").classList.add("hide");
@@ -1321,33 +1383,45 @@
         entityRunsCache = runs;
         renderEntityRuns(filterRuns(entityRunsCache, entityRunsSearchValue));
       }catch(e){
-        setTableEmpty("entityRunsTbody", "Failed to load reports.");
+        setListEmpty("entityRunsList", "Failed to load reports.");
       }
     }
 
     function renderEntityRuns(runs){
-      const tb = $("entityRunsTbody");
+      const list = $("entityRunsList");
+      if(!list) return;
       if(!runs.length){
-        setTableEmpty("entityRunsTbody", "No reports yet.");
+        setListEmpty("entityRunsList", "No reports yet.");
         return;
       }
-      tb.innerHTML = runs.map(r=>{
+      const formatDuration = (seconds)=>{
+        const s = Math.max(0, Math.round(seconds));
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        return `${m}:${String(r).padStart(2,"0")}`;
+      };
+      list.innerHTML = runs.map(r=>{
         const reportTitle = formatReportTitle(r);
-        const scenarioLabel = r.scenario ? prettyScenario(r.scenario) : "Legacy";
         const resultLabel = r.outcome_label || r.analysis_json?.call_result?.label || "";
+        const created = r.created_at ? new Date(r.created_at).toLocaleString() : "";
+        const durationValue = Number(r.duration_seconds ?? r.duration ?? r.audio_duration ?? r.call_duration ?? NaN);
+        const durationLabel = Number.isFinite(durationValue) ? ` • ${formatDuration(durationValue)}` : "";
         const isLegacy = !r.report_title || !r.scenario || !r.outcome_label;
         const legacyTag = isLegacy ? ` <span class="muted">Legacy</span>` : "";
+        const metaParts = [resultLabel, created].filter(Boolean).join(" • ");
         return `
-        <tr>
-          <td>${escapeHtml(reportTitle)}${legacyTag}</td>
-          <td>${escapeHtml(new Date(r.created_at).toLocaleString())}</td>
-          <td>${escapeHtml(scenarioLabel)}</td>
-          <td>${escapeHtml(resultLabel)}</td>
-          <td><button class="btn small" data-open-run="${r.id}">Open</button></td>
-        </tr>
+        <div class="reportsItem">
+          <div class="reportsItemHeader">
+            <div class="grow">
+              <b>${escapeHtml(reportTitle)}${legacyTag}</b>
+              <div class="reportsMeta">${escapeHtml(metaParts)}${escapeHtml(durationLabel)}</div>
+            </div>
+            <button class="btn small" data-open-run="${r.id}">Open</button>
+          </div>
+        </div>
       `;
       }).join("");
-      tb.querySelectorAll("[data-open-run]").forEach(btn=>{
+      list.querySelectorAll("[data-open-run]").forEach(btn=>{
         btn.addEventListener("click", ()=>{
           const id = btn.getAttribute("data-open-run");
           openRunById(id);
@@ -1409,6 +1483,17 @@
       viewingEntityDetail = false;
       currentEntityDetailId = null;
       setEntitiesView();
+    });
+    $("btnEntityReports")?.addEventListener("click", openEntityReportsDrawer);
+    $("btnEntityReportsClose")?.addEventListener("click", closeEntityReportsDrawer);
+    $("entityReportsBackdrop")?.addEventListener("click", closeEntityReportsDrawer);
+    $("btnEntityUpload")?.addEventListener("click", ()=>{
+      const targetId = currentEntityDetailId;
+      viewingPastRun = false;
+      setTab("upload");
+      setUploadView();
+      const sel = $("entitySelect");
+      if (sel && targetId) sel.value = targetId;
     });
 
     $("btnSaveEntity").addEventListener("click", async ()=>{
@@ -1801,12 +1886,12 @@
       runsSearchValue = "";
       applyRunsSearch();
     });
-    $("entityRunsSearch").addEventListener("input", ()=>{
+    $("entityRunsSearch")?.addEventListener("input", ()=>{
       entityRunsSearchValue = $("entityRunsSearch").value.trim();
       clearTimeout(entityRunsSearchTimer);
       entityRunsSearchTimer = setTimeout(applyEntityRunsSearch, 150);
     });
-    $("entityRunsSearchClear").addEventListener("click", ()=>{
+    $("entityRunsSearchClear")?.addEventListener("click", ()=>{
       $("entityRunsSearch").value = "";
       entityRunsSearchValue = "";
       applyEntityRunsSearch();
