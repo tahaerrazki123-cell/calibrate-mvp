@@ -266,6 +266,97 @@
     .rightActions{display:flex; gap:8px; align-items:center; justify-content:flex-end; flex-wrap:wrap}
     .grow{flex:1}
 
+    .homeHero{
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      background:var(--card);
+      box-shadow:var(--shadow);
+      padding:22px;
+    }
+    .homeHero h2{
+      margin:0 0 8px 0;
+      font-size:24px;
+      line-height:1.15;
+    }
+    .homeHero p{
+      margin:0;
+      color:var(--muted);
+      font-size:14px;
+      line-height:1.5;
+    }
+    .homeHeroActions{
+      display:flex;
+      gap:10px;
+      margin-top:14px;
+      flex-wrap:wrap;
+    }
+    .homeGrid{
+      margin-top:14px;
+      display:grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap:12px;
+    }
+    .homeCard{
+      border:1px solid var(--border);
+      border-radius:var(--radius2);
+      background:var(--card);
+      box-shadow:var(--shadow);
+      padding:14px;
+    }
+    .homeCard h3{
+      margin:0 0 6px 0;
+      font-size:14px;
+    }
+    .homeCard p{
+      margin:0 0 10px 0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.45;
+    }
+    @media (max-width: 900px){
+      .homeGrid{grid-template-columns:1fr}
+    }
+
+    .analyticsCard{
+      margin-top:16px;
+    }
+    .analyticsRow{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .analyticsRow h3{margin:0 0 4px 0; font-size:16px; font-weight:700;}
+    .analyticsRow p{margin:0; color:var(--muted); font-size:12px;}
+    .analyticsControls{display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;}
+    .analyticsControl label{margin:0 0 4px; font-size:11px;}
+    .analyticsGrid{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap:12px;
+    }
+    .analyticsTile{
+      border:1px solid var(--border);
+      border-radius:var(--radius2);
+      background:var(--card);
+      box-shadow:var(--shadow);
+      padding:14px;
+      min-height:140px;
+    }
+    .analyticsTile h4{margin:0 0 8px 0; font-size:14px;}
+    .analyticsKpi{font-size:22px; font-weight:700; margin-bottom:6px;}
+    .analyticsSub{color:var(--muted); font-size:12px;}
+    .heatmapRow{display:flex; align-items:center; gap:8px; margin:6px 0;}
+    .heatmapLabel{flex:0 0 140px; font-size:12px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .heatmapBarWrap{flex:1; height:8px; background:#f1f5f9; border-radius:999px; overflow:hidden;}
+    .heatmapBar{height:100%; background:linear-gradient(135deg,var(--blue),var(--blue2)); border-radius:999px;}
+    @media (max-width: 900px){
+      .analyticsGrid{grid-template-columns:1fr}
+      .heatmapLabel{flex-basis:120px;}
+    }
+
     #tab_playbook #playbookBox { margin-top: 8px; }
     #tab_playbook #playbookBox .kpi { padding: 10px 14px !important; margin-bottom: 10px !important; }
     #tab_playbook #playbookBox .card { padding: 12px 14px !important; margin-bottom: 10px !important; }
@@ -378,25 +469,67 @@
 
       <!-- HOME -->
       <div class="card" id="tab_home">
-        <div class="twoCol">
-          <div>
-            <h2>What you do next</h2>
-            <p class="muted">Fast loop: upload → get result → follow-up → fix top 3 → repeat.</p>
-            <div class="hr"></div>
-            <div class="kpi">
-              <div>
-                <b>Last report</b><div class="muted" id="lastRunLabel">None yet</div>
+        <div class="homeHero">
+          <h2>Welcome back, <span id="homeHelloName">there</span></h2>
+          <p>Upload a call to generate a full report and follow-up guidance in minutes.</p>
+          <div class="homeHeroActions">
+            <button class="btn primary" id="goUpload2">Upload Call</button>
+            <button class="btn" id="goReports2">View Reports</button>
+          </div>
+        </div>
+        <div class="homeGrid">
+          <div class="homeCard">
+            <h3>Recent Call Analysis</h3>
+            <p>Last report: <span id="lastRunLabel">None yet</span><br/>Result: <span id="lastRunBadge">—</span></p>
+            <button class="btn small" id="openLastReportBtn">Open last report</button>
+          </div>
+          <div class="homeCard">
+            <h3>Latest Playbook Update</h3>
+            <p>View your Entity Playbooks inside Entities.</p>
+            <button class="btn small" id="goEntitiesFromHome">Go to Entities</button>
+          </div>
+          <div class="homeCard">
+            <h3>Your Next Best Action</h3>
+            <p>Review the last reports top fix and regenerate follow-up if needed.</p>
+            <button class="btn small" id="goReportsFromHome">Go to Reports</button>
+          </div>
+        </div>
+        <div class="card analyticsCard">
+          <div class="analyticsRow">
+            <div>
+              <h3>Analytics</h3>
+              <p><span id="analyticsSubtitleRange">Last 7 days</span>  whats changing + what to fix next.</p>
+            </div>
+            <div class="analyticsControls">
+              <div class="analyticsControl">
+                <label>Days</label>
+                <select class="input" id="analyticsRange">
+                  <option value="7">7d</option>
+                  <option value="30">30d</option>
+                </select>
               </div>
-              <span class="badge" id="lastRunBadge">—</span>
+              <div class="analyticsControl">
+                <label>Entity</label>
+                <select class="input" id="analyticsEntity">
+                  <option value="all">All entities</option>
+                </select>
+              </div>
             </div>
           </div>
-          <div>
-            <h2>Quick actions</h2>
-            <p class="muted">Jump straight into your workflow.</p>
-            <div class="spacer"></div>
-            <div class="row tight">
-              <button class="btn primary" id="goUpload">Upload a call</button>
-              <button class="btn" id="goRuns">View reports</button>
+          <div class="analyticsGrid">
+            <div class="analyticsTile" id="analyticsMomentum">
+              <h4>Momentum</h4>
+              <div class="analyticsKpi" id="analyticsMomentumKpi">—</div>
+              <div class="analyticsSub" id="analyticsMomentumSub"></div>
+            </div>
+            <div class="analyticsTile" id="analyticsObjections">
+              <h4>Objections heatmap (entity only)</h4>
+              <div class="analyticsSub" id="analyticsObjectionsBody">Select an entity to view objections.</div>
+            </div>
+            <div class="analyticsTile" id="analyticsFollowup">
+              <h4>Follow-up quality</h4>
+              <div class="analyticsKpi" id="analyticsFollowupKpi">—</div>
+              <div class="analyticsSub" id="analyticsFollowupSub"></div>
             </div>
           </div>
         </div>
@@ -699,6 +832,52 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
+    function setText(id, text){
+      const el = $(id);
+      if (el) el.textContent = text;
+    }
+    function setDisabled(id, on){
+      const el = $(id);
+      if (el) el.disabled = !!on;
+    }
+    function analyticsKeyBase(){
+      return currentUser?.id || currentUser?.email || "anon";
+    }
+    function getAnalyticsStorageKey(kind){
+      return `calibrate:${analyticsKeyBase()}:${kind}`;
+    }
+    function loadAnalyticsPreference(kind){
+      try{
+        return localStorage.getItem(getAnalyticsStorageKey(kind));
+      }catch(e){
+        return null;
+      }
+    }
+    function saveAnalyticsPreference(kind, value){
+      try{
+        localStorage.setItem(getAnalyticsStorageKey(kind), value);
+      }catch(e){
+        /* no-op */
+      }
+    }
+    function applyAnalyticsRangePreference(){
+      const rangeEl = $("analyticsRange");
+      if (!rangeEl) return;
+      const stored = loadAnalyticsPreference("analyticsRange");
+      rangeEl.value = stored || "7";
+      const subtitle = $("analyticsSubtitleRange");
+      if (subtitle) subtitle.textContent = `Last ${rangeEl.value} days`;
+    }
+    function applyAnalyticsEntityPreference(){
+      const sel = $("analyticsEntity");
+      if (!sel) return;
+      const stored = loadAnalyticsPreference("analyticsEntity") || "all";
+      if ([...sel.options].some((o)=>o.value === stored)) {
+        sel.value = stored;
+      } else {
+        sel.value = "all";
+      }
+    }
     const toastEl = $("toast");
     function toast(msg){
       toastEl.textContent = msg;
@@ -731,6 +910,20 @@
       $("viewApp").classList.remove("hide");
     }
 
+    function formatHelloName(user){
+      const email = user?.email || "";
+      if (!email) return "there";
+      const raw = email.includes("@") ? email.split("@")[0] : email;
+      if (!raw) return "there";
+      return raw[0].toUpperCase() + raw.slice(1);
+    }
+
+    function updateHomeGreeting(){
+      const el = $("homeHelloName");
+      if (!el) return;
+      el.textContent = formatHelloName(currentUser);
+    }
+
     function setUserUI(user){
       const dot = $("dotAuth");
       const label = $("userLabel");
@@ -743,6 +936,7 @@
         label.textContent = "Not signed in";
         $("btnSignOut").classList.add("hide");
       }
+      updateHomeGreeting();
     }
 
     function setTab(name){
@@ -812,8 +1006,21 @@
       return data;
     }
 
+    async function ensureSupabaseReady(){
+      if (window.supabaseClient?.auth) return true;
+      try{
+        await initSupabase();
+      }catch(e){
+        console.warn("initSupabase failed", e);
+      }
+      return !!window.supabaseClient?.auth;
+    }
+
     async function initSupabase(){
-      $("authMsg").textContent = "Loading…";
+      setDisabled("btnGoogle", true);
+      setDisabled("btnSendLink", true);
+      setDisabled("btnAlreadyClicked", true);
+      setText("authMsg", "Loading…");
       cfg = await api("/api/config");
 
       const { supabaseUrl, supabaseAnonKey } = cfg;
@@ -826,6 +1033,7 @@
         auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
       });
       window.supabaseClient = sb;
+      console.log("SUPABASE_BOOT: client created");
 
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
       const hashAccessToken = hashParams.get("access_token");
@@ -852,6 +1060,7 @@
       accessToken = initialSession?.access_token || null;
 
       setUserUI(currentUser);
+      applyAnalyticsRangePreference();
       if(currentUser){
         showApp();
         bootstrapApp().catch(err => {
@@ -869,6 +1078,7 @@
         currentUser = session?.user || null;
         accessToken = session?.access_token || null;
         setUserUI(currentUser);
+        applyAnalyticsRangePreference();
 
         if(event === "SIGNED_IN"){
           showApp();
@@ -881,18 +1091,23 @@
         }
       });
 
-      $("authMsg").textContent = "";
+      setText("authMsg", "");
+      setDisabled("btnGoogle", false);
+      setDisabled("btnSendLink", false);
+      setDisabled("btnAlreadyClicked", false);
     }
 
     async function bootstrapApp(){
       await loadEntities();
       fillEntitySelects();
+      populateAnalyticsEntities();
       await loadRuns();
     }
 
     // ---- Auth UI ----
     $("btnGoogle").addEventListener("click", async ()=>{
-      $("authMsg").textContent = "Redirecting to Google…";
+      if(!(await ensureSupabaseReady())) { setText("authMsg","Boot failed  refresh and check console."); return; }
+      setText("authMsg", "Redirecting to Google…");
       try{
         const { error } = await window.supabaseClient.auth.signInWithOAuth({
           provider: "google",
@@ -900,14 +1115,15 @@
         });
         if(error) throw error;
       }catch(e){
-        $("authMsg").textContent = "Error: " + (e.message || String(e));
+        setText("authMsg", "Error: " + (e.message || String(e)));
       }
     });
 
     $("btnSendLink").addEventListener("click", async ()=>{
+      if(!(await ensureSupabaseReady())) { setText("authMsg","Boot failed  refresh and check console."); return; }
       const email = $("authEmail").value.trim();
       if(!email){ toast("Enter an email"); return; }
-      $("authMsg").textContent = "Sending…";
+      setText("authMsg", "Sending…");
       try{
         const { error } = await window.supabaseClient.auth.signInWithOtp({
           email,
@@ -915,31 +1131,33 @@
         });
         if(error) throw error;
         toast("Magic link sent. Check your inbox.");
-        $("authMsg").textContent = "Sent. Open the email link, then come back.";
+        setText("authMsg", "Sent. Open the email link, then come back.");
       }catch(e){
-        $("authMsg").textContent = "Error: " + (e.message || String(e));
+        setText("authMsg", "Error: " + (e.message || String(e)));
       }
     });
 
     $("btnAlreadyClicked").addEventListener("click", async ()=>{
-      $("authMsg").textContent = "Checking session…";
+      if(!(await ensureSupabaseReady())) { setText("authMsg","Boot failed  refresh and check console."); return; }
+      setText("authMsg", "Checking session…");
       try{
         const { data } = await window.supabaseClient.auth.getSession();
         currentSession = data?.session || null;
         const u = currentSession?.user || null;
         if(u){
           toast("Signed in");
-          $("authMsg").textContent = "";
+          setText("authMsg", "");
         }else{
-          $("authMsg").textContent = "No session yet. Click the email link first.";
+          setText("authMsg", "No session yet. Click the email link first.");
         }
       }catch(e){
-        $("authMsg").textContent = "Error: " + (e.message || String(e));
+        setText("authMsg", "Error: " + (e.message || String(e)));
       }
     });
 
     $("btnSignOut").addEventListener("click", async ()=>{
       try{
+        if(!(await ensureSupabaseReady())) { setText("authMsg","Boot failed  refresh and check console."); return; }
         await window.supabaseClient.auth.signOut();
         toast("Signed out");
       }catch(e){
@@ -957,18 +1175,41 @@
         setUploadView();
       }
     });
-    $("goUpload").addEventListener("click", ()=>{
+    $("goUpload")?.addEventListener("click", ()=>{
       viewingPastRun = false;
       setTab("upload");
       setUploadView();
     });
-    $("goRuns").addEventListener("click", ()=>setTab("runs"));
+    $("goRuns")?.addEventListener("click", ()=>setTab("runs"));
+    $("goUpload2")?.addEventListener("click", ()=>{
+      viewingPastRun = false;
+      setTab("upload");
+      setUploadView();
+    });
+    $("goReports2")?.addEventListener("click", ()=>setTab("runs"));
+    $("goReportsFromHome")?.addEventListener("click", ()=>setTab("runs"));
+    $("goEntitiesFromHome")?.addEventListener("click", ()=>setTab("entities"));
+    $("openLastReportBtn")?.addEventListener("click", ()=>{
+      const last = runsCache[0];
+      if (!last?.id) { toast("No reports yet."); return; }
+      openRunById(last.id);
+    });
+    $("analyticsRange")?.addEventListener("change", ()=>{
+      saveAnalyticsPreference("analyticsRange", $("analyticsRange")?.value || "7");
+      applyAnalyticsRangePreference();
+      renderAnalytics();
+    });
+    $("analyticsEntity")?.addEventListener("change", ()=>{
+      saveAnalyticsPreference("analyticsEntity", $("analyticsEntity")?.value || "all");
+      renderAnalytics();
+    });
 
     // ---- Entities ----
     async function loadEntities(){
       const data = await api("/api/entities");
       entities = data.entities || [];
       renderEntities();
+      populateAnalyticsEntities();
       if(viewingEntityDetail && currentEntityDetailId){
         const e = entities.find(x=>x.id===currentEntityDetailId);
         if(e){
@@ -1363,6 +1604,7 @@
       const runs = data.runs || [];
       runsCache = runs;
       renderRuns(filterRuns(runsCache, runsSearchValue));
+      renderAnalytics();
 
       if(runs.length){
         const r = runs[0];
@@ -1371,6 +1613,104 @@
       }else{
         $("lastRunLabel").textContent = "None yet";
         $("lastRunBadge").textContent = "—";
+      }
+    }
+
+    function populateAnalyticsEntities(){
+      const sel = $("analyticsEntity");
+      if (!sel) return;
+      const current = loadAnalyticsPreference("analyticsEntity") || sel.value || "all";
+      sel.innerHTML = `<option value="all">All entities</option>` + entities
+        .map((e)=>`<option value="${e.id}">${escapeHtml(e.name || "Entity")}</option>`)
+        .join("");
+      applyAnalyticsEntityPreference();
+    }
+
+    async function renderAnalytics(){
+      const rangeEl = $("analyticsRange");
+      const entityEl = $("analyticsEntity");
+      const momentumKpi = $("analyticsMomentumKpi");
+      const momentumSub = $("analyticsMomentumSub");
+      const followKpi = $("analyticsFollowupKpi");
+      const followSub = $("analyticsFollowupSub");
+      const objectionsBody = $("analyticsObjectionsBody");
+      if (!rangeEl || !entityEl || !momentumKpi || !momentumSub || !followKpi || !followSub || !objectionsBody) return;
+
+      const days = Number(rangeEl.value || 7);
+      const subtitle = $("analyticsSubtitleRange");
+      if (subtitle) subtitle.textContent = `Last ${days} days`;
+      const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+      const entityId = entityEl.value || "all";
+      const filtered = (runsCache || []).filter((r)=>{
+        const created = new Date(r.created_at || 0).getTime();
+        if (created && created < cutoff) return false;
+        if (entityId !== "all" && r.entity_id !== entityId) return false;
+        return true;
+      });
+
+      if (!filtered.length) {
+        momentumKpi.textContent = "Not enough data yet.";
+        momentumSub.textContent = "";
+        followKpi.textContent = "Not enough data yet.";
+        followSub.textContent = "";
+      } else {
+        const scores = filtered
+          .map((r)=>{
+            const a = r.analysis_json || r.analysis || {};
+            return a.score ?? a.overall_score ?? r.overall_score ?? null;
+          })
+          .filter((v)=>Number.isFinite(v));
+        const avg = scores.length
+          ? (scores.reduce((sum, v)=>sum + Number(v), 0) / scores.length)
+          : null;
+        momentumKpi.textContent = `Reports: ${filtered.length}`;
+        momentumSub.textContent = avg == null ? "Avg score: —" : `Avg score: ${avg.toFixed(1)}`;
+
+        const sendable = filtered.filter((r)=>{
+          const a = r.analysis_json || r.analysis || {};
+          const followUpRaw = a?.follow_up?.text || a?.followup || "";
+          return followUpRaw && isSendableFollowupLite(followUpRaw);
+        }).length;
+        const pct = Math.round((sendable / filtered.length) * 100);
+        followKpi.textContent = `Sendable: ${pct}%`;
+        followSub.textContent = `${sendable} of ${filtered.length}`;
+      }
+
+      if (entityId === "all") {
+        objectionsBody.textContent = "Select an entity to view objections.";
+        return;
+      }
+      objectionsBody.textContent = "Loading objections...";
+      try{
+        const data = await api(`/api/entities/${encodeURIComponent(entityId)}/playbook`, { method:"POST" });
+        const playbook = data.playbook || {};
+        const obs = Array.isArray(playbook.observed_objections)
+          ? playbook.observed_objections
+          : [];
+        const ranked = obs
+          .map((o)=>({
+            objection: o?.objection || "",
+            count: Number(o?.count) || 0,
+          }))
+          .filter((o)=>o.objection && o.count > 0)
+          .sort((a,b)=>b.count - a.count)
+          .slice(0, 6);
+        if (!ranked.length) {
+          objectionsBody.textContent = "No objection data yet.";
+          return;
+        }
+        const max = Math.max(...ranked.map((o)=>o.count), 1);
+        objectionsBody.innerHTML = ranked.map((o)=>`
+          <div class="heatmapRow">
+            <div class="heatmapLabel" title="${escapeHtml(o.objection)}">${escapeHtml(o.objection)}</div>
+            <div class="heatmapBarWrap">
+              <div class="heatmapBar" style="width:${Math.round((o.count / max) * 100)}%"></div>
+            </div>
+            <div class="analyticsSub">${o.count}</div>
+          </div>
+        `).join("");
+      }catch(e){
+        objectionsBody.textContent = "No objection data yet.";
       }
     }
 
@@ -2176,17 +2516,14 @@
       }
     });
 
-    (async function(){
-      try{
-        await initSupabase();
-      }catch(e){
+    window.addEventListener("DOMContentLoaded", () => {
+      console.log("BOOT_START");
+      initSupabase().catch(e => {
+        console.warn("BOOT_ERROR", e);
         showAuth();
-        setUserUI(null);
-        $("authMsg").textContent =
-          "Boot error: " + (e.message || String(e)) +
-          " | Check /api/config and DevTools Console for details.";
-      }
-    })();
+        setText("authMsg", "Boot error: " + (e.message || String(e)));
+      });
+    });
   </script>
 </body>
 </html>
